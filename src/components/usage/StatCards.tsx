@@ -8,12 +8,16 @@ import {
   calculateCost,
   collectUsageDetails,
   extractTotalTokens,
-  type ModelPrice
+  type ModelPrice,
+  type UsageDetail
 } from '@/utils/usage';
 import { formatPercent } from '@/utils/numberFormat';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
 import type { SparklineBundle } from './hooks/useSparklines';
+import { HealthScoreCard } from './HealthScoreCard';
+import { SLAMonitorCard } from './SLAMonitorCard';
+import type { SubscriptionTier } from '@/utils/usage/slaCalculator';
 import styles from '@/pages/UsagePage.module.scss';
 import cardStyles from './StatCards.module.scss';
 
@@ -42,24 +46,26 @@ export interface StatCardsProps {
     tpm: SparklineBundle | null;
     cost: SparklineBundle | null;
   };
+  subscriptionTier?: SubscriptionTier;
 }
 
-export function StatCards({ usage, loading, modelPrices, nowMs, sparklines }: StatCardsProps) {
+export function StatCards({ usage, loading, modelPrices, nowMs, sparklines, subscriptionTier = 'pro' }: StatCardsProps) {
   const { t } = useTranslation();
 
   const hasPrices = Object.keys(modelPrices).length > 0;
 
-  const { tokenBreakdown, rateStats, totalCost, tokenEfficiency } = useMemo(() => {
+  const { tokenBreakdown, rateStats, totalCost, tokenEfficiency, details } = useMemo(() => {
     const empty = {
       tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0, inputTokens: 0, outputTokens: 0 },
       rateStats: { rpm: 0, tpm: 0, windowMinutes: 30, requestCount: 0, tokenCount: 0, peakRpm: 0, peakTpm: 0 },
       totalCost: 0,
-      tokenEfficiency: { cacheHitRate: 0, outputEfficiency: 0, costEfficiency: 0 }
+      tokenEfficiency: { cacheHitRate: 0, outputEfficiency: 0, costEfficiency: 0 },
+      details: [] as UsageDetail[]
     };
 
     if (!usage) return empty;
     const details = collectUsageDetails(usage);
-    if (!details.length) return empty;
+    if (!details.length) return { ...empty, details };
 
     let cachedTokens = 0;
     let reasoningTokens = 0;
@@ -144,7 +150,8 @@ export function StatCards({ usage, loading, modelPrices, nowMs, sparklines }: St
         peakTpm
       },
       totalCost,
-      tokenEfficiency: { cacheHitRate, outputEfficiency, costEfficiency }
+      tokenEfficiency: { cacheHitRate, outputEfficiency, costEfficiency },
+      details
     };
   }, [hasPrices, modelPrices, nowMs, usage]);
 
@@ -369,6 +376,21 @@ export function StatCards({ usage, loading, modelPrices, nowMs, sparklines }: St
           </div>
         </div>
       )}
+
+      <HealthScoreCard
+        successCount={usage?.success_count ?? 0}
+        failureCount={usage?.failure_count ?? 0}
+        details={details}
+        loading={loading}
+      />
+
+      <SLAMonitorCard
+        tier={subscriptionTier}
+        successCount={usage?.success_count ?? 0}
+        failureCount={usage?.failure_count ?? 0}
+        details={details}
+        loading={loading}
+      />
     </div>
   );
 }

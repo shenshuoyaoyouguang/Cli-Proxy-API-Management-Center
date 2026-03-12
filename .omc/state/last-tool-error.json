@@ -1,7 +1,0 @@
-{
-  "tool_name": "Read",
-  "tool_input_preview": "{\"file_path\":\"D:\\\\xiaoxiao\\\\2026.3.3\\\\Cli-Proxy-API-Management-Center-main\\\\src\\\\components\\\\usage\\\\UsagePage.tsx\",\"offset\":240,\"limit\":260}",
-  "error": "File does not exist. Note: your current working directory is D:\\xiaoxiao\\2026.3.3\\Cli-Proxy-API-Management-Center-main.",
-  "timestamp": "2026-03-12T08:17:42.443Z",
-  "retry_count": 1
-}

@@ -15,6 +15,8 @@ antigravity_usage.json
 codex_usage.json
 style.md
 .trae/
+.omx/
+.omc/
 
 node_modules
 dist

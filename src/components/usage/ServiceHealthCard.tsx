@@ -1,12 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  collectUsageDetails,
   calculateServiceHealthData,
   type ServiceHealthData,
   type StatusBlockDetail,
+  type UsageDetail
 } from '@/utils/usage';
-import type { UsagePayload } from './hooks/useUsageData';
 import styles from '@/pages/UsagePage.module.scss';
 
 const COLOR_STOPS = [
@@ -37,19 +36,18 @@ function formatDateTime(timestamp: number): string {
 }
 
 export interface ServiceHealthCardProps {
-  usage: UsagePayload | null;
+  details: UsageDetail[];
   loading: boolean;
 }
 
-export function ServiceHealthCard({ usage, loading }: ServiceHealthCardProps) {
+export function ServiceHealthCard({ details, loading }: ServiceHealthCardProps) {
   const { t } = useTranslation();
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const healthData: ServiceHealthData = useMemo(() => {
-    const details = usage ? collectUsageDetails(usage) : [];
     return calculateServiceHealthData(details);
-  }, [usage]);
+  }, [details]);
 
   const hasData = healthData.totalSuccess + healthData.totalFailure > 0;
 

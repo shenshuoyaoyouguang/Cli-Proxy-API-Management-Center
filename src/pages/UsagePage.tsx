@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Chart as ChartJS,
@@ -32,19 +32,14 @@ import {
   CostTrendChart,
   ServiceHealthCard,
   useUsageData,
+  useAuthFilesMap,
   useSparklines,
-  useChartData
+  useChartData,
+  useUsageAnalyticsSnapshot
 } from '@/components/usage';
-import {
-  getModelNamesFromUsage,
-  getApiStats,
-  getModelStats,
-  filterUsageByTimeRange,
-  type UsageTimeRange
-} from '@/utils/usage';
+import { type UsageTimeRange } from '@/utils/usage';
 import styles from './UsagePage.module.scss';
 
-// Register Chart.js components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -66,7 +61,7 @@ const TIME_RANGE_OPTIONS: ReadonlyArray<{ value: UsageTimeRange; labelKey: strin
   { value: 'all', labelKey: 'usage_stats.range_all' },
   { value: '7h', labelKey: 'usage_stats.range_7h' },
   { value: '24h', labelKey: 'usage_stats.range_24h' },
-  { value: '7d', labelKey: 'usage_stats.range_7d' },
+  { value: '7d', labelKey: 'usage_stats.range_7d' }
 ];
 const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> = {
   '7h': 7,
@@ -119,15 +114,15 @@ const loadTimeRange = (): UsageTimeRange => {
 };
 
 export function UsagePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isMobile = useMediaQuery('(max-width: 768px)');
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const isDark = resolvedTheme === 'dark';
   const config = useConfigStore((state) => state.config);
 
-  // Data hook
   const {
     usage,
+    usageDetails,
     loading,
     error,
     lastRefreshedAt,
@@ -142,9 +137,10 @@ export function UsagePage() {
     importing
   } = useUsageData();
 
+  const { authFileMap } = useAuthFilesMap();
+
   useHeaderRefresh(loadUsage);
 
-  // Chart lines state
   const [chartLines, setChartLines] = useState<string[]>(loadChartLines);
   const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
 
@@ -156,13 +152,6 @@ export function UsagePage() {
       })),
     [t]
   );
-
-  const filteredUsage = useMemo(
-    () => (usage ? filterUsageByTimeRange(usage, timeRange) : null),
-    [usage, timeRange]
-  );
-  const hourWindowHours =
-    timeRange === 'all' ? undefined : HOUR_WINDOW_BY_TIME_RANGE[timeRange];
 
   const handleChartLinesChange = useCallback((lines: string[]) => {
     setChartLines(normalizeChartLines(lines));
@@ -191,8 +180,32 @@ export function UsagePage() {
   }, [timeRange]);
 
   const nowMs = lastRefreshedAt?.getTime() ?? 0;
+  const hourWindowHours = timeRange === 'all' ? undefined : HOUR_WINDOW_BY_TIME_RANGE[timeRange];
 
-  // Sparklines hook
+  const {
+    filteredUsage,
+    filteredDetails,
+    modelNames,
+    apiStats,
+    modelStats,
+    tokenDistribution,
+    requestEventRows,
+    credentialRows
+  } = useUsageAnalyticsSnapshot({
+    usage,
+    usageDetails,
+    timeRange,
+    modelPrices,
+    nowMs,
+    authFileMap,
+    locale: i18n.language,
+    geminiKeys: config?.geminiApiKeys || [],
+    claudeConfigs: config?.claudeApiKeys || [],
+    codexConfigs: config?.codexApiKeys || [],
+    vertexConfigs: config?.vertexApiKeys || [],
+    openaiProviders: config?.openaiCompatibility || []
+  });
+
   const {
     requestsSparkline,
     tokensSparkline,
@@ -201,7 +214,6 @@ export function UsagePage() {
     costSparkline
   } = useSparklines({ usage: filteredUsage, loading, nowMs });
 
-  // Chart data hook
   const {
     requestsPeriod,
     setRequestsPeriod,
@@ -213,16 +225,6 @@ export function UsagePage() {
     tokensChartOptions
   } = useChartData({ usage: filteredUsage, chartLines, isDark, isMobile, hourWindowHours });
 
-  // Derived data
-  const modelNames = useMemo(() => getModelNamesFromUsage(usage), [usage]);
-  const apiStats = useMemo(
-    () => getApiStats(filteredUsage, modelPrices),
-    [filteredUsage, modelPrices]
-  );
-  const modelStats = useMemo(
-    () => getModelStats(filteredUsage, modelPrices),
-    [filteredUsage, modelPrices]
-  );
   const hasPrices = Object.keys(modelPrices).length > 0;
 
   return (
@@ -293,9 +295,9 @@ export function UsagePage() {
 
       {error && <div className={styles.errorBox}>{error}</div>}
 
-      {/* Stats Overview Cards */}
       <StatCards
         usage={filteredUsage}
+        details={filteredDetails}
         loading={loading}
         modelPrices={modelPrices}
         nowMs={nowMs}
@@ -308,7 +310,6 @@ export function UsagePage() {
         }}
       />
 
-      {/* Chart Line Selection */}
       <ChartLineSelector
         chartLines={chartLines}
         modelNames={modelNames}
@@ -316,10 +317,8 @@ export function UsagePage() {
         onChange={handleChartLinesChange}
       />
 
-      {/* Service Health */}
-      <ServiceHealthCard usage={usage} loading={loading} />
+      <ServiceHealthCard details={filteredDetails} loading={loading} />
 
-      {/* Charts Grid */}
       <div className={styles.chartsGrid}>
         <UsageChart
           title={t('usage_stats.requests_trend')}
@@ -343,13 +342,8 @@ export function UsagePage() {
         />
       </div>
 
-      {/* Token Distribution & Breakdown Charts */}
       <div className={styles.chartsGrid}>
-        <TokenDistributionChart
-          usage={filteredUsage}
-          loading={loading}
-          isDark={isDark}
-        />
+        <TokenDistributionChart distribution={tokenDistribution} loading={loading} isDark={isDark} />
         <TokenBreakdownChart
           usage={filteredUsage}
           loading={loading}
@@ -359,7 +353,6 @@ export function UsagePage() {
         />
       </div>
 
-      {/* Cost Trend Chart */}
       <CostTrendChart
         usage={filteredUsage}
         loading={loading}
@@ -369,34 +362,15 @@ export function UsagePage() {
         hourWindowHours={hourWindowHours}
       />
 
-      {/* Details Grid */}
       <div className={styles.detailsGrid}>
         <ApiDetailsCard apiStats={apiStats} loading={loading} hasPrices={hasPrices} />
         <ModelStatsCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
       </div>
 
-      <RequestEventsDetailsCard
-        usage={filteredUsage}
-        loading={loading}
-        geminiKeys={config?.geminiApiKeys || []}
-        claudeConfigs={config?.claudeApiKeys || []}
-        codexConfigs={config?.codexApiKeys || []}
-        vertexConfigs={config?.vertexApiKeys || []}
-        openaiProviders={config?.openaiCompatibility || []}
-      />
+      <RequestEventsDetailsCard rows={requestEventRows} loading={loading} />
 
-      {/* Credential Stats */}
-      <CredentialStatsCard
-        usage={filteredUsage}
-        loading={loading}
-        geminiKeys={config?.geminiApiKeys || []}
-        claudeConfigs={config?.claudeApiKeys || []}
-        codexConfigs={config?.codexApiKeys || []}
-        vertexConfigs={config?.vertexApiKeys || []}
-        openaiProviders={config?.openaiCompatibility || []}
-      />
+      <CredentialStatsCard rows={credentialRows} loading={loading} />
 
-      {/* Price Settings */}
       <PriceSettingsCard
         modelNames={modelNames}
         modelPrices={modelPrices}

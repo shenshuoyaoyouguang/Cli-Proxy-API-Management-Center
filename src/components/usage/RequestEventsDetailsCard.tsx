@@ -1,58 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Select } from '@/components/ui/Select';
-import { authFilesApi } from '@/services/api/authFiles';
-import type { GeminiKeyConfig, ProviderKeyConfig, OpenAIProviderConfig } from '@/types';
-import type { AuthFileItem } from '@/types/authFile';
-import type { CredentialInfo } from '@/types/sourceInfo';
-import { buildSourceInfoMap, resolveSourceDisplay } from '@/utils/sourceResolver';
-import {
-  collectUsageDetails,
-  extractTotalTokens,
-  normalizeAuthIndex
-} from '@/utils/usage';
 import { downloadBlob } from '@/utils/download';
+import type { RequestEventRow } from './hooks/usageAnalyticsSnapshot';
 import styles from '@/pages/UsagePage.module.scss';
 
 const ALL_FILTER = '__all__';
-const MAX_RENDERED_EVENTS = 500;
-
-type RequestEventRow = {
-  id: string;
-  timestamp: string;
-  timestampMs: number;
-  timestampLabel: string;
-  model: string;
-  sourceRaw: string;
-  source: string;
-  sourceType: string;
-  authIndex: string;
-  failed: boolean;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cachedTokens: number;
-  totalTokens: number;
-};
+const REQUEST_EVENTS_PAGE_SIZE = 100;
 
 export interface RequestEventsDetailsCardProps {
-  usage: unknown;
+  rows: RequestEventRow[];
   loading: boolean;
-  geminiKeys: GeminiKeyConfig[];
-  claudeConfigs: ProviderKeyConfig[];
-  codexConfigs: ProviderKeyConfig[];
-  vertexConfigs: ProviderKeyConfig[];
-  openaiProviders: OpenAIProviderConfig[];
 }
-
-const toNumber = (value: unknown): number => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return parsed;
-};
 
 const encodeCsv = (value: string | number): string => {
   const text = String(value ?? '');
@@ -61,112 +23,28 @@ const encodeCsv = (value: string | number): string => {
   return `"${safeText.replace(/"/g, '""')}"`;
 };
 
-export function RequestEventsDetailsCard({
-  usage,
-  loading,
-  geminiKeys,
-  claudeConfigs,
-  codexConfigs,
-  vertexConfigs,
-  openaiProviders
-}: RequestEventsDetailsCardProps) {
-  const { t, i18n } = useTranslation();
+export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetailsCardProps) {
+  const { t } = useTranslation();
 
   const [modelFilter, setModelFilter] = useState(ALL_FILTER);
   const [sourceFilter, setSourceFilter] = useState(ALL_FILTER);
   const [authIndexFilter, setAuthIndexFilter] = useState(ALL_FILTER);
-  const [authFileMap, setAuthFileMap] = useState<Map<string, CredentialInfo>>(new Map());
+  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    let cancelled = false;
-    authFilesApi
-      .list()
-      .then((res) => {
-        if (cancelled) return;
-        const files = Array.isArray(res) ? res : (res as { files?: AuthFileItem[] })?.files;
-        if (!Array.isArray(files)) return;
-        const map = new Map<string, CredentialInfo>();
-        files.forEach((file) => {
-          const key = normalizeAuthIndex(file['auth_index'] ?? file.authIndex);
-          if (!key) return;
-          map.set(key, {
-            name: file.name || key,
-            type: (file.type || file.provider || '').toString()
-          });
-        });
-        setAuthFileMap(map);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const handleModelFilterChange = (value: string) => {
+    setModelFilter(value);
+    setPage(1);
+  };
 
-  const sourceInfoMap = useMemo(
-    () =>
-      buildSourceInfoMap({
-        geminiApiKeys: geminiKeys,
-        claudeApiKeys: claudeConfigs,
-        codexApiKeys: codexConfigs,
-        vertexApiKeys: vertexConfigs,
-        openaiCompatibility: openaiProviders,
-      }),
-    [claudeConfigs, codexConfigs, geminiKeys, openaiProviders, vertexConfigs]
-  );
+  const handleSourceFilterChange = (value: string) => {
+    setSourceFilter(value);
+    setPage(1);
+  };
 
-  const rows = useMemo<RequestEventRow[]>(() => {
-    const details = collectUsageDetails(usage);
-
-    return details
-      .map((detail, index) => {
-        const timestamp = detail.timestamp;
-        const timestampMs =
-          typeof detail.__timestampMs === 'number' && detail.__timestampMs > 0
-            ? detail.__timestampMs
-            : Date.parse(timestamp);
-        const date = Number.isNaN(timestampMs) ? null : new Date(timestampMs);
-        const sourceRaw = String(detail.source ?? '').trim();
-        const authIndexRaw = detail.auth_index as unknown;
-        const authIndex =
-          authIndexRaw === null || authIndexRaw === undefined || authIndexRaw === ''
-            ? '-'
-            : String(authIndexRaw);
-        const sourceInfo = resolveSourceDisplay(sourceRaw, authIndexRaw, sourceInfoMap, authFileMap);
-        const source = sourceInfo.displayName;
-        const sourceType = sourceInfo.type;
-        const model = String(detail.__modelName ?? '').trim() || '-';
-        const inputTokens = Math.max(toNumber(detail.tokens?.input_tokens), 0);
-        const outputTokens = Math.max(toNumber(detail.tokens?.output_tokens), 0);
-        const reasoningTokens = Math.max(toNumber(detail.tokens?.reasoning_tokens), 0);
-        const cachedTokens = Math.max(
-          Math.max(toNumber(detail.tokens?.cached_tokens), 0),
-          Math.max(toNumber(detail.tokens?.cache_tokens), 0)
-        );
-        const totalTokens = Math.max(
-          toNumber(detail.tokens?.total_tokens),
-          extractTotalTokens(detail)
-        );
-
-        return {
-          id: `${timestamp}-${model}-${sourceRaw || source}-${authIndex}-${index}`,
-          timestamp,
-          timestampMs: Number.isNaN(timestampMs) ? 0 : timestampMs,
-          timestampLabel: date ? date.toLocaleString(i18n.language) : timestamp || '-',
-          model,
-          sourceRaw: sourceRaw || '-',
-          source,
-          sourceType,
-          authIndex,
-          failed: detail.failed === true,
-          inputTokens,
-          outputTokens,
-          reasoningTokens,
-          cachedTokens,
-          totalTokens
-        };
-      })
-      .sort((a, b) => b.timestampMs - a.timestampMs);
-  }, [authFileMap, i18n.language, sourceInfoMap, usage]);
+  const handleAuthIndexFilterChange = (value: string) => {
+    setAuthIndexFilter(value);
+    setPage(1);
+  };
 
   const modelOptions = useMemo(
     () => [
@@ -201,14 +79,8 @@ export function RequestEventsDetailsCard({
     [rows, t]
   );
 
-  const modelOptionSet = useMemo(
-    () => new Set(modelOptions.map((option) => option.value)),
-    [modelOptions]
-  );
-  const sourceOptionSet = useMemo(
-    () => new Set(sourceOptions.map((option) => option.value)),
-    [sourceOptions]
-  );
+  const modelOptionSet = useMemo(() => new Set(modelOptions.map((option) => option.value)), [modelOptions]);
+  const sourceOptionSet = useMemo(() => new Set(sourceOptions.map((option) => option.value)), [sourceOptions]);
   const authIndexOptionSet = useMemo(
     () => new Set(authIndexOptions.map((option) => option.value)),
     [authIndexOptions]
@@ -232,10 +104,14 @@ export function RequestEventsDetailsCard({
     [effectiveAuthIndexFilter, effectiveModelFilter, effectiveSourceFilter, rows]
   );
 
-  const renderedRows = useMemo(
-    () => filteredRows.slice(0, MAX_RENDERED_EVENTS),
-    [filteredRows]
-  );
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / REQUEST_EVENTS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+
+  const renderedRows = useMemo(() => {
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * REQUEST_EVENTS_PAGE_SIZE;
+    return filteredRows.slice(start, start + REQUEST_EVENTS_PAGE_SIZE);
+  }, [filteredRows, page, totalPages]);
 
   const hasActiveFilters =
     effectiveModelFilter !== ALL_FILTER ||
@@ -246,6 +122,7 @@ export function RequestEventsDetailsCard({
     setModelFilter(ALL_FILTER);
     setSourceFilter(ALL_FILTER);
     setAuthIndexFilter(ALL_FILTER);
+    setPage(1);
   };
 
   const handleExportCsv = () => {
@@ -323,28 +200,13 @@ export function RequestEventsDetailsCard({
       title={t('usage_stats.request_events_title')}
       extra={
         <div className={styles.requestEventsActions}>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClearFilters}
-            disabled={!hasActiveFilters}
-          >
+          <Button variant="ghost" size="sm" onClick={handleClearFilters} disabled={!hasActiveFilters}>
             {t('usage_stats.clear_filters')}
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleExportCsv}
-            disabled={filteredRows.length === 0}
-          >
+          <Button variant="secondary" size="sm" onClick={handleExportCsv} disabled={filteredRows.length === 0}>
             {t('usage_stats.export_csv')}
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleExportJson}
-            disabled={filteredRows.length === 0}
-          >
+          <Button variant="secondary" size="sm" onClick={handleExportJson} disabled={filteredRows.length === 0}>
             {t('usage_stats.export_json')}
           </Button>
         </div>
@@ -358,7 +220,7 @@ export function RequestEventsDetailsCard({
           <Select
             value={effectiveModelFilter}
             options={modelOptions}
-            onChange={setModelFilter}
+            onChange={handleModelFilterChange}
             className={styles.requestEventsSelect}
             ariaLabel={t('usage_stats.request_events_filter_model')}
             fullWidth={false}
@@ -371,7 +233,7 @@ export function RequestEventsDetailsCard({
           <Select
             value={effectiveSourceFilter}
             options={sourceOptions}
-            onChange={setSourceFilter}
+            onChange={handleSourceFilterChange}
             className={styles.requestEventsSelect}
             ariaLabel={t('usage_stats.request_events_filter_source')}
             fullWidth={false}
@@ -384,7 +246,7 @@ export function RequestEventsDetailsCard({
           <Select
             value={effectiveAuthIndexFilter}
             options={authIndexOptions}
-            onChange={setAuthIndexFilter}
+            onChange={handleAuthIndexFilterChange}
             className={styles.requestEventsSelect}
             ariaLabel={t('usage_stats.request_events_filter_auth_index')}
             fullWidth={false}
@@ -408,15 +270,34 @@ export function RequestEventsDetailsCard({
         <>
           <div className={styles.requestEventsMeta}>
             <span>{t('usage_stats.request_events_count', { count: filteredRows.length })}</span>
-            {filteredRows.length > MAX_RENDERED_EVENTS && (
+            {filteredRows.length > REQUEST_EVENTS_PAGE_SIZE && (
               <span className={styles.requestEventsLimitHint}>
-                {t('usage_stats.request_events_limit_hint', {
-                  shown: MAX_RENDERED_EVENTS,
-                  total: filteredRows.length
-                })}
+                {currentPage}/{totalPages}
               </span>
             )}
           </div>
+
+          {filteredRows.length > REQUEST_EVENTS_PAGE_SIZE && (
+            <div className={styles.requestEventsPagination}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage <= 1}
+              >
+                {t('auth_files.pagination_prev')}
+              </Button>
+              <span className={styles.requestEventsPaginationInfo}>{currentPage}/{totalPages}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages}
+              >
+                {t('auth_files.pagination_next')}
+              </Button>
+            </div>
+          )}
 
           <div className={styles.requestEventsTableWrapper}>
             <table className={styles.table}>
@@ -443,9 +324,7 @@ export function RequestEventsDetailsCard({
                     <td className={styles.modelCell}>{row.model}</td>
                     <td className={styles.requestEventsSourceCell} title={row.source}>
                       <span>{row.source}</span>
-                      {row.sourceType && (
-                        <span className={styles.credentialType}>{row.sourceType}</span>
-                      )}
+                      {row.sourceType && <span className={styles.credentialType}>{row.sourceType}</span>}
                     </td>
                     <td className={styles.requestEventsAuthIndex} title={row.authIndex}>
                       {row.authIndex}

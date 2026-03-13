@@ -6,7 +6,6 @@ import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber
 import {
   formatCompactNumber,
   calculateCost,
-  collectUsageDetails,
   extractTotalTokens,
   type ModelPrice,
   type UsageDetail
@@ -39,8 +38,34 @@ interface StatCardData {
   enhanced?: boolean;
 }
 
+interface StatCardsSummary {
+  tokenBreakdown: {
+    cachedTokens: number;
+    reasoningTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+  };
+  rateStats: {
+    rpm: number;
+    tpm: number;
+    windowMinutes: number;
+    requestCount: number;
+    tokenCount: number;
+    peakRpm: number;
+    peakTpm: number;
+  };
+  totalCost: number;
+  tokenEfficiency: {
+    cacheHitRate: number;
+    outputEfficiency: number;
+    costEfficiency: number;
+  };
+  details: UsageDetail[];
+}
+
 export interface StatCardsProps {
   usage: UsagePayload | null;
+  details: UsageDetail[];
   loading: boolean;
   modelPrices: Record<string, ModelPrice>;
   nowMs: number;
@@ -54,12 +79,26 @@ export interface StatCardsProps {
   subscriptionTier?: SubscriptionTier;
 }
 
-export function StatCards({ usage, loading, modelPrices, nowMs, sparklines, subscriptionTier = 'pro' }: StatCardsProps) {
+export function StatCards({
+  usage,
+  details: usageDetails,
+  loading,
+  modelPrices,
+  nowMs,
+  sparklines,
+  subscriptionTier = 'pro'
+}: StatCardsProps) {
   const { t } = useTranslation();
 
   const hasPrices = Object.keys(modelPrices).length > 0;
 
-  const { tokenBreakdown, rateStats, totalCost, tokenEfficiency, details } = useMemo(() => {
+  const {
+    tokenBreakdown,
+    rateStats,
+    totalCost,
+    tokenEfficiency,
+    details: computedDetails
+  } = useMemo<StatCardsSummary>(() => {
     const empty = {
       tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0, inputTokens: 0, outputTokens: 0 },
       rateStats: { rpm: 0, tpm: 0, windowMinutes: 30, requestCount: 0, tokenCount: 0, peakRpm: 0, peakTpm: 0 },
@@ -69,8 +108,7 @@ export function StatCards({ usage, loading, modelPrices, nowMs, sparklines, subs
     };
 
     if (!usage) return empty;
-    const details = collectUsageDetails(usage);
-    if (!details.length) return { ...empty, details };
+    if (!usageDetails.length) return { ...empty, details: usageDetails };
 
     let cachedTokens = 0;
     let reasoningTokens = 0;
@@ -88,7 +126,7 @@ export function StatCards({ usage, loading, modelPrices, nowMs, sparklines, subs
     // 用于计算峰值速率
     const minuteBuckets = new Map<number, { requests: number; tokens: number }>();
 
-    details.forEach((detail) => {
+    usageDetails.forEach((detail) => {
       const tokens = detail.tokens;
       const cached = Math.max(
         typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
@@ -156,9 +194,9 @@ export function StatCards({ usage, loading, modelPrices, nowMs, sparklines, subs
       },
       totalCost,
       tokenEfficiency: { cacheHitRate, outputEfficiency, costEfficiency },
-      details
+      details: usageDetails
     };
-  }, [hasPrices, modelPrices, nowMs, usage]);
+  }, [hasPrices, modelPrices, nowMs, usage, usageDetails]);
 
   const statsCards: StatCardData[] = [
     {
@@ -390,7 +428,7 @@ export function StatCards({ usage, loading, modelPrices, nowMs, sparklines, subs
       <HealthScoreCard
         successCount={usage?.success_count ?? 0}
         failureCount={usage?.failure_count ?? 0}
-        details={details}
+        details={computedDetails}
         loading={loading}
       />
 
@@ -398,7 +436,7 @@ export function StatCards({ usage, loading, modelPrices, nowMs, sparklines, subs
         tier={subscriptionTier}
         successCount={usage?.success_count ?? 0}
         failureCount={usage?.failure_count ?? 0}
-        details={details}
+        details={computedDetails}
         loading={loading}
       />
     </div>

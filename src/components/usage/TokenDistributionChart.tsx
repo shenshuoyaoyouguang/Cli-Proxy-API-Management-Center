@@ -3,12 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Doughnut } from 'react-chartjs-2';
 import { Card } from '@/components/ui/Card';
 import { TokenNumber } from '@/components/ui/SmartNumber';
-import { collectUsageDetails } from '@/utils/usage';
-import type { UsagePayload } from './hooks/useUsageData';
+import type { TokenDistribution } from './hooks/usageAnalyticsSnapshot';
 import styles from './TokenDistributionChart.module.scss';
 
 export interface TokenDistributionChartProps {
-  usage: UsagePayload | null;
+  distribution: TokenDistribution;
   loading: boolean;
   isDark: boolean;
 }
@@ -19,13 +18,6 @@ interface TooltipContext {
   parsed: unknown;
 }
 
-interface TokenDistribution {
-  input: number;
-  output: number;
-  cached: number;
-  reasoning: number;
-}
-
 const TOKEN_COLORS = {
   input: { border: '#8b8680', bg: 'rgba(139, 134, 128, 0.8)' },
   output: { border: '#22c55e', bg: 'rgba(34, 197, 94, 0.8)' },
@@ -33,31 +25,12 @@ const TOKEN_COLORS = {
   reasoning: { border: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.8)' }
 };
 
-export function TokenDistributionChart({ usage, loading, isDark }: TokenDistributionChartProps) {
+export function TokenDistributionChart({
+  distribution,
+  loading,
+  isDark
+}: TokenDistributionChartProps) {
   const { t } = useTranslation();
-
-  const distribution = useMemo<TokenDistribution>(() => {
-    if (!usage) return { input: 0, output: 0, cached: 0, reasoning: 0 };
-    const details = collectUsageDetails(usage);
-
-    let input = 0;
-    let output = 0;
-    let cached = 0;
-    let reasoning = 0;
-
-    details.forEach((detail) => {
-      const tokens = detail.tokens;
-      input += typeof tokens.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
-      output += typeof tokens.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
-      cached += Math.max(
-        typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-        typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
-      );
-      reasoning += typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
-    });
-
-    return { input, output, cached, reasoning };
-  }, [usage]);
 
   const total = distribution.input + distribution.output + distribution.cached + distribution.reasoning;
 

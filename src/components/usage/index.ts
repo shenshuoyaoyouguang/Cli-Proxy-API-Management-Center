@@ -2,11 +2,23 @@
 export { useUsageData } from './hooks/useUsageData';
 export type { UsagePayload, UseUsageDataReturn } from './hooks/useUsageData';
 
+export { useAuthFilesMap } from './hooks/useAuthFilesMap';
+export type { UseAuthFilesMapReturn } from './hooks/useAuthFilesMap';
+
 export { useSparklines } from './hooks/useSparklines';
 export type { SparklineData, SparklineBundle, UseSparklinesOptions, UseSparklinesReturn } from './hooks/useSparklines';
 
 export { useChartData } from './hooks/useChartData';
 export type { UseChartDataOptions, UseChartDataReturn } from './hooks/useChartData';
+
+export { useUsageAnalyticsSnapshot } from './hooks/useUsageAnalyticsSnapshot';
+export type { UseUsageAnalyticsSnapshotOptions, UseUsageAnalyticsSnapshotReturn } from './hooks/useUsageAnalyticsSnapshot';
+
+export type {
+  CredentialRow,
+  RequestEventRow,
+  TokenDistribution
+} from './hooks/usageAnalyticsSnapshot';
 
 // Components
 export { StatCards } from './StatCards';

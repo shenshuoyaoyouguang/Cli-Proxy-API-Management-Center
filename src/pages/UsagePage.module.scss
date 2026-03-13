@@ -906,6 +906,22 @@
   color: var(--text-tertiary);
 }
 
+.requestEventsPagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: $spacing-xs;
+  margin-bottom: $spacing-sm;
+}
+
+.requestEventsPaginationInfo {
+  min-width: 48px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 .requestEventsTableWrapper {
   overflow: auto;
   max-height: 460px;

@@ -122,32 +122,44 @@ function calculateResponsivenessScore(
 ): MetricScore {
   const now = Date.now();
   const windowStart = now - windowMs;
-  
-  const hourBuckets = new Map<number, number>();
-  
+
+  const modelBuckets = new Map<string, { success: number; failure: number }>();
+
   details.forEach((detail) => {
     const timestamp = detail.__timestampMs ?? Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) return;
-    
-    const hourKey = Math.floor(timestamp / (60 * 60 * 1000));
-    hourBuckets.set(hourKey, (hourBuckets.get(hourKey) ?? 0) + 1);
+
+    const modelName = detail.__modelName ?? 'unknown';
+
+    const existing = modelBuckets.get(modelName);
+    if (existing) {
+      const updated = {
+        success: existing.success + (detail.failed ? 0 : 1),
+        failure: existing.failure + (detail.failed ? 1 : 0)
+      };
+      modelBuckets.set(modelName, updated);
+    } else {
+      modelBuckets.set(modelName, { success: detail.failed ? 0 : 1, failure: detail.failed ? 1 : 0 });
+    }
   });
-  
-  if (hourBuckets.size < 2) {
+
+  if (modelBuckets.size === 0) {
     return { value: 1, score: 100, grade: 'excellent' };
   }
-  
-  const counts = Array.from(hourBuckets.values());
-  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
-  const variance = counts.reduce((sum, c) => sum + Math.pow(c - mean, 2), 0) / counts.length;
-  const stdDev = Math.sqrt(variance);
-  const cv = mean > 0 ? stdDev / mean : 0;
-  
-  const responsivenessValue = Math.max(0, 1 - cv);
-  const score = Math.round(responsivenessValue * 100);
-  
+
+  const modelSuccessRates: number[] = [];
+
+  modelBuckets.forEach((bucket) => {
+    const modelTotal = bucket.success + bucket.failure;
+    const successRate = modelTotal > 0 ? bucket.success / modelTotal : 1;
+    modelSuccessRates.push(successRate);
+  });
+
+  const avgSuccessRate = modelSuccessRates.reduce((a, b) => a + b, 0) / modelSuccessRates.length;
+  const score = Math.round(avgSuccessRate * 100);
+
   return {
-    value: responsivenessValue,
+    value: avgSuccessRate,
     score,
     grade: getGrade(score)
   };

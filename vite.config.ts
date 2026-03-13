@@ -51,6 +51,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src')
     }
   },
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['src/**/*.{test,spec}.ts']
+  },
   css: {
     modules: {
       localsConvention: 'camelCase',

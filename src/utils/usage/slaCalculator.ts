@@ -128,37 +128,52 @@ function calculateAvailability(
 ): number {
   const now = Date.now();
   const windowStart = now - windowMs;
-  
-  let totalMinutes = 0;
-  let downMinutes = 0;
-  
-  const minuteBuckets = new Map<number, { success: number; failure: number }>();
-  
+
+  const buckets = new Map<number, Map<string, { success: number; failure: number }>>();
+
   details.forEach((detail) => {
     const timestamp = detail.__timestampMs ?? Date.parse(detail.timestamp);
     if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) return;
-    
+
     const minuteKey = Math.floor(timestamp / 60000);
-    const existing = minuteBuckets.get(minuteKey) ?? { success: 0, failure: 0 };
-    if (detail.failed) {
-      existing.failure++;
+    const modelName = detail.__modelName ?? 'unknown';
+
+    const minuteBuckets = buckets.get(minuteKey);
+    if (!minuteBuckets) {
+      const newMinuteBuckets = new Map<string, { success: number; failure: number }>();
+      newMinuteBuckets.set(modelName, { success: detail.failed ? 0 : 1, failure: detail.failed ? 1 : 0 });
+      buckets.set(minuteKey, newMinuteBuckets);
     } else {
-      existing.success++;
+      const existing = minuteBuckets.get(modelName);
+      if (existing) {
+        const updated = {
+          success: existing.success + (detail.failed ? 0 : 1),
+          failure: existing.failure + (detail.failed ? 1 : 0)
+        };
+        minuteBuckets.set(modelName, updated);
+      } else {
+        minuteBuckets.set(modelName, { success: detail.failed ? 0 : 1, failure: detail.failed ? 1 : 0 });
+      }
     }
-    minuteBuckets.set(minuteKey, existing);
   });
-  
-  minuteBuckets.forEach((bucket) => {
-    totalMinutes++;
-    const totalRequests = bucket.success + bucket.failure;
-    const successRate = totalRequests > 0 ? bucket.success / totalRequests : 1;
-    if (successRate < MINUTE_AVAILABILITY_SUCCESS_RATE_THRESHOLD) {
-      downMinutes++;
-    }
+
+  let totalWeight = 0;
+  let downWeight = 0;
+
+  buckets.forEach((minuteBuckets) => {
+    minuteBuckets.forEach((bucket) => {
+      const modelTotal = bucket.success + bucket.failure;
+      totalWeight += modelTotal;
+
+      const successRate = modelTotal > 0 ? bucket.success / modelTotal : 1;
+      if (successRate <= MINUTE_AVAILABILITY_SUCCESS_RATE_THRESHOLD) {
+        downWeight += modelTotal;
+      }
+    });
   });
-  
-  if (totalMinutes === 0) return 1;
-  return (totalMinutes - downMinutes) / totalMinutes;
+
+  if (totalWeight === 0) return 1;
+  return 1 - (downWeight / totalWeight);
 }
 
 function calculateSuccessRate(successCount: number, failureCount: number): number {

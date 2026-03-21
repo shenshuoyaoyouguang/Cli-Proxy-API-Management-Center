@@ -28,6 +28,8 @@ export type {
   UseUsageReliabilitySnapshotReturn
 } from './hooks/useUsageReliabilitySnapshot';
 
+export { useUsageSubscriptionTier } from './hooks/useUsageSubscriptionTier';
+
 export type {
   CredentialEfficiencyRow,
   CredentialRow,

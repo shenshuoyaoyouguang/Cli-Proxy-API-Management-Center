@@ -39,6 +39,7 @@ import {
   useChartData,
   useUsageAnalyticsSnapshot,
   useUsageReliabilitySnapshot,
+  useUsageSubscriptionTier,
   type EfficiencyDrilldown
 } from '@/components/usage';
 import { type UsageTimeRange } from '@/utils/usage';
@@ -73,7 +74,6 @@ const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> 
   '24h': 24,
   '7d': 7 * 24
 };
-const DEFAULT_SUBSCRIPTION_TIER: SubscriptionTier = 'pro';
 const SERVICE_HEALTH_SECTION_ID = 'usage-service-health-card';
 const REQUEST_EVENTS_SECTION_ID = 'usage-request-events-card';
 
@@ -145,7 +145,7 @@ export function UsagePage() {
     importing
   } = useUsageData();
 
-  const { authFileMap } = useAuthFilesMap();
+  const { authFileMap, authFiles } = useAuthFilesMap();
 
   useHeaderRefresh(loadUsage);
 
@@ -229,9 +229,11 @@ export function UsagePage() {
     costSparkline
   } = useSparklines({ usage: filteredUsage, loading, nowMs });
 
+  const subscriptionTier: SubscriptionTier = useUsageSubscriptionTier(authFiles);
+
   const { healthAssessment, slaAssessment, serviceHealth } = useUsageReliabilitySnapshot({
     usageDetails,
-    tier: DEFAULT_SUBSCRIPTION_TIER,
+    tier: subscriptionTier,
     nowMs
   });
 

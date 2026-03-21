@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
-import { IconDollarSign, IconTarget, IconTrendingUp, IconZap } from '@/components/ui/icons';
+import { IconDollarSign, IconExternalLink, IconTarget, IconTrendingUp, IconZap } from '@/components/ui/icons';
 import { formatPercent } from '@/utils/numberFormat';
 import { formatCompactNumber } from '@/utils/usage';
 import type {
@@ -68,6 +68,23 @@ export function TokenEfficiencyCenter({
       .slice(0, 3);
   }, [overview.signals]);
 
+  const rankingHint = (
+    <span className={styles.tokenEfficiencyTableHint}>
+      <IconExternalLink size={14} />
+      {t('usage_stats.drilldown_hint')}
+    </span>
+  );
+
+  const handleRowKeyDown = (
+    event: KeyboardEvent<HTMLTableRowElement>,
+    drilldown: EfficiencyDrilldown
+  ) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onDrilldownChange(drilldown);
+    }
+  };
+
   const topModelRows = modelRows.slice(0, 5);
   const topCredentialRows = credentialRows.slice(0, 5);
 
@@ -92,6 +109,7 @@ export function TokenEfficiencyCenter({
                 {t('usage_stats.request_events_count', { count: overview.requestCount })} ·{' '}
                 {t('usage_stats.total_tokens')}: {formatCompactNumber(overview.totalTokens)}
               </div>
+              <div className={styles.tokenEfficiencyHint}>{t('usage_stats.drilldown_hint')}</div>
             </div>
             <div className={styles.tokenEfficiencySignals}>
               {topSignals.map((signal) => (
@@ -140,7 +158,7 @@ export function TokenEfficiencyCenter({
       </Card>
 
       <div className={styles.detailsGrid}>
-        <Card title={t('usage_stats.model_efficiency_ranking')} className={styles.detailsFixedCard}>
+        <Card title={t('usage_stats.model_efficiency_ranking')} extra={rankingHint} className={styles.detailsFixedCard}>
           {topModelRows.length > 0 ? (
             <div className={styles.detailsScroll}>
               <div className={styles.tableWrapper}>
@@ -159,11 +177,20 @@ export function TokenEfficiencyCenter({
                         key={row.model}
                         className={styles.tokenEfficiencyClickableRow}
                         onClick={() => onDrilldownChange({ type: 'model', value: row.model })}
+                        onKeyDown={(event) => handleRowKeyDown(event, { type: 'model', value: row.model })}
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`${row.model} ${t('usage_stats.view_details')}`}
                       >
                         <td className={styles.modelCell}>{row.model}</td>
                         <td>{row.requests.toLocaleString()}</td>
                         <td>{formatPercent(row.failureWasteRate)}</td>
-                        <td className={getScoreTone(row.efficiencyScore)}>{row.efficiencyScore}</td>
+                        <td>
+                          <div className={styles.tokenEfficiencyScoreCell}>
+                            <span className={getScoreTone(row.efficiencyScore)}>{row.efficiencyScore}</span>
+                            <span className={styles.tokenEfficiencyAction}>{t('usage_stats.view_details')}</span>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -175,7 +202,7 @@ export function TokenEfficiencyCenter({
           )}
         </Card>
 
-        <Card title={t('usage_stats.credential_efficiency_ranking')} className={styles.detailsFixedCard}>
+        <Card title={t('usage_stats.credential_efficiency_ranking')} extra={rankingHint} className={styles.detailsFixedCard}>
           {topCredentialRows.length > 0 ? (
             <div className={styles.detailsScroll}>
               <div className={styles.tableWrapper}>
@@ -203,6 +230,19 @@ export function TokenEfficiencyCenter({
                             })
                           })
                         }
+                        onKeyDown={(event) =>
+                          handleRowKeyDown(event, {
+                            type: 'credential',
+                            value: JSON.stringify({
+                              source: row.filterSourceRaw,
+                              authIndex: row.filterAuthIndex,
+                              fallbackSource: row.filterSource
+                            })
+                          })
+                        }
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`${row.displayName} ${t('usage_stats.view_details')}`}
                       >
                         <td className={styles.modelCell}>
                           <span>{row.displayName}</span>
@@ -210,7 +250,12 @@ export function TokenEfficiencyCenter({
                         </td>
                         <td>{row.requests.toLocaleString()}</td>
                         <td>{formatPercent(row.failureWasteRate)}</td>
-                        <td className={getScoreTone(row.efficiencyScore)}>{row.efficiencyScore}</td>
+                        <td>
+                          <div className={styles.tokenEfficiencyScoreCell}>
+                            <span className={getScoreTone(row.efficiencyScore)}>{row.efficiencyScore}</span>
+                            <span className={styles.tokenEfficiencyAction}>{t('usage_stats.view_details')}</span>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

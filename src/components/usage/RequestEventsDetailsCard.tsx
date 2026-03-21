@@ -216,6 +216,26 @@ export function RequestEventsDetailsCard({
     effectiveAuthIndexFilter !== ALL_FILTER ||
     externalSourceRawFilter !== null;
 
+  const hasExternalDrilldown =
+    externalModelFilter !== null ||
+    externalSourceFilter !== null ||
+    externalAuthIndexFilter !== null ||
+    externalResultFilter !== null ||
+    externalSourceRawFilter !== null;
+
+  const drilldownLabels = [
+    externalModelFilter ? `${t('usage_stats.request_events_filter_model')}: ${externalModelFilter}` : null,
+    externalSourceFilter ? `${t('usage_stats.request_events_filter_source')}: ${externalSourceFilter}` : null,
+    externalAuthIndexFilter
+      ? `${t('usage_stats.request_events_filter_auth_index')}: ${externalAuthIndexFilter}`
+      : null,
+    externalResultFilter
+      ? `${t('usage_stats.request_events_result')}: ${
+          externalResultFilter === 'failure' ? t('stats.failure') : t('stats.success')
+        }`
+      : null
+  ].filter((value): value is string => Boolean(value));
+
   const handleClearFilters = () => {
     setModelFilter(ALL_FILTER);
     setSourceFilter(ALL_FILTER);
@@ -312,6 +332,26 @@ export function RequestEventsDetailsCard({
         </div>
       }
     >
+      {hasExternalDrilldown && (
+        <div className={styles.requestEventsDrilldownBanner}>
+          <div className={styles.requestEventsDrilldownInfo}>
+            <span className={styles.requestEventsDrilldownText}>{t('usage_stats.drilldown_active')}</span>
+            {drilldownLabels.length > 0 && (
+              <div className={styles.requestEventsDrilldownChips}>
+                {drilldownLabels.map((label) => (
+                  <span key={label} className={styles.requestEventsDrilldownChip}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <Button variant="ghost" size="sm" onClick={handleClearFilters}>
+            {t('usage_stats.clear_filters')}
+          </Button>
+        </div>
+      )}
+
       <div className={styles.requestEventsToolbar}>
         <div className={styles.requestEventsFilterItem}>
           <span className={styles.requestEventsFilterLabel}>

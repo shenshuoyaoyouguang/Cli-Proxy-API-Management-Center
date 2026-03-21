@@ -40,7 +40,7 @@ const createDetail = (params: {
   };
 };
 
-describe('calculateHealthScore responsiveness', () => {
+describe('calculateHealthScore', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(baseNow);
@@ -50,39 +50,70 @@ describe('calculateHealthScore responsiveness', () => {
     vi.useRealTimers();
   });
 
-  it('averages model success rates without weighting', () => {
+  it('marks low-sample stability as unknown while still computing recent health', () => {
     const details = [
       createDetail({ minutesAgo: 10, modelName: 'model-a', failed: false }),
-      createDetail({ minutesAgo: 10, modelName: 'model-a', failed: false }),
-      createDetail({ minutesAgo: 10, modelName: 'model-a', failed: true }),
-      createDetail({ minutesAgo: 10, modelName: 'model-b', failed: false })
+      createDetail({ minutesAgo: 9, modelName: 'model-a', failed: false }),
+      createDetail({ minutesAgo: 8, modelName: 'model-a', failed: true }),
+      createDetail({ minutesAgo: 7, modelName: 'model-b', failed: false })
     ];
 
-    const health = calculateHealthScore(3, 1, details);
+    const health = calculateHealthScore(3, 1, details, baseNow);
 
-    // model-a success rate = 2/3, model-b success rate = 1
-    const expected = (2 / 3 + 1) / 2;
-    expect(health.metrics.responsiveness.value).toBeCloseTo(expected, 5);
+    expect(health.hasData).toBe(true);
+    expect(health.metrics.successRate.value).toBeCloseTo(0.75, 5);
+    expect(health.metrics.availability.value).not.toBeNull();
+    expect(health.metrics.stability.value).toBeNull();
+    expect(health.metrics.stability.dataQuality).toBe('low_sample');
+    expect(health.dataQuality).toBe('low_sample');
   });
 
-  it('returns perfect responsiveness when no model data in window', () => {
-    const details = [
-      createDetail({ minutesAgo: 99999, modelName: 'model-a', failed: true })
-    ];
+  it('returns excellent health for stable high availability traffic', () => {
+    const details = Array.from({ length: 24 }, (_, index) =>
+      createDetail({ minutesAgo: index * 60, modelName: 'model-a', failed: false })
+    );
 
-    const health = calculateHealthScore(1, 0, details);
-    expect(health.metrics.responsiveness.value).toBe(1);
+    const health = calculateHealthScore(24, 0, details, baseNow);
+
+    expect(health.hasData).toBe(true);
+    expect(health.grade).toBe('excellent');
+    expect(health.metrics.successRate.score).toBe(100);
+    expect(health.metrics.availability.score).toBe(100);
+    expect(health.metrics.stability.score).toBe(100);
   });
 
-  it('averages across models with empty names as unknown', () => {
-    const details = [
-      createDetail({ minutesAgo: 5, modelName: '', failed: false }),
-      createDetail({ minutesAgo: 5, modelName: 'model-b', failed: true })
-    ];
+  it('detects downward trend when the recent 7d segment degrades', () => {
+    const recentSegment = Array.from({ length: 24 }, (_, index) =>
+      createDetail({
+        minutesAgo: index,
+        modelName: 'model-a',
+        failed: index % 2 === 0
+      })
+    );
+    const previousSegment = Array.from({ length: 24 }, (_, index) =>
+      createDetail({
+        minutesAgo: 8 * 24 * 60 + index,
+        modelName: 'model-a',
+        failed: false
+      })
+    );
 
-    const health = calculateHealthScore(1, 1, details);
+    const health = calculateHealthScore(36, 12, [...recentSegment, ...previousSegment], baseNow);
 
-    // unknown model success rate = 1, model-b success rate = 0
-    expect(health.metrics.responsiveness.value).toBeCloseTo(0.5, 5);
+    expect(health.hasData).toBe(true);
+    expect(health.trend).toBe('down');
+    expect(health.dataQuality).toBe('ok');
+  });
+
+  it('returns unknown/empty states when no recent data exists', () => {
+    const details = [createDetail({ minutesAgo: 99999, modelName: 'model-a', failed: true })];
+
+    const health = calculateHealthScore(1, 0, details, baseNow);
+
+    expect(health.hasData).toBe(false);
+    expect(health.dataQuality).toBe('no_data');
+    expect(health.metrics.successRate.value).toBeNull();
+    expect(health.metrics.availability.value).toBeNull();
+    expect(health.grade).toBe('unknown');
   });
 });

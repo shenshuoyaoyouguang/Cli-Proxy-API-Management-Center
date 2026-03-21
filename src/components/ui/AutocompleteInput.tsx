@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { IconChevronDown } from './icons';
 
+type AutocompleteChangeMeta = {
+  reason: 'input' | 'select' | 'blur';
+};
+
 interface AutocompleteInputProps {
   label?: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, meta?: AutocompleteChangeMeta) => void;
   options: string[] | { value: string; label?: string }[];
   placeholder?: string;
   disabled?: boolean;
@@ -15,6 +19,7 @@ interface AutocompleteInputProps {
   wrapperStyle?: React.CSSProperties;
   id?: string;
   rightElement?: ReactNode;
+  confirmExactMatchOnBlur?: boolean;
 }
 
 export function AutocompleteInput({
@@ -30,7 +35,8 @@ export function AutocompleteInput({
   wrapperClassName = '',
   wrapperStyle,
   id,
-  rightElement
+  rightElement,
+  confirmExactMatchOnBlur = false
 }: AutocompleteInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -56,14 +62,23 @@ export function AutocompleteInput({
   }, []);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    onChange(e.target.value);
+    onChange(e.target.value, { reason: 'input' });
     setIsOpen(true);
     setHighlightedIndex(-1);
   };
 
   const handleSelect = (selectedValue: string) => {
-    onChange(selectedValue);
+    onChange(selectedValue, { reason: 'select' });
     setIsOpen(false);
+  };
+
+  const handleBlur = () => {
+    if (!confirmExactMatchOnBlur) return;
+
+    const exactMatch = normalizedOptions.find((opt) => opt.value === value);
+    if (exactMatch) {
+      onChange(exactMatch.value, { reason: 'blur' });
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -86,8 +101,13 @@ export function AutocompleteInput({
         e.preventDefault();
         handleSelect(filteredOptions[highlightedIndex].value);
       } else if (isOpen) {
-          e.preventDefault();
+        e.preventDefault();
+        const exactMatch = normalizedOptions.find((opt) => opt.value === value);
+        if (exactMatch) {
+          handleSelect(exactMatch.value);
+        } else {
           setIsOpen(false);
+        }
       }
     } else if (e.key === 'Escape') {
       setIsOpen(false);
@@ -100,12 +120,13 @@ export function AutocompleteInput({
     <div className={`form-group ${wrapperClassName}`} ref={containerRef} style={wrapperStyle}>
       {label && <label htmlFor={id}>{label}</label>}
       <div style={{ position: 'relative' }}>
-        <input 
+        <input
             id={id}
-            className={`input ${className}`.trim()} 
+            className={`input ${className}`.trim()}
             value={value}
             onChange={handleInputChange}
             onFocus={() => setIsOpen(true)}
+            onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={disabled}

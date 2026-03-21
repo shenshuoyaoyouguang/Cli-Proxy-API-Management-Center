@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -14,6 +14,12 @@ const REQUEST_EVENTS_PAGE_SIZE = 100;
 export interface RequestEventsDetailsCardProps {
   rows: RequestEventRow[];
   loading: boolean;
+  externalModelFilter?: string | null;
+  externalSourceFilter?: string | null;
+  externalSourceRawFilter?: string | null;
+  externalAuthIndexFilter?: string | null;
+  externalResultFilter?: 'success' | 'failure' | null;
+  onClearExternalFilters?: () => void;
 }
 
 const encodeCsv = (value: string | number): string => {
@@ -23,11 +29,21 @@ const encodeCsv = (value: string | number): string => {
   return `"${safeText.replace(/"/g, '""')}"`;
 };
 
-export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetailsCardProps) {
+export function RequestEventsDetailsCard({
+  rows,
+  loading,
+  externalModelFilter = null,
+  externalSourceFilter = null,
+  externalSourceRawFilter = null,
+  externalAuthIndexFilter = null,
+  externalResultFilter = null,
+  onClearExternalFilters
+}: RequestEventsDetailsCardProps) {
   const { t } = useTranslation();
 
   const [modelFilter, setModelFilter] = useState(ALL_FILTER);
   const [sourceFilter, setSourceFilter] = useState(ALL_FILTER);
+  const [resultFilter, setResultFilter] = useState(ALL_FILTER);
   const [authIndexFilter, setAuthIndexFilter] = useState(ALL_FILTER);
   const [page, setPage] = useState(1);
 
@@ -38,6 +54,11 @@ export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetails
 
   const handleSourceFilterChange = (value: string) => {
     setSourceFilter(value);
+    setPage(1);
+  };
+
+  const handleResultFilterChange = (value: string) => {
+    setResultFilter(value);
     setPage(1);
   };
 
@@ -68,6 +89,15 @@ export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetails
     [rows, t]
   );
 
+  const resultOptions = useMemo(
+    () => [
+      { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+      { value: 'failure', label: t('stats.failure') },
+      { value: 'success', label: t('stats.success') }
+    ],
+    [t]
+  );
+
   const authIndexOptions = useMemo(
     () => [
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
@@ -81,13 +111,64 @@ export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetails
 
   const modelOptionSet = useMemo(() => new Set(modelOptions.map((option) => option.value)), [modelOptions]);
   const sourceOptionSet = useMemo(() => new Set(sourceOptions.map((option) => option.value)), [sourceOptions]);
+  const resultOptionSet = useMemo(() => new Set(resultOptions.map((option) => option.value)), [resultOptions]);
   const authIndexOptionSet = useMemo(
     () => new Set(authIndexOptions.map((option) => option.value)),
     [authIndexOptions]
   );
 
+  useEffect(() => {
+    if (externalModelFilter && modelOptionSet.has(externalModelFilter)) {
+      setModelFilter(externalModelFilter);
+      setPage(1);
+      return;
+    }
+
+    if (externalModelFilter === null) {
+      setModelFilter(ALL_FILTER);
+    }
+  }, [externalModelFilter, modelOptionSet]);
+
+  useEffect(() => {
+    if (externalSourceFilter && sourceOptionSet.has(externalSourceFilter)) {
+      setSourceFilter(externalSourceFilter);
+      setAuthIndexFilter(ALL_FILTER);
+      setPage(1);
+      return;
+    }
+
+    if (externalSourceFilter === null) {
+      setSourceFilter(ALL_FILTER);
+    }
+  }, [externalSourceFilter, sourceOptionSet]);
+
+  useEffect(() => {
+    if (externalAuthIndexFilter && authIndexOptionSet.has(externalAuthIndexFilter)) {
+      setAuthIndexFilter(externalAuthIndexFilter);
+      setPage(1);
+      return;
+    }
+
+    if (externalAuthIndexFilter === null) {
+      setAuthIndexFilter(ALL_FILTER);
+    }
+  }, [authIndexOptionSet, externalAuthIndexFilter]);
+
+  useEffect(() => {
+    if (externalResultFilter && resultOptionSet.has(externalResultFilter)) {
+      setResultFilter(externalResultFilter);
+      setPage(1);
+      return;
+    }
+
+    if (externalResultFilter === null) {
+      setResultFilter(ALL_FILTER);
+    }
+  }, [externalResultFilter, resultOptionSet]);
+
   const effectiveModelFilter = modelOptionSet.has(modelFilter) ? modelFilter : ALL_FILTER;
   const effectiveSourceFilter = sourceOptionSet.has(sourceFilter) ? sourceFilter : ALL_FILTER;
+  const effectiveResultFilter = resultOptionSet.has(resultFilter) ? resultFilter : ALL_FILTER;
   const effectiveAuthIndexFilter = authIndexOptionSet.has(authIndexFilter)
     ? authIndexFilter
     : ALL_FILTER;
@@ -97,15 +178,30 @@ export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetails
       rows.filter((row) => {
         const modelMatched = effectiveModelFilter === ALL_FILTER || row.model === effectiveModelFilter;
         const sourceMatched = effectiveSourceFilter === ALL_FILTER || row.source === effectiveSourceFilter;
+        const sourceRawMatched = externalSourceRawFilter === null || row.sourceRaw === externalSourceRawFilter;
+        const resultMatched =
+          effectiveResultFilter === ALL_FILTER ||
+          (effectiveResultFilter === 'failure' ? row.failed : !row.failed);
         const authIndexMatched =
           effectiveAuthIndexFilter === ALL_FILTER || row.authIndex === effectiveAuthIndexFilter;
-        return modelMatched && sourceMatched && authIndexMatched;
+        return modelMatched && sourceMatched && sourceRawMatched && resultMatched && authIndexMatched;
       }),
-    [effectiveAuthIndexFilter, effectiveModelFilter, effectiveSourceFilter, rows]
+    [
+      effectiveAuthIndexFilter,
+      effectiveModelFilter,
+      effectiveResultFilter,
+      effectiveSourceFilter,
+      externalSourceRawFilter,
+      rows
+    ]
   );
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / REQUEST_EVENTS_PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   const renderedRows = useMemo(() => {
     const safePage = Math.min(page, totalPages);
@@ -116,13 +212,17 @@ export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetails
   const hasActiveFilters =
     effectiveModelFilter !== ALL_FILTER ||
     effectiveSourceFilter !== ALL_FILTER ||
-    effectiveAuthIndexFilter !== ALL_FILTER;
+    effectiveResultFilter !== ALL_FILTER ||
+    effectiveAuthIndexFilter !== ALL_FILTER ||
+    externalSourceRawFilter !== null;
 
   const handleClearFilters = () => {
     setModelFilter(ALL_FILTER);
     setSourceFilter(ALL_FILTER);
+    setResultFilter(ALL_FILTER);
     setAuthIndexFilter(ALL_FILTER);
     setPage(1);
+    onClearExternalFilters?.();
   };
 
   const handleExportCsv = () => {
@@ -236,6 +336,19 @@ export function RequestEventsDetailsCard({ rows, loading }: RequestEventsDetails
             onChange={handleSourceFilterChange}
             className={styles.requestEventsSelect}
             ariaLabel={t('usage_stats.request_events_filter_source')}
+            fullWidth={false}
+          />
+        </div>
+        <div className={styles.requestEventsFilterItem}>
+          <span className={styles.requestEventsFilterLabel}>
+            {t('usage_stats.request_events_result')}
+          </span>
+          <Select
+            value={effectiveResultFilter}
+            options={resultOptions}
+            onChange={handleResultFilterChange}
+            className={styles.requestEventsSelect}
+            ariaLabel={t('usage_stats.request_events_result')}
             fullWidth={false}
           />
         </div>

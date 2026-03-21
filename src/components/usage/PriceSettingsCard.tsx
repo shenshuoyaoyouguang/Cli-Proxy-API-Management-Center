@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
-import { Select } from '@/components/ui/Select';
+import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
 import type { ModelPrice } from '@/utils/usage';
 import styles from '@/pages/UsagePage.module.scss';
 
@@ -22,10 +22,16 @@ export function PriceSettingsCard({
   const { t } = useTranslation();
 
   // Add form state
-  const [selectedModel, setSelectedModel] = useState('');
+  const [modelQuery, setModelQuery] = useState('');
+  const [appliedModel, setAppliedModel] = useState('');
   const [promptPrice, setPromptPrice] = useState('');
   const [completionPrice, setCompletionPrice] = useState('');
   const [cachePrice, setCachePrice] = useState('');
+
+  const selectedModel = useMemo(
+    () => modelNames.find((name) => name === modelQuery) ?? '',
+    [modelNames, modelQuery]
+  );
 
   // Edit modal state
   const [editModel, setEditModel] = useState<string | null>(null);
@@ -33,23 +39,39 @@ export function PriceSettingsCard({
   const [editCompletion, setEditCompletion] = useState('');
   const [editCache, setEditCache] = useState('');
 
+  const clearPriceInputs = () => {
+    setPromptPrice('');
+    setCompletionPrice('');
+    setCachePrice('');
+  };
+
+  const resetCreateForm = () => {
+    setModelQuery('');
+    setAppliedModel('');
+    clearPriceInputs();
+  };
+
   const handleSavePrice = () => {
     if (!selectedModel) return;
+
     const prompt = parseFloat(promptPrice) || 0;
     const completion = parseFloat(completionPrice) || 0;
     const cache = cachePrice.trim() === '' ? prompt : parseFloat(cachePrice) || 0;
     const newPrices = { ...modelPrices, [selectedModel]: { prompt, completion, cache } };
+
     onPricesChange(newPrices);
-    setSelectedModel('');
-    setPromptPrice('');
-    setCompletionPrice('');
-    setCachePrice('');
+    resetCreateForm();
   };
 
   const handleDeletePrice = (model: string) => {
     const newPrices = { ...modelPrices };
     delete newPrices[model];
     onPricesChange(newPrices);
+
+    if (model === selectedModel) {
+      setAppliedModel('');
+      clearPriceInputs();
+    }
   };
 
   const handleOpenEdit = (model: string) => {
@@ -62,35 +84,58 @@ export function PriceSettingsCard({
 
   const handleSaveEdit = () => {
     if (!editModel) return;
+
     const prompt = parseFloat(editPrompt) || 0;
     const completion = parseFloat(editCompletion) || 0;
     const cache = editCache.trim() === '' ? prompt : parseFloat(editCache) || 0;
     const newPrices = { ...modelPrices, [editModel]: { prompt, completion, cache } };
+
     onPricesChange(newPrices);
+
+    if (editModel === selectedModel) {
+      setAppliedModel(editModel);
+      setPromptPrice(prompt.toString());
+      setCompletionPrice(completion.toString());
+      setCachePrice(cache.toString());
+    }
+
     setEditModel(null);
   };
 
-  const handleModelSelect = (value: string) => {
-    setSelectedModel(value);
-    const price = modelPrices[value];
+  const handleModelInputChange = (
+    value: string,
+    meta?: {
+      reason: 'input' | 'select' | 'blur';
+    }
+  ) => {
+    setModelQuery(value);
+
+    if (meta?.reason === 'input') {
+      if (value !== appliedModel) {
+        setAppliedModel('');
+      }
+      return;
+    }
+
+    const matchedModel = modelNames.find((name) => name === value);
+    if (!matchedModel || matchedModel === appliedModel) {
+      return;
+    }
+
+    setAppliedModel(matchedModel);
+
+    const price = modelPrices[matchedModel];
     if (price) {
       setPromptPrice(price.prompt.toString());
       setCompletionPrice(price.completion.toString());
       setCachePrice(price.cache.toString());
-    } else {
-      setPromptPrice('');
-      setCompletionPrice('');
-      setCachePrice('');
+      return;
     }
-  };
 
-  const options = useMemo(
-    () => [
-      { value: '', label: t('usage_stats.model_price_select_placeholder') },
-      ...modelNames.map((name) => ({ value: name, label: name }))
-    ],
-    [modelNames, t]
-  );
+    setPromptPrice('');
+    setCompletionPrice('');
+    setCachePrice('');
+  };
 
   return (
     <Card title={t('usage_stats.model_price_settings')}>
@@ -100,11 +145,13 @@ export function PriceSettingsCard({
           <div className={styles.formRow}>
             <div className={styles.formField}>
               <label>{t('usage_stats.model_name')}</label>
-              <Select
-                value={selectedModel}
-                options={options}
-                onChange={handleModelSelect}
+              <AutocompleteInput
+                value={modelQuery}
+                onChange={handleModelInputChange}
+                options={modelNames}
                 placeholder={t('usage_stats.model_price_select_placeholder')}
+                wrapperStyle={{ marginBottom: 0 }}
+                confirmExactMatchOnBlur
               />
             </div>
             <div className={styles.formField}>

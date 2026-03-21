@@ -20,6 +20,8 @@ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useThemeStore, useConfigStore } from '@/stores';
 import {
   StatCards,
+  RuntimeQualityCard,
+  TokenEfficiencyCenter,
   UsageChart,
   ChartLineSelector,
   ApiDetailsCard,
@@ -35,9 +37,12 @@ import {
   useAuthFilesMap,
   useSparklines,
   useChartData,
-  useUsageAnalyticsSnapshot
+  useUsageAnalyticsSnapshot,
+  useUsageReliabilitySnapshot,
+  type EfficiencyDrilldown
 } from '@/components/usage';
 import { type UsageTimeRange } from '@/utils/usage';
+import type { SubscriptionTier } from '@/utils/usage/slaCalculator';
 import styles from './UsagePage.module.scss';
 
 ChartJS.register(
@@ -68,6 +73,9 @@ const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> 
   '24h': 24,
   '7d': 7 * 24
 };
+const DEFAULT_SUBSCRIPTION_TIER: SubscriptionTier = 'pro';
+const SERVICE_HEALTH_SECTION_ID = 'usage-service-health-card';
+const REQUEST_EVENTS_SECTION_ID = 'usage-request-events-card';
 
 const isUsageTimeRange = (value: unknown): value is UsageTimeRange =>
   value === '7h' || value === '24h' || value === '7d' || value === 'all';
@@ -143,6 +151,8 @@ export function UsagePage() {
 
   const [chartLines, setChartLines] = useState<string[]>(loadChartLines);
   const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
+  const [efficiencyDrilldown, setEfficiencyDrilldown] = useState<EfficiencyDrilldown>({ type: 'none' });
+  const [requestEventsResultFilter, setRequestEventsResultFilter] = useState<'success' | 'failure' | null>(null);
 
   const timeRangeOptions = useMemo(
     () =>
@@ -190,7 +200,12 @@ export function UsagePage() {
     modelStats,
     tokenDistribution,
     requestEventRows,
-    credentialRows
+    healthRequestEventRows,
+    credentialRows,
+    efficiencyOverview,
+    modelEfficiencyRows,
+    credentialEfficiencyRows,
+    runtimeQualitySummary
   } = useUsageAnalyticsSnapshot({
     usage,
     usageDetails,
@@ -214,6 +229,12 @@ export function UsagePage() {
     costSparkline
   } = useSparklines({ usage: filteredUsage, loading, nowMs });
 
+  const { healthAssessment, slaAssessment, serviceHealth } = useUsageReliabilitySnapshot({
+    usageDetails,
+    tier: DEFAULT_SUBSCRIPTION_TIER,
+    nowMs
+  });
+
   const {
     requestsPeriod,
     setRequestsPeriod,
@@ -226,6 +247,68 @@ export function UsagePage() {
   } = useChartData({ usage: filteredUsage, chartLines, isDark, isMobile, hourWindowHours });
 
   const hasPrices = Object.keys(modelPrices).length > 0;
+  const externalModelFilter = efficiencyDrilldown.type === 'model' ? efficiencyDrilldown.value ?? null : null;
+  const credentialDrilldown = useMemo(() => {
+    if (efficiencyDrilldown.type !== 'credential' || !efficiencyDrilldown.value) {
+      return { source: null, sourceRaw: null, authIndex: null };
+    }
+
+    try {
+      const parsed = JSON.parse(efficiencyDrilldown.value) as {
+        source?: string | null;
+        authIndex?: string | null;
+        fallbackSource?: string | null;
+      };
+
+      return parsed.authIndex
+        ? {
+            source: null,
+            sourceRaw: null,
+            authIndex: parsed.authIndex ?? null
+          }
+        : {
+            source: parsed.fallbackSource ?? null,
+            sourceRaw: parsed.source ?? null,
+            authIndex: null
+          };
+    } catch {
+      return { source: efficiencyDrilldown.value, sourceRaw: null, authIndex: null };
+    }
+  }, [efficiencyDrilldown]);
+
+  const scrollToSection = useCallback((sectionId: string) => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const handleAvailabilityDrillDown = useCallback(() => {
+    scrollToSection(SERVICE_HEALTH_SECTION_ID);
+  }, [scrollToSection]);
+
+  const handleSuccessRateDrillDown = useCallback(() => {
+    setEfficiencyDrilldown({ type: 'none' });
+    setRequestEventsResultFilter('failure');
+    scrollToSection(REQUEST_EVENTS_SECTION_ID);
+  }, [scrollToSection]);
+
+  const handleEfficiencyDrilldown = useCallback(
+    (drilldown: EfficiencyDrilldown) => {
+      setRequestEventsResultFilter(null);
+      setEfficiencyDrilldown(drilldown);
+      scrollToSection(REQUEST_EVENTS_SECTION_ID);
+    },
+    [scrollToSection]
+  );
+
+  const handleClearRequestEventDrillDown = useCallback(() => {
+    setEfficiencyDrilldown({ type: 'none' });
+    setRequestEventsResultFilter(null);
+  }, []);
+
+  const requestEventsRowsForDisplay = requestEventsResultFilter ? healthRequestEventRows : requestEventRows;
 
   return (
     <div className={styles.container}>
@@ -301,6 +384,10 @@ export function UsagePage() {
         loading={loading}
         modelPrices={modelPrices}
         nowMs={nowMs}
+        healthAssessment={healthAssessment}
+        slaAssessment={slaAssessment}
+        onAvailabilityDrillDown={handleAvailabilityDrillDown}
+        onSuccessRateDrillDown={handleSuccessRateDrillDown}
         sparklines={{
           requests: requestsSparkline,
           tokens: tokensSparkline,
@@ -310,14 +397,46 @@ export function UsagePage() {
         }}
       />
 
+      <RuntimeQualityCard summary={runtimeQualitySummary} loading={loading} />
+
+      <div id={SERVICE_HEALTH_SECTION_ID}>
+        <ServiceHealthCard details={usageDetails} loading={loading} healthData={serviceHealth} />
+      </div>
+
+      <div className={styles.detailsGrid}>
+        <CredentialStatsCard rows={credentialRows} loading={loading} />
+        <ApiDetailsCard apiStats={apiStats} loading={loading} hasPrices={hasPrices} />
+      </div>
+
+      <ModelStatsCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
+
+      <TokenEfficiencyCenter
+        overview={efficiencyOverview}
+        modelRows={modelEfficiencyRows}
+        credentialRows={credentialEfficiencyRows}
+        loading={loading}
+        onDrilldownChange={handleEfficiencyDrilldown}
+      />
+
+      <div id={REQUEST_EVENTS_SECTION_ID}>
+        <RequestEventsDetailsCard
+          rows={requestEventsRowsForDisplay}
+          loading={loading}
+          externalModelFilter={externalModelFilter}
+          externalSourceFilter={credentialDrilldown.source}
+          externalSourceRawFilter={credentialDrilldown.sourceRaw}
+          externalAuthIndexFilter={credentialDrilldown.authIndex}
+          externalResultFilter={requestEventsResultFilter}
+          onClearExternalFilters={handleClearRequestEventDrillDown}
+        />
+      </div>
+
       <ChartLineSelector
         chartLines={chartLines}
         modelNames={modelNames}
         maxLines={MAX_CHART_LINES}
         onChange={handleChartLinesChange}
       />
-
-      <ServiceHealthCard details={filteredDetails} loading={loading} />
 
       <div className={styles.chartsGrid}>
         <UsageChart
@@ -361,15 +480,6 @@ export function UsagePage() {
         modelPrices={modelPrices}
         hourWindowHours={hourWindowHours}
       />
-
-      <div className={styles.detailsGrid}>
-        <ApiDetailsCard apiStats={apiStats} loading={loading} hasPrices={hasPrices} />
-        <ModelStatsCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
-      </div>
-
-      <RequestEventsDetailsCard rows={requestEventRows} loading={loading} />
-
-      <CredentialStatsCard rows={credentialRows} loading={loading} />
 
       <PriceSettingsCard
         modelNames={modelNames}

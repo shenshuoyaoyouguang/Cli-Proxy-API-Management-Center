@@ -13,12 +13,21 @@ import {
 import { buildSourceInfoMap } from '@/utils/sourceResolver';
 import type { UsagePayload } from './useUsageData';
 import {
+  createCredentialEfficiencyRows,
   createCredentialRows,
+  createEfficiencyOverview,
+  createModelEfficiencyRows,
   createRequestEventRows,
+  createRequestEventRowsForRange,
+  createRuntimeQualitySummary,
   createTokenDistribution,
   filterUsageDetailsByTimeRange,
+  type CredentialEfficiencyRow,
   type CredentialRow,
+  type EfficiencyOverview,
+  type ModelEfficiencyRow,
   type RequestEventRow,
+  type RuntimeQualitySummary,
   type TokenDistribution
 } from './usageAnalyticsSnapshot';
 
@@ -45,7 +54,12 @@ export interface UseUsageAnalyticsSnapshotReturn {
   modelStats: ReturnType<typeof getModelStats>;
   tokenDistribution: TokenDistribution;
   requestEventRows: RequestEventRow[];
+  healthRequestEventRows: RequestEventRow[];
   credentialRows: CredentialRow[];
+  efficiencyOverview: EfficiencyOverview;
+  modelEfficiencyRows: ModelEfficiencyRow[];
+  credentialEfficiencyRows: CredentialEfficiencyRow[];
+  runtimeQualitySummary: RuntimeQualitySummary;
 }
 
 export function useUsageAnalyticsSnapshot({
@@ -106,6 +120,11 @@ export function useUsageAnalyticsSnapshot({
     [authFileMap, filteredDetails, locale, sourceInfoMap]
   );
 
+  const healthRequestEventRows = useMemo(
+    () => createRequestEventRowsForRange(usageDetails, '24h', nowMs, sourceInfoMap, authFileMap, locale),
+    [authFileMap, locale, nowMs, sourceInfoMap, usageDetails]
+  );
+
   const credentialRows = useMemo(
     () =>
       createCredentialRows(
@@ -122,6 +141,33 @@ export function useUsageAnalyticsSnapshot({
     [authFileMap, claudeConfigs, codexConfigs, filteredDetails, geminiKeys, openaiProviders, vertexConfigs]
   );
 
+  const efficiencyOverview = useMemo(
+    () => createEfficiencyOverview(filteredDetails, modelPrices),
+    [filteredDetails, modelPrices]
+  );
+
+  const modelEfficiencyRows = useMemo(
+    () => createModelEfficiencyRows(filteredDetails, modelPrices),
+    [filteredDetails, modelPrices]
+  );
+
+  const credentialEfficiencyRows = useMemo(
+    () => createCredentialEfficiencyRows(filteredDetails, sourceInfoMap, authFileMap, modelPrices),
+    [authFileMap, filteredDetails, modelPrices, sourceInfoMap]
+  );
+
+  const runtimeQualitySummary = useMemo(
+    () =>
+      createRuntimeQualitySummary({
+        usage: filteredUsage,
+        details: filteredDetails,
+        credentialRows,
+        apiStats,
+        modelStats
+      }),
+    [apiStats, credentialRows, filteredDetails, filteredUsage, modelStats]
+  );
+
   return {
     filteredUsage,
     filteredDetails,
@@ -130,6 +176,11 @@ export function useUsageAnalyticsSnapshot({
     modelStats,
     tokenDistribution,
     requestEventRows,
-    credentialRows
+    healthRequestEventRows,
+    credentialRows,
+    efficiencyOverview,
+    modelEfficiencyRows,
+    credentialEfficiencyRows,
+    runtimeQualitySummary
   };
 }

@@ -40,7 +40,7 @@ const createDetail = (params: {
   };
 };
 
-describe('calculateSLAMetrics availability', () => {
+describe('calculateSLAMetrics', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(baseNow);
@@ -50,49 +50,56 @@ describe('calculateSLAMetrics availability', () => {
     vi.useRealTimers();
   });
 
-  it('counts models at 50% success rate as downtime', () => {
-
+  it('builds SLA metrics from reliability snapshot', () => {
     const details = [
-      createDetail({ minutesAgo: 1, modelName: 'model-a', failed: false }),
       createDetail({ minutesAgo: 1, modelName: 'model-a', failed: false }),
       createDetail({ minutesAgo: 1, modelName: 'model-a', failed: true }),
+      createDetail({ minutesAgo: 1, modelName: 'model-b', failed: false })
+    ];
+
+    const metrics = calculateSLAMetrics('basic', 2, 1, details, undefined, baseNow);
+
+    expect(metrics.hasData).toBe(true);
+    expect(metrics.commitments.availability.current).not.toBeNull();
+    expect(metrics.commitments.successRate.current).toBeCloseTo(2 / 3, 5);
+    expect(metrics.overallStatus).toBe('breached');
+    expect(metrics.missingTelemetry).toEqual(['latency', 'recovery_time']);
+  });
+
+  it('marks free tier as unsupported instead of faking SLA success', () => {
+    const details = [createDetail({ minutesAgo: 1, modelName: 'model-a', failed: false })];
+
+    const metrics = calculateSLAMetrics('free', 1, 0, details, undefined, baseNow);
+
+    expect(metrics.hasData).toBe(true);
+    expect(metrics.overallStatus).toBe('unsupported');
+    expect(metrics.commitments.availability.status).toBe('unsupported');
+    expect(metrics.compensation.eligible).toBe(false);
+  });
+
+  it('computes compensation when availability drops below contract thresholds', () => {
+    const details = [
       createDetail({ minutesAgo: 1, modelName: 'model-a', failed: true }),
-      createDetail({ minutesAgo: 1, modelName: 'model-b', failed: false }),
-      createDetail({ minutesAgo: 1, modelName: 'model-b', failed: true })
+      createDetail({ minutesAgo: 1, modelName: 'model-a', failed: true }),
+      createDetail({ minutesAgo: 2, modelName: 'model-a', failed: true }),
+      createDetail({ minutesAgo: 2, modelName: 'model-a', failed: true })
     ];
 
-    const metrics = calculateSLAMetrics('basic', 4, 2, details);
+    const metrics = calculateSLAMetrics('pro', 0, 4, details, 100, baseNow);
 
-    // model-a: 2 success / 2 failure => success rate 50% => down
-    // model-b: 1 success / 1 failure => success rate 50% => down
-    // total weight = 6, down weight = 6
-    expect(metrics.commitments.availability.current).toBeCloseTo(0, 5);
+    expect(metrics.commitments.availability.current).toBe(0);
+    expect(metrics.compensation.eligible).toBe(true);
+    expect(metrics.compensation.percentage).toBe(50);
+    expect(metrics.compensation.amount).toBe(50);
   });
 
-  it('weights downtime by model request volume', () => {
-    const details = [
-      createDetail({ minutesAgo: 1, modelName: 'model-a', failed: false }),
-      createDetail({ minutesAgo: 1, modelName: 'model-a', failed: false }),
-      createDetail({ minutesAgo: 1, modelName: 'model-a', failed: false }),
-      createDetail({ minutesAgo: 1, modelName: 'model-a', failed: false }),
-      createDetail({ minutesAgo: 1, modelName: 'model-b', failed: false }),
-      createDetail({ minutesAgo: 1, modelName: 'model-b', failed: true })
-    ];
+  it('returns no data when all requests are outside the active window', () => {
+    const details = [createDetail({ minutesAgo: 99999, modelName: 'model-a', failed: true })];
 
-    const metrics = calculateSLAMetrics('basic', 5, 1, details);
+    const metrics = calculateSLAMetrics('basic', 1, 1, details, undefined, baseNow);
 
-    // model-a: 4 success / 0 failure => success rate 100% => up
-    // model-b: 1 success / 1 failure => success rate 50% => down
-    // total weight = 6, down weight = 2
-    expect(metrics.commitments.availability.current).toBeCloseTo(1 - 2 / 6, 5);
-  });
-
-  it('returns full availability when no requests in window', () => {
-    const details = [
-      createDetail({ minutesAgo: 99999, modelName: 'model-a', failed: true })
-    ];
-
-    const metrics = calculateSLAMetrics('basic', 1, 1, details);
-    expect(metrics.commitments.availability.current).toBe(1);
+    expect(metrics.hasData).toBe(false);
+    expect(metrics.dataQuality).toBe('no_data');
+    expect(metrics.commitments.availability.current).toBeNull();
   });
 });

@@ -38,16 +38,21 @@ function formatDateTime(timestamp: number): string {
 export interface ServiceHealthCardProps {
   details: UsageDetail[];
   loading: boolean;
+  healthData?: ServiceHealthData;
 }
 
-export function ServiceHealthCard({ details, loading }: ServiceHealthCardProps) {
+export function ServiceHealthCard({ details, loading, healthData: providedHealthData }: ServiceHealthCardProps) {
   const { t } = useTranslation();
   const [activeTooltip, setActiveTooltip] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const healthData: ServiceHealthData = useMemo(() => {
+    if (providedHealthData) {
+      return providedHealthData;
+    }
+
     return calculateServiceHealthData(details);
-  }, [details]);
+  }, [details, providedHealthData]);
 
   const hasData = healthData.totalSuccess + healthData.totalFailure > 0;
 
@@ -118,9 +123,9 @@ export function ServiceHealthCard({ details, loading }: ServiceHealthCardProps) 
 
   const rateClass = !hasData
     ? ''
-    : healthData.successRate >= 90
+    : healthData.successRate >= 99
       ? styles.healthRateHigh
-      : healthData.successRate >= 50
+      : healthData.successRate >= 97
         ? styles.healthRateMedium
         : styles.healthRateLow;
 

@@ -1,29 +1,24 @@
 import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
-import { IconDiamond, IconDollarSign, IconSatellite, IconTimer, IconTrendingUp, IconZap } from '@/components/ui/icons';
-import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
 import {
-  formatCompactNumber,
-  calculateCost,
-  extractTotalTokens,
-  type ModelPrice,
-  type UsageDetail
-} from '@/utils/usage';
-import { formatPercent } from '@/utils/numberFormat';
+  IconDiamond,
+  IconDollarSign,
+  IconSatellite,
+  IconTimer,
+  IconTrendingUp
+} from '@/components/ui/icons';
+import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
+import type { HealthScore } from '@/utils/usage/healthScore';
+import type { SLAMetrics } from '@/utils/usage/slaCalculator';
+import { calculateCost, extractTotalTokens, type ModelPrice, type UsageDetail } from '@/utils/usage';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
 import type { SparklineBundle } from './hooks/useSparklines';
 import { HealthScoreCard } from './HealthScoreCard';
 import { SLAMonitorCard } from './SLAMonitorCard';
-import type { SubscriptionTier } from '@/utils/usage/slaCalculator';
 import styles from '@/pages/UsagePage.module.scss';
 import cardStyles from './StatCards.module.scss';
-
-const CACHE_HIT_RATE_GOOD_THRESHOLD = 0.5;
-const OUTPUT_EFFICIENCY_GOOD_THRESHOLD = 0.3;
-const COST_EFFICIENCY_GOOD_THRESHOLD = 50000;
-const COST_EFFICIENCY_PROGRESS_MAX = 100000;
 
 interface StatCardData {
   key: string;
@@ -55,12 +50,6 @@ interface StatCardsSummary {
     peakTpm: number;
   };
   totalCost: number;
-  tokenEfficiency: {
-    cacheHitRate: number;
-    outputEfficiency: number;
-    costEfficiency: number;
-  };
-  details: UsageDetail[];
 }
 
 export interface StatCardsProps {
@@ -69,6 +58,10 @@ export interface StatCardsProps {
   loading: boolean;
   modelPrices: Record<string, ModelPrice>;
   nowMs: number;
+  healthAssessment: HealthScore;
+  slaAssessment: SLAMetrics;
+  onAvailabilityDrillDown?: () => void;
+  onSuccessRateDrillDown?: () => void;
   sparklines: {
     requests: SparklineBundle | null;
     tokens: SparklineBundle | null;
@@ -76,7 +69,6 @@ export interface StatCardsProps {
     tpm: SparklineBundle | null;
     cost: SparklineBundle | null;
   };
-  subscriptionTier?: SubscriptionTier;
 }
 
 export function StatCards({
@@ -85,30 +77,33 @@ export function StatCards({
   loading,
   modelPrices,
   nowMs,
-  sparklines,
-  subscriptionTier = 'pro'
+  healthAssessment,
+  slaAssessment,
+  onAvailabilityDrillDown,
+  onSuccessRateDrillDown,
+  sparklines
 }: StatCardsProps) {
   const { t } = useTranslation();
 
   const hasPrices = Object.keys(modelPrices).length > 0;
 
-  const {
-    tokenBreakdown,
-    rateStats,
-    totalCost,
-    tokenEfficiency,
-    details: computedDetails
-  } = useMemo<StatCardsSummary>(() => {
+  const { tokenBreakdown, rateStats, totalCost } = useMemo<StatCardsSummary>(() => {
     const empty = {
       tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0, inputTokens: 0, outputTokens: 0 },
-      rateStats: { rpm: 0, tpm: 0, windowMinutes: 30, requestCount: 0, tokenCount: 0, peakRpm: 0, peakTpm: 0 },
-      totalCost: 0,
-      tokenEfficiency: { cacheHitRate: 0, outputEfficiency: 0, costEfficiency: 0 },
-      details: [] as UsageDetail[]
+      rateStats: {
+        rpm: 0,
+        tpm: 0,
+        windowMinutes: 30,
+        requestCount: 0,
+        tokenCount: 0,
+        peakRpm: 0,
+        peakTpm: 0
+      },
+      totalCost: 0
     };
 
     if (!usage) return empty;
-    if (!usageDetails.length) return { ...empty, details: usageDetails };
+    if (!usageDetails.length) return empty;
 
     let cachedTokens = 0;
     let reasoningTokens = 0;
@@ -123,7 +118,6 @@ export function StatCards({
     let tokenCount = 0;
     const hasValidNow = Number.isFinite(now) && now > 0;
 
-    // 用于计算峰值速率
     const minuteBuckets = new Map<number, { requests: number; tokens: number }>();
 
     usageDetails.forEach((detail) => {
@@ -148,7 +142,6 @@ export function StatCards({
         requestCount += 1;
         tokenCount += extractTotalTokens(detail);
 
-        // 按分钟分桶计算峰值
         const minuteKey = Math.floor(timestamp / 60000);
         const existing = minuteBuckets.get(minuteKey);
         if (existing) {
@@ -164,7 +157,6 @@ export function StatCards({
       }
     });
 
-    // 计算峰值
     let peakRpm = 0;
     let peakTpm = 0;
     minuteBuckets.forEach((bucket) => {
@@ -173,13 +165,6 @@ export function StatCards({
     });
 
     const denominator = windowMinutes > 0 ? windowMinutes : 1;
-
-    // 计算Token效率指标
-    const totalInputTokens = inputTokens + cachedTokens;
-    const totalTokens = inputTokens + outputTokens + cachedTokens + reasoningTokens;
-    const cacheHitRate = totalInputTokens > 0 ? cachedTokens / totalInputTokens : 0;
-    const outputEfficiency = totalTokens > 0 ? outputTokens / totalTokens : 0;
-    const costEfficiency = totalCost > 0 ? outputTokens / totalCost : 0;
 
     return {
       tokenBreakdown: { cachedTokens, reasoningTokens, inputTokens, outputTokens },
@@ -192,9 +177,7 @@ export function StatCards({
         peakRpm,
         peakTpm
       },
-      totalCost,
-      tokenEfficiency: { cacheHitRate, outputEfficiency, costEfficiency },
-      details: usageDetails
+      totalCost
     };
   }, [hasPrices, modelPrices, nowMs, usage, usageDetails]);
 
@@ -211,11 +194,11 @@ export function StatCards({
         <>
           <span className={styles.statMetaItem}>
             <span className={styles.statMetaDot} style={{ backgroundColor: '#10b981' }} />
-            {t('usage_stats.success_requests')}: {loading ? '-' : (usage?.success_count ?? 0)}
+            {t('usage_stats.success_requests')}: {loading ? '-' : usage?.success_count ?? 0}
           </span>
           <span className={styles.statMetaItem}>
             <span className={styles.statMetaDot} style={{ backgroundColor: '#c65746' }} />
-            {t('usage_stats.failed_requests')}: {loading ? '-' : (usage?.failure_count ?? 0)}
+            {t('usage_stats.failed_requests')}: {loading ? '-' : usage?.failure_count ?? 0}
           </span>
         </>
       ),
@@ -319,9 +302,6 @@ export function StatCards({
     }
   ];
 
-  // Token效率卡片（仅在有数据时显示）
-  const showEfficiencyCard = !loading && (tokenBreakdown.cachedTokens > 0 || tokenBreakdown.outputTokens > 0);
-
   return (
     <div className={styles.statsGrid}>
       {statsCards.map((card) => (
@@ -354,91 +334,14 @@ export function StatCards({
         </div>
       ))}
 
-      {/* Token效率卡片 */}
-      {showEfficiencyCard && (
-        <div
-          className={`${styles.statCard} ${cardStyles.efficiencyCard}`}
-          style={
-            {
-              '--accent': '#06b6d4',
-              '--accent-soft': 'rgba(6, 182, 212, 0.18)',
-              '--accent-border': 'rgba(6, 182, 212, 0.35)'
-            } as CSSProperties
-          }
-        >
-          <div className={styles.statCardHeader}>
-            <div className={styles.statLabelGroup}>
-              <span className={styles.statLabel}>{t('usage_stats.token_efficiency')}</span>
-            </div>
-            <span className={styles.statIconBadge}><IconZap size={16} /></span>
-          </div>
-          <div className={cardStyles.efficiencyGrid}>
-            <div className={cardStyles.efficiencyItem}>
-              <span className={cardStyles.efficiencyLabel}>{t('usage_stats.cache_hit_rate')}</span>
-              <span className={cardStyles.efficiencyValue}>{formatPercent(tokenEfficiency.cacheHitRate)}</span>
-              <div className={cardStyles.progressBar}>
-                <div
-                  className={cardStyles.progressFill}
-                  style={{
-                    width: `${Math.min(tokenEfficiency.cacheHitRate * 100, 100)}%`,
-                    backgroundColor:
-                      tokenEfficiency.cacheHitRate > CACHE_HIT_RATE_GOOD_THRESHOLD ? '#22c55e' : '#f59e0b'
-                  }}
-                />
-              </div>
-            </div>
-            <div className={cardStyles.efficiencyItem}>
-              <span className={cardStyles.efficiencyLabel}>{t('usage_stats.output_efficiency')}</span>
-              <span className={cardStyles.efficiencyValue}>{formatPercent(tokenEfficiency.outputEfficiency)}</span>
-              <div className={cardStyles.progressBar}>
-                <div
-                  className={cardStyles.progressFill}
-                  style={{
-                    width: `${Math.min(tokenEfficiency.outputEfficiency * 100, 100)}%`,
-                    backgroundColor:
-                      tokenEfficiency.outputEfficiency > OUTPUT_EFFICIENCY_GOOD_THRESHOLD
-                        ? '#22c55e'
-                        : '#f59e0b'
-                  }}
-                />
-              </div>
-            </div>
-            {hasPrices && tokenEfficiency.costEfficiency > 0 && (
-              <div className={cardStyles.efficiencyItem}>
-                <span className={cardStyles.efficiencyLabel}>{t('usage_stats.cost_efficiency')}</span>
-                <span className={cardStyles.efficiencyValue}>
-                  {formatCompactNumber(tokenEfficiency.costEfficiency)} tokens/$
-                </span>
-                <div className={cardStyles.progressBar}>
-                  <div
-                    className={cardStyles.progressFill}
-                    style={{
-                      width: `${Math.min((tokenEfficiency.costEfficiency / COST_EFFICIENCY_PROGRESS_MAX) * 100, 100)}%`,
-                      backgroundColor:
-                        tokenEfficiency.costEfficiency > COST_EFFICIENCY_GOOD_THRESHOLD ? '#22c55e' : '#f59e0b'
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <HealthScoreCard
-        successCount={usage?.success_count ?? 0}
-        failureCount={usage?.failure_count ?? 0}
-        details={computedDetails}
+        assessment={healthAssessment}
         loading={loading}
+        onAvailabilityDrillDown={onAvailabilityDrillDown}
+        onSuccessRateDrillDown={onSuccessRateDrillDown}
       />
 
-      <SLAMonitorCard
-        tier={subscriptionTier}
-        successCount={usage?.success_count ?? 0}
-        failureCount={usage?.failure_count ?? 0}
-        details={computedDetails}
-        loading={loading}
-      />
+      <SLAMonitorCard assessment={slaAssessment} loading={loading} />
     </div>
   );
 }

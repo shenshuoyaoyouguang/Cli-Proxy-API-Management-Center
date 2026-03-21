@@ -1,18 +1,34 @@
 import type { UsageDetail } from '../usage';
+import {
+  buildHealthAssessment,
+  buildReliabilitySnapshot,
+  type DataQuality,
+  type HealthAssessment,
+  type HealthGrade as ReliabilityHealthGrade,
+  type MetricResult,
+  type MetricStatus,
+  type ReliabilityMetricId
+} from './reliability';
 
-export type HealthGrade = 'excellent' | 'good' | 'fair' | 'poor';
-export type HealthTrend = 'up' | 'stable' | 'down';
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+export type HealthGrade = ReliabilityHealthGrade;
+export type HealthTrend = HealthAssessment['trend']['direction'];
 
 export interface MetricScore {
-  value: number;
+  value: number | null;
   score: number;
   grade: HealthGrade;
+  weight: number;
+  status: MetricStatus;
+  dataQuality: DataQuality;
+  sampleCount: number;
 }
 
 export interface HealthScoreMetrics {
   successRate: MetricScore;
+  availability: MetricScore;
   stability: MetricScore;
-  responsiveness: MetricScore;
 }
 
 export interface HealthScore {
@@ -20,18 +36,51 @@ export interface HealthScore {
   grade: HealthGrade;
   metrics: HealthScoreMetrics;
   trend: HealthTrend;
-  consecutiveDays: number;
+  healthyDayStreak: number;
+  dataQuality: DataQuality;
+  windowMs: number;
+  primaryMetricId: ReliabilityMetricId | null;
   hasData: boolean;
 }
 
-const GRADE_THRESHOLDS = {
-  excellent: { min: 90, color: '#22c55e' },
-  good: { min: 70, color: '#84cc16' },
-  fair: { min: 50, color: '#f59e0b' },
-  poor: { min: 0, color: '#ef4444' }
+const GRADE_COLORS: Record<HealthGrade, string> = {
+  excellent: '#22c55e',
+  good: '#84cc16',
+  fair: '#f59e0b',
+  poor: '#ef4444',
+  unknown: '#94a3b8'
 };
 
-export function getGrade(score: number): HealthGrade {
+const asMetricScore = (metric: MetricResult): MetricScore => ({
+  value: metric.rawValue,
+  score: metric.normalizedScore,
+  grade: getGrade(metric.normalizedScore, metric.dataQuality),
+  weight: metric.weight,
+  status: metric.status,
+  dataQuality: metric.dataQuality,
+  sampleCount: metric.sampleCount
+});
+
+export function createHealthScoreFromAssessment(assessment: HealthAssessment): HealthScore {
+  return {
+    overall: assessment.overallScore,
+    grade: assessment.grade,
+    metrics: {
+      successRate: asMetricScore(assessment.metrics.successRate),
+      availability: asMetricScore(assessment.metrics.availability),
+      stability: asMetricScore(assessment.metrics.stability)
+    },
+    trend: assessment.trend.direction,
+    healthyDayStreak: assessment.healthyDayStreak,
+    dataQuality: assessment.dataQuality,
+    windowMs: assessment.windowMs,
+    primaryMetricId: assessment.primaryMetricId,
+    hasData: assessment.hasData
+  };
+}
+
+export function getGrade(score: number, dataQuality: DataQuality = 'ok'): HealthGrade {
+  if (dataQuality !== 'ok') return 'unknown';
   if (score >= 90) return 'excellent';
   if (score >= 70) return 'good';
   if (score >= 50) return 'fair';
@@ -39,249 +88,80 @@ export function getGrade(score: number): HealthGrade {
 }
 
 export function getGradeColor(grade: HealthGrade): string {
-  return GRADE_THRESHOLDS[grade].color;
+  return GRADE_COLORS[grade];
 }
 
-export function getGradeLabel(grade: HealthGrade, t?: (key: string) => string): string {
+export function getGradeLabel(grade: HealthGrade, t?: Translate): string {
   const labels: Record<HealthGrade, string> = {
     excellent: t ? t('health.excellent') : '优秀',
     good: t ? t('health.good') : '良好',
     fair: t ? t('health.fair') : '一般',
-    poor: t ? t('health.poor') : '较差'
+    poor: t ? t('health.poor') : '较差',
+    unknown: t ? t('health.unknown') : '未知'
   };
   return labels[grade];
 }
 
-function calculateSuccessRateScore(successCount: number, failureCount: number): MetricScore {
-  const total = successCount + failureCount;
-  const value = total > 0 ? successCount / total : 1;
-  const score = Math.round(value * 100);
-  return {
-    value,
-    score,
-    grade: getGrade(score)
+export function getMetricStatusLabel(status: MetricStatus, t?: Translate): string {
+  const labels: Record<MetricStatus, string> = {
+    healthy: t ? t('health.metric_status_healthy') : '健康',
+    warning: t ? t('health.metric_status_warning') : '关注',
+    critical: t ? t('health.metric_status_critical') : '严重',
+    unknown: t ? t('health.metric_status_unknown') : '未知'
   };
+  return labels[status];
 }
 
-function calculateStabilityScore(
-  details: UsageDetail[],
-  windowMs: number = 24 * 60 * 60 * 1000
-): MetricScore {
-  const now = Date.now();
-  const windowStart = now - windowMs;
-  
-  const hourBuckets = new Map<number, { success: number; failure: number }>();
-  
-  details.forEach((detail) => {
-    const timestamp = detail.__timestampMs ?? Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) return;
-    
-    const hourKey = Math.floor(timestamp / (60 * 60 * 1000));
-    const existing = hourBuckets.get(hourKey) ?? { success: 0, failure: 0 };
-    if (detail.failed) {
-      existing.failure += 1;
-    } else {
-      existing.success += 1;
-    }
-    hourBuckets.set(hourKey, existing);
-  });
-  
-  if (hourBuckets.size < 2) {
-    return { value: 1, score: 100, grade: 'excellent' };
-  }
-  
-  const errorRates: number[] = [];
-  hourBuckets.forEach((bucket) => {
-    const total = bucket.success + bucket.failure;
-    if (total > 0) {
-      errorRates.push(bucket.failure / total);
-    }
-  });
-  
-  if (errorRates.length < 2) {
-    return { value: 1, score: 100, grade: 'excellent' };
-  }
-  
-  const mean = errorRates.reduce((a, b) => a + b, 0) / errorRates.length;
-  const variance = errorRates.reduce((sum, rate) => sum + Math.pow(rate - mean, 2), 0) / errorRates.length;
-  const stdDev = Math.sqrt(variance);
-  
-  const stabilityValue = mean > 0 ? Math.max(0, 1 - stdDev / mean) : 1;
-  const score = Math.round(stabilityValue * 100);
-  
-  return {
-    value: stabilityValue,
-    score,
-    grade: getGrade(score)
+export function getDataQualityLabel(dataQuality: DataQuality, t?: Translate): string {
+  const labels: Record<DataQuality, string> = {
+    ok: t ? t('health.data_quality_ok') : '正常',
+    low_sample: t ? t('health.data_quality_low_sample') : '样本不足',
+    no_data: t ? t('health.data_quality_no_data') : '无数据',
+    unsupported: t ? t('health.data_quality_unsupported') : '未接入'
   };
+  return labels[dataQuality];
 }
 
-function calculateResponsivenessScore(
-  details: UsageDetail[],
-  windowMs: number = 24 * 60 * 60 * 1000
-): MetricScore {
-  const now = Date.now();
-  const windowStart = now - windowMs;
-
-  const modelBuckets = new Map<string, { success: number; failure: number }>();
-
-  details.forEach((detail) => {
-    const timestamp = detail.__timestampMs ?? Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) return;
-
-    const modelName = detail.__modelName ?? 'unknown';
-
-    const existing = modelBuckets.get(modelName);
-    if (existing) {
-      const updated = {
-        success: existing.success + (detail.failed ? 0 : 1),
-        failure: existing.failure + (detail.failed ? 1 : 0)
-      };
-      modelBuckets.set(modelName, updated);
-    } else {
-      modelBuckets.set(modelName, { success: detail.failed ? 0 : 1, failure: detail.failed ? 1 : 0 });
-    }
-  });
-
-  if (modelBuckets.size === 0) {
-    return { value: 1, score: 100, grade: 'excellent' };
-  }
-
-  const modelSuccessRates: number[] = [];
-
-  modelBuckets.forEach((bucket) => {
-    const modelTotal = bucket.success + bucket.failure;
-    const successRate = modelTotal > 0 ? bucket.success / modelTotal : 1;
-    modelSuccessRates.push(successRate);
-  });
-
-  const avgSuccessRate = modelSuccessRates.reduce((a, b) => a + b, 0) / modelSuccessRates.length;
-  const score = Math.round(avgSuccessRate * 100);
-
-  return {
-    value: avgSuccessRate,
-    score,
-    grade: getGrade(score)
+export function getMetricLabel(metricId: ReliabilityMetricId, t?: Translate): string {
+  const labels: Record<ReliabilityMetricId, string> = {
+    success_rate: t ? t('health.success_rate') : '成功率',
+    availability: t ? t('health.availability') : '可用性',
+    stability: t ? t('health.stability') : '稳定性',
+    latency: t ? t('sla.response_time') : '响应时间',
+    recovery_time: t ? t('sla.recovery_time') : '恢复时间',
+    model_consistency: t ? t('health.model_consistency') : '模型一致性'
   };
+  return labels[metricId];
 }
 
-function calculateTrend(
-  details: UsageDetail[],
-  windowMs: number = 7 * 24 * 60 * 60 * 1000
-): HealthTrend {
-  const now = Date.now();
-  const midPoint = now - windowMs / 2;
-  const windowStart = now - windowMs;
-  
-  let recentSuccess = 0;
-  let recentFailure = 0;
-  let earlierSuccess = 0;
-  let earlierFailure = 0;
-  
-  details.forEach((detail) => {
-    const timestamp = detail.__timestampMs ?? Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) return;
-    
-    if (timestamp >= midPoint) {
-      if (detail.failed) recentFailure++;
-      else recentSuccess++;
-    } else {
-      if (detail.failed) earlierFailure++;
-      else earlierSuccess++;
-    }
-  });
-  
-  const recentTotal = recentSuccess + recentFailure;
-  const earlierTotal = earlierSuccess + earlierFailure;
-  
-  if (recentTotal < 10 || earlierTotal < 10) return 'stable';
-  
-  const recentRate = recentSuccess / recentTotal;
-  const earlierRate = earlierSuccess / earlierTotal;
-  const diff = recentRate - earlierRate;
-  
-  if (diff > 0.02) return 'up';
-  if (diff < -0.02) return 'down';
-  return 'stable';
-}
-
-function calculateConsecutiveDays(details: UsageDetail[]): number {
-  if (!details.length) return 0;
-  
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  const todayStart = now.getTime();
-  
-  const dayHasFailure = new Map<number, boolean>();
-  
-  details.forEach((detail) => {
-    const timestamp = detail.__timestampMs ?? Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp)) return;
-    
-    const dayKey = Math.floor(timestamp / (24 * 60 * 60 * 1000));
-    if (detail.failed) {
-      dayHasFailure.set(dayKey, true);
-    } else if (!dayHasFailure.has(dayKey)) {
-      dayHasFailure.set(dayKey, false);
-    }
-  });
-  
-  let consecutiveDays = 0;
-  for (let i = 0; i < 30; i++) {
-    const dayStart = todayStart - i * 24 * 60 * 60 * 1000;
-    const dayKey = Math.floor(dayStart / (24 * 60 * 60 * 1000));
-    const hasFailure = dayHasFailure.get(dayKey);
-    
-    if (hasFailure === undefined) break;
-    if (hasFailure) break;
-    consecutiveDays++;
+export function getHealthSummary(healthScore: HealthScore, t?: Translate): string {
+  if (healthScore.dataQuality === 'no_data') {
+    return t ? t('health.summary_no_data') : '当前窗口暂无可评估数据';
   }
-  
-  return consecutiveDays;
+
+  if (healthScore.dataQuality === 'low_sample') {
+    return t ? t('health.summary_low_sample') : '当前窗口样本不足，结果仅供参考';
+  }
+
+  if (healthScore.dataQuality === 'unsupported') {
+    return t ? t('health.summary_unsupported') : '当前窗口关键指标尚未接入';
+  }
+
+  if (!healthScore.primaryMetricId) {
+    return t ? t('health.summary_stable') : '当前窗口内未发现明显异常';
+  }
+
+  const metricLabel = getMetricLabel(healthScore.primaryMetricId, t);
+  return t ? t('health.summary_primary_metric', { metric: metricLabel }) : `主要扣分项：${metricLabel}`;
 }
 
 export function calculateHealthScore(
-  successCount: number,
-  failureCount: number,
-  details: UsageDetail[]
+  _successCount: number,
+  _failureCount: number,
+  details: UsageDetail[],
+  nowMs: number = Date.now()
 ): HealthScore {
-  const totalRequests = successCount + failureCount;
-  
-  if (totalRequests === 0) {
-    return {
-      overall: 0,
-      grade: 'poor',
-      metrics: {
-        successRate: { value: 0, score: 0, grade: 'poor' },
-        stability: { value: 0, score: 0, grade: 'poor' },
-        responsiveness: { value: 0, score: 0, grade: 'poor' }
-      },
-      trend: 'stable',
-      consecutiveDays: 0,
-      hasData: false
-    };
-  }
-  
-  const successRateMetric = calculateSuccessRateScore(successCount, failureCount);
-  const stabilityMetric = calculateStabilityScore(details);
-  const responsivenessMetric = calculateResponsivenessScore(details);
-  
-  const overall = Math.round(
-    successRateMetric.score * 0.5 +
-    stabilityMetric.score * 0.3 +
-    responsivenessMetric.score * 0.2
-  );
-  
-  return {
-    overall,
-    grade: getGrade(overall),
-    metrics: {
-      successRate: successRateMetric,
-      stability: stabilityMetric,
-      responsiveness: responsivenessMetric
-    },
-    trend: calculateTrend(details),
-    consecutiveDays: calculateConsecutiveDays(details),
-    hasData: true
-  };
+  const snapshot = buildReliabilitySnapshot(details, nowMs);
+  const assessment = buildHealthAssessment(snapshot);
+  return createHealthScoreFromAssessment(assessment);
 }

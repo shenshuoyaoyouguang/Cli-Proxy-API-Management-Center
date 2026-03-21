@@ -1,28 +1,31 @@
 import { type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/Button';
 import { IconHeart } from '@/components/ui/icons';
 import {
-  calculateHealthScore,
+  getDataQualityLabel,
   getGradeColor,
   getGradeLabel,
-  type HealthScore
+  getHealthSummary,
+  getMetricStatusLabel,
+  type HealthScore,
+  type MetricScore
 } from '@/utils/usage/healthScore';
-import type { UsageDetail } from '@/utils/usage';
 import { formatPercent } from '@/utils/numberFormat';
 import styles from '@/pages/UsagePage.module.scss';
 import cardStyles from './StatCards.module.scss';
 
 interface HealthScoreCardProps {
-  successCount: number;
-  failureCount: number;
-  details: UsageDetail[];
+  assessment: HealthScore;
   loading: boolean;
+  onAvailabilityDrillDown?: () => void;
+  onSuccessRateDrillDown?: () => void;
 }
 
-function ScoreRing({ score, color }: { score: number; grade: string; color: string }) {
+function ScoreRing({ score, color }: { score: number; color: string }) {
   const circumference = 2 * Math.PI * 36;
   const strokeDashoffset = circumference - (score / 100) * circumference;
-  
+
   return (
     <div className={cardStyles.scoreRingContainer}>
       <svg className={cardStyles.scoreRingSvg} viewBox="0 0 80 80">
@@ -55,72 +58,91 @@ function ScoreRing({ score, color }: { score: number; grade: string; color: stri
   );
 }
 
+function formatMetricValue(metricId: 'successRate' | 'availability' | 'stability', metric: MetricScore): string {
+  if (metric.value === null) {
+    return '--';
+  }
+
+  if (metricId === 'stability') {
+    return `σ ${(metric.value * 100).toFixed(1)}%`;
+  }
+
+  return formatPercent(metric.value);
+}
+
+function getMetricNote(
+  metricId: 'successRate' | 'availability' | 'stability',
+  t: (key: string) => string
+): string {
+  if (metricId === 'successRate') {
+    return t('health.metric_help_success_rate');
+  }
+  if (metricId === 'availability') {
+    return t('health.metric_help_availability');
+  }
+  return t('health.metric_help_stability');
+}
+
 function MetricRow({
   label,
-  value,
-  score,
-  grade,
-  color
+  metricId,
+  metric,
+  t
 }: {
   label: string;
-  value: number;
-  score: number;
-  grade: string;
-  color: string;
+  metricId: 'successRate' | 'availability' | 'stability';
+  metric: MetricScore;
+  t: (key: string) => string;
 }) {
+  const color = getGradeColor(metric.grade);
+  const gradeLabel = getGradeLabel(metric.grade, t);
+  const statusLabel = getMetricStatusLabel(metric.status, t);
+
   return (
     <div className={cardStyles.metricRow}>
       <div className={cardStyles.metricInfo}>
         <span className={cardStyles.metricLabel}>{label}</span>
-        <span className={cardStyles.metricValue}>{formatPercent(value)}</span>
+        <span className={cardStyles.metricValue}>{formatMetricValue(metricId, metric)}</span>
       </div>
       <div className={cardStyles.metricBar}>
         <div
           className={cardStyles.metricBarFill}
-          style={{ width: `${score}%`, backgroundColor: color }}
+          style={{ width: `${metric.score}%`, backgroundColor: color }}
         />
       </div>
-      <span className={cardStyles.metricGrade} style={{ color }}>
-        {grade}
-      </span>
+      <div className={cardStyles.metricMeta}>
+        <span className={cardStyles.metricGrade} style={{ color }}>
+          {gradeLabel}
+        </span>
+        <span className={cardStyles.metricEvidence}>
+          {statusLabel} · {Math.round(metric.weight * 100)}%
+        </span>
+        <span className={cardStyles.metricEvidence}>{getMetricNote(metricId, t)}</span>
+      </div>
     </div>
   );
 }
 
-export function HealthScoreCard({ successCount, failureCount, details, loading }: HealthScoreCardProps) {
+export function HealthScoreCard({
+  assessment,
+  loading,
+  onAvailabilityDrillDown,
+  onSuccessRateDrillDown
+}: HealthScoreCardProps) {
   const { t } = useTranslation();
-  
-  const healthScore: HealthScore = loading
-    ? {
-        overall: 0,
-        grade: 'poor',
-        metrics: {
-          successRate: { value: 0, score: 0, grade: 'poor' },
-          stability: { value: 0, score: 0, grade: 'poor' },
-          responsiveness: { value: 0, score: 0, grade: 'poor' }
-        },
-        trend: 'stable',
-        consecutiveDays: 0,
-        hasData: false
-      }
-    : calculateHealthScore(successCount, failureCount, details);
-  
-  const showCard = !loading && healthScore.hasData;
-  
-  if (!showCard) {
-    return null;
-  }
-  
-  const color = getGradeColor(healthScore.grade);
-  const gradeLabel = getGradeLabel(healthScore.grade, t);
-  
-  const trendIcon = healthScore.trend === 'up' ? '↑' : healthScore.trend === 'down' ? '↓' : '→';
-  const trendLabel = healthScore.trend === 'up' 
-    ? t('health.trend_up') 
-    : healthScore.trend === 'down' 
-      ? t('health.trend_down') 
-      : t('health.trend_stable');
-  
+
+  const color = getGradeColor(assessment.grade);
+  const gradeLabel = getGradeLabel(assessment.grade, t);
+  const dataQualityLabel = getDataQualityLabel(assessment.dataQuality, t);
+  const trendLabel =
+    assessment.trend === 'up'
+      ? t('health.trend_up')
+      : assessment.trend === 'down'
+        ? t('health.trend_down')
+        : assessment.trend === 'unknown'
+          ? t('health.trend_unknown')
+          : t('health.trend_stable');
+
   return (
     <div
       className={`${styles.statCard} ${cardStyles.healthScoreCard}`}
@@ -135,59 +157,76 @@ export function HealthScoreCard({ successCount, failureCount, details, loading }
       <div className={styles.statCardHeader}>
         <div className={styles.statLabelGroup}>
           <span className={styles.statLabel}>{t('health.title')}</span>
+          <div className={cardStyles.cardHeaderMeta}>
+            <span className={cardStyles.cardBadge}>{t('health.window_24h')}</span>
+            <span className={cardStyles.cardBadge}>{dataQualityLabel}</span>
+          </div>
         </div>
         <span className={styles.statIconBadge}><IconHeart size={16} /></span>
       </div>
-      
-      <div className={cardStyles.healthScoreContent}>
-        <div className={cardStyles.scoreSection}>
-          <ScoreRing
-            score={healthScore.overall}
-            grade={healthScore.grade}
-            color={color}
-          />
-          <div className={cardStyles.scoreInfo}>
-            <span className={cardStyles.scoreGrade} style={{ color }}>
-              {gradeLabel}
-            </span>
-            <span className={cardStyles.scoreTrend}>
-              {trendIcon} {trendLabel}
-            </span>
+
+      {loading ? (
+        <div className={cardStyles.placeholderBody}>
+          <span className={cardStyles.placeholderTitle}>{t('common.loading')}</span>
+          <span className={cardStyles.placeholderText}>{t('health.summary_no_data')}</span>
+        </div>
+      ) : !assessment.hasData ? (
+        <div className={cardStyles.placeholderBody}>
+          <span className={cardStyles.placeholderTitle}>{t('health.no_data_title')}</span>
+          <span className={cardStyles.placeholderText}>{t('health.no_data_desc')}</span>
+        </div>
+      ) : (
+        <div className={cardStyles.healthScoreContent}>
+          <div className={cardStyles.scoreSection}>
+            <ScoreRing score={assessment.overall} color={color} />
+            <div className={cardStyles.scoreInfo}>
+              <span className={cardStyles.scoreGrade} style={{ color }}>
+                {gradeLabel}
+              </span>
+              <span className={cardStyles.scoreTrend}>{trendLabel}</span>
+            </div>
           </div>
-        </div>
-        
-        <div className={cardStyles.metricsSection}>
-          <MetricRow
-            label={t('health.success_rate')}
-            value={healthScore.metrics.successRate.value}
-            score={healthScore.metrics.successRate.score}
-            grade={getGradeLabel(healthScore.metrics.successRate.grade, t)}
-            color={getGradeColor(healthScore.metrics.successRate.grade)}
-          />
-          <MetricRow
-            label={t('health.stability')}
-            value={healthScore.metrics.stability.value}
-            score={healthScore.metrics.stability.score}
-            grade={getGradeLabel(healthScore.metrics.stability.grade, t)}
-            color={getGradeColor(healthScore.metrics.stability.grade)}
-          />
-          <MetricRow
-            label={t('health.responsiveness')}
-            value={healthScore.metrics.responsiveness.value}
-            score={healthScore.metrics.responsiveness.score}
-            grade={getGradeLabel(healthScore.metrics.responsiveness.grade, t)}
-            color={getGradeColor(healthScore.metrics.responsiveness.grade)}
-          />
-        </div>
-        
-        {healthScore.consecutiveDays > 0 && (
+
+          <div className={cardStyles.summaryText}>{getHealthSummary(assessment, t)}</div>
+
+          <div className={cardStyles.metricsSection}>
+            <MetricRow
+              label={t('health.success_rate')}
+              metricId="successRate"
+              metric={assessment.metrics.successRate}
+              t={t}
+            />
+            <MetricRow
+              label={t('health.availability')}
+              metricId="availability"
+              metric={assessment.metrics.availability}
+              t={t}
+            />
+            <MetricRow
+              label={t('health.stability')}
+              metricId="stability"
+              metric={assessment.metrics.stability}
+              t={t}
+            />
+          </div>
+
           <div className={cardStyles.healthFooter}>
-            <span className={cardStyles.consecutiveDays}>
-              {t('health.consecutive_days', { days: healthScore.consecutiveDays })}
-            </span>
+            <div className={cardStyles.metricEvidence}>
+              {assessment.healthyDayStreak > 0
+                ? t('health.healthy_day_streak', { days: assessment.healthyDayStreak })
+                : t('health.trend_stable')}
+            </div>
+            <div className={cardStyles.actionRow}>
+              <Button variant="ghost" size="sm" onClick={onAvailabilityDrillDown} disabled={!onAvailabilityDrillDown}>
+                {t('health.action_service_health')}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onSuccessRateDrillDown} disabled={!onSuccessRateDrillDown}>
+                {t('health.action_request_events')}
+              </Button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

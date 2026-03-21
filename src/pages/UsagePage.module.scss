@@ -859,6 +859,119 @@
   }
 }
 
+.tokenEfficiencySection {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tokenEfficiencyOverview {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.tokenEfficiencyHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.tokenEfficiencyScoreLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.tokenEfficiencyScoreRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.tokenEfficiencyScoreValue {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.tokenEfficiencyGrade {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.tokenEfficiencySubtle {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.tokenEfficiencySignals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tokenEfficiencySignal {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.tokenEfficiencyMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+
+  @include tablet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tokenEfficiencyMetricCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tokenEfficiencyMetricHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.tokenEfficiencyMetricValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tokenEfficiencyClickableRow {
+  cursor: pointer;
+}
+
+.tokenEfficiencyClickableRow:hover {
+  background: var(--bg-secondary);
+}
+
 .requestEventsActions {
   display: inline-flex;
   align-items: center;

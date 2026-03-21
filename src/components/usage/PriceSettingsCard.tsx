@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -7,6 +7,8 @@ import { Modal } from '@/components/ui/Modal';
 import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
 import type { ModelPrice } from '@/utils/usage';
 import styles from '@/pages/UsagePage.module.scss';
+
+const PRICE_PAGE_SIZE = 10;
 
 export interface PriceSettingsCardProps {
   modelNames: string[];
@@ -27,11 +29,25 @@ export function PriceSettingsCard({
   const [promptPrice, setPromptPrice] = useState('');
   const [completionPrice, setCompletionPrice] = useState('');
   const [cachePrice, setCachePrice] = useState('');
+  const [page, setPage] = useState(1);
 
   const selectedModel = useMemo(
     () => modelNames.find((name) => name === modelQuery) ?? '',
     [modelNames, modelQuery]
   );
+
+  const priceEntries = useMemo(() => Object.entries(modelPrices), [modelPrices]);
+  const totalPages = Math.max(1, Math.ceil(priceEntries.length / PRICE_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const visibleEntries = useMemo(() => {
+    const start = (currentPage - 1) * PRICE_PAGE_SIZE;
+    return priceEntries.slice(start, start + PRICE_PAGE_SIZE);
+  }, [currentPage, priceEntries]);
 
   // Edit modal state
   const [editModel, setEditModel] = useState<string | null>(null);
@@ -58,7 +74,10 @@ export function PriceSettingsCard({
     const completion = parseFloat(completionPrice) || 0;
     const cache = cachePrice.trim() === '' ? prompt : parseFloat(cachePrice) || 0;
     const newPrices = { ...modelPrices, [selectedModel]: { prompt, completion, cache } };
+    const targetIndex = Object.keys(newPrices).indexOf(selectedModel);
+    const targetPage = targetIndex >= 0 ? Math.floor(targetIndex / PRICE_PAGE_SIZE) + 1 : 1;
 
+    setPage(targetPage);
     onPricesChange(newPrices);
     resetCreateForm();
   };
@@ -66,6 +85,9 @@ export function PriceSettingsCard({
   const handleDeletePrice = (model: string) => {
     const newPrices = { ...modelPrices };
     delete newPrices[model];
+
+    const nextTotalPages = Math.max(1, Math.ceil(Object.keys(newPrices).length / PRICE_PAGE_SIZE));
+    setPage((prev) => Math.min(prev, nextTotalPages));
     onPricesChange(newPrices);
 
     if (model === selectedModel) {
@@ -193,35 +215,61 @@ export function PriceSettingsCard({
         {/* Saved Prices List */}
         <div className={styles.pricesList}>
           <h4 className={styles.pricesTitle}>{t('usage_stats.saved_prices')}</h4>
-          {Object.keys(modelPrices).length > 0 ? (
-            <div className={styles.pricesGrid}>
-              {Object.entries(modelPrices).map(([model, price]) => (
-                <div key={model} className={styles.priceItem}>
-                  <div className={styles.priceInfo}>
-                    <span className={styles.priceModel}>{model}</span>
-                    <div className={styles.priceMeta}>
-                      <span>
-                        {t('usage_stats.model_price_prompt')}: ${price.prompt.toFixed(4)}/1M
-                      </span>
-                      <span>
-                        {t('usage_stats.model_price_completion')}: ${price.completion.toFixed(4)}/1M
-                      </span>
-                      <span>
-                        {t('usage_stats.model_price_cache')}: ${price.cache.toFixed(4)}/1M
-                      </span>
+          {priceEntries.length > 0 ? (
+            <>
+              <div className={styles.pricesGrid}>
+                {visibleEntries.map(([model, price]) => (
+                  <div key={model} className={styles.priceItem}>
+                    <div className={styles.priceInfo}>
+                      <span className={styles.priceModel}>{model}</span>
+                      <div className={styles.priceMeta}>
+                        <span>
+                          {t('usage_stats.model_price_prompt')}: ${price.prompt.toFixed(4)}/1M
+                        </span>
+                        <span>
+                          {t('usage_stats.model_price_completion')}: ${price.completion.toFixed(4)}/1M
+                        </span>
+                        <span>
+                          {t('usage_stats.model_price_cache')}: ${price.cache.toFixed(4)}/1M
+                        </span>
+                      </div>
+                    </div>
+                    <div className={styles.priceActions}>
+                      <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(model)}>
+                        {t('common.edit')}
+                      </Button>
+                      <Button variant="danger" size="sm" onClick={() => handleDeletePrice(model)}>
+                        {t('common.delete')}
+                      </Button>
                     </div>
                   </div>
-                  <div className={styles.priceActions}>
-                    <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(model)}>
-                      {t('common.edit')}
-                    </Button>
-                    <Button variant="danger" size="sm" onClick={() => handleDeletePrice(model)}>
-                      {t('common.delete')}
-                    </Button>
-                  </div>
+                ))}
+              </div>
+
+              {priceEntries.length > PRICE_PAGE_SIZE && (
+                <div className={styles.pricePagination}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={currentPage <= 1}
+                  >
+                    {t('auth_files.pagination_prev')}
+                  </Button>
+                  <span className={styles.pricePaginationInfo}>
+                    {currentPage}/{totalPages}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage >= totalPages}
+                  >
+                    {t('auth_files.pagination_next')}
+                  </Button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           ) : (
             <div className={styles.hint}>{t('usage_stats.model_price_empty')}</div>
           )}

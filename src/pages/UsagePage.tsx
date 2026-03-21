@@ -43,7 +43,6 @@ import {
   type EfficiencyDrilldown
 } from '@/components/usage';
 import { type UsageTimeRange } from '@/utils/usage';
-import type { SubscriptionTier } from '@/utils/usage/slaCalculator';
 import styles from './UsagePage.module.scss';
 
 ChartJS.register(
@@ -229,7 +228,7 @@ export function UsagePage() {
     costSparkline
   } = useSparklines({ usage: filteredUsage, loading, nowMs });
 
-  const subscriptionTier: SubscriptionTier = useUsageSubscriptionTier(authFiles);
+  const { subscriptionTier, loading: subscriptionTierLoading } = useUsageSubscriptionTier(authFiles);
 
   const { healthAssessment, slaAssessment, serviceHealth } = useUsageReliabilitySnapshot({
     usageDetails,
@@ -383,7 +382,7 @@ export function UsagePage() {
       <StatCards
         usage={filteredUsage}
         details={filteredDetails}
-        loading={loading}
+        loading={loading || subscriptionTierLoading}
         modelPrices={modelPrices}
         nowMs={nowMs}
         healthAssessment={healthAssessment}

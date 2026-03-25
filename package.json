@@ -1,7 +1,7 @@
 {
   "name": "cli-proxy-webui-react",
   "private": true,
-  "version": "1.83",
+  "version": "1.86",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -99,7 +99,7 @@ describe('useUsageStatsStore', () => {
         },
       };
 
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: mockUsage } as unknown);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: mockUsage } as any);
 
       await useUsageStatsStore.getState().loadUsageStats();
 
@@ -120,7 +120,7 @@ describe('useUsageStatsStore', () => {
 
     it('sets loading state during fetch', async () => {
       vi.mocked(usageApi.getUsage).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ usage: {} } as unknown), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve({ usage: {} } as any), 100))
       );
 
       const fetchPromise = useUsageStatsStore.getState().loadUsageStats();
@@ -145,7 +145,7 @@ describe('useUsageStatsStore', () => {
     });
 
     it('fetches when force is true', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
 
       // Set recent refresh time but force refresh
       useUsageStatsStore.setState({
@@ -159,7 +159,7 @@ describe('useUsageStatsStore', () => {
     });
 
     it('updates scopeKey when connection changes', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
 
       // Set different scope
       useUsageStatsStore.setState({
@@ -170,7 +170,7 @@ describe('useUsageStatsStore', () => {
       vi.mocked(useAuthStore.getState).mockReturnValue({
         apiBase: 'http://localhost:3000',
         managementKey: 'test-key',
-      });
+      } as any);
 
       await useUsageStatsStore.getState().loadUsageStats();
 
@@ -181,14 +181,20 @@ describe('useUsageStatsStore', () => {
   describe('clearUsageStats', () => {
     it('clears all usage stats', () => {
       useUsageStatsStore.setState({
-        usage: { apis: {} } as unknown,
+        usage: { apis: {} } as any,
         keyStats: { bySource: { 'k:test': { success: 1, failure: 0 } }, byAuthIndex: {} },
         usageDetails: [
           {
             timestamp: '2025-01-01',
             source: 'test',
             auth_index: 0,
-            tokens: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+            tokens: {
+              input_tokens: 0,
+              output_tokens: 0,
+              reasoning_tokens: 0,
+              cached_tokens: 0,
+              total_tokens: 0,
+            },
             failed: false,
           },
         ],
@@ -213,7 +219,7 @@ describe('useUsageStatsStore', () => {
 
   describe('state updates', () => {
     it('updates lastRefreshedAt after successful fetch', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
 
       await useUsageStatsStore.getState().loadUsageStats();
 
@@ -221,7 +227,7 @@ describe('useUsageStatsStore', () => {
     });
 
     it('preserves keyStats structure after fetch', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
 
       await useUsageStatsStore.getState().loadUsageStats();
 

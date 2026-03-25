@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode, memo } from 'react';
+import { useMemo, type ReactNode, memo, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
 import {

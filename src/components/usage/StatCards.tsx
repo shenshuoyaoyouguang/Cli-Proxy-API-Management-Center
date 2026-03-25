@@ -6,17 +6,24 @@ import {
   IconDollarSign,
   IconSatellite,
   IconTimer,
-  IconTrendingUp
+  IconTrendingUp,
 } from '@/components/ui/icons';
 import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
 import type { HealthScore } from '@/utils/usage/healthScore';
 import type { SLAMetrics } from '@/utils/usage/slaCalculator';
-import { calculateCost, extractTotalTokens, type ModelPrice, type UsageDetail } from '@/utils/usage';
+import {
+  calculateCost,
+  extractTotalTokens,
+  type ModelPrice,
+  type UsageDetail,
+} from '@/utils/usage';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
 import type { SparklineBundle } from './hooks/useSparklines';
 import { HealthScoreCard } from './HealthScoreCard';
 import { SLAMonitorCard } from './SLAMonitorCard';
+import { ModelUsageSummaryCard } from './ModelUsageSummaryCard';
+import type { ModelStat } from './ModelStatsCard';
 import styles from '@/pages/UsagePage.module.scss';
 import cardStyles from './StatCards.module.scss';
 
@@ -81,11 +88,34 @@ export function StatCards({
   slaAssessment,
   onAvailabilityDrillDown,
   onSuccessRateDrillDown,
-  sparklines
+  sparklines,
 }: StatCardsProps) {
   const { t } = useTranslation();
 
   const hasPrices = Object.keys(modelPrices).length > 0;
+
+  const modelStats = useMemo<ModelStat[]>(() => {
+    if (!usage?.by_model) return [];
+
+    return Object.entries(usage.by_model)
+      .map(([model, data]) => {
+        const requests = data.total || 0;
+        const successCount = data.success || 0;
+        const failureCount = data.failure || 0;
+        const tokens = data.tokens || 0;
+        const cost = hasPrices ? data.cost || 0 : 0;
+
+        return {
+          model,
+          requests,
+          successCount,
+          failureCount,
+          tokens,
+          cost,
+        };
+      })
+      .filter((m) => m.requests > 0);
+  }, [usage, hasPrices]);
 
   const { tokenBreakdown, rateStats, totalCost } = useMemo<StatCardsSummary>(() => {
     const empty = {
@@ -97,9 +127,9 @@ export function StatCards({
         requestCount: 0,
         tokenCount: 0,
         peakRpm: 0,
-        peakTpm: 0
+        peakTpm: 0,
       },
-      totalCost: 0
+      totalCost: 0,
     };
 
     if (!usage) return empty;
@@ -138,7 +168,12 @@ export function StatCards({
       }
 
       const timestamp = detail.__timestampMs ?? 0;
-      if (hasValidNow && Number.isFinite(timestamp) && timestamp >= windowStart && timestamp <= now) {
+      if (
+        hasValidNow &&
+        Number.isFinite(timestamp) &&
+        timestamp >= windowStart &&
+        timestamp <= now
+      ) {
         requestCount += 1;
         tokenCount += extractTotalTokens(detail);
 
@@ -175,9 +210,9 @@ export function StatCards({
         requestCount,
         tokenCount,
         peakRpm,
-        peakTpm
+        peakTpm,
       },
-      totalCost
+      totalCost,
     };
   }, [hasPrices, modelPrices, nowMs, usage, usageDetails]);
 
@@ -194,15 +229,15 @@ export function StatCards({
         <>
           <span className={styles.statMetaItem}>
             <span className={styles.statMetaDot} style={{ backgroundColor: '#10b981' }} />
-            {t('usage_stats.success_requests')}: {loading ? '-' : usage?.success_count ?? 0}
+            {t('usage_stats.success_requests')}: {loading ? '-' : (usage?.success_count ?? 0)}
           </span>
           <span className={styles.statMetaItem}>
             <span className={styles.statMetaDot} style={{ backgroundColor: '#c65746' }} />
-            {t('usage_stats.failed_requests')}: {loading ? '-' : usage?.failure_count ?? 0}
+            {t('usage_stats.failed_requests')}: {loading ? '-' : (usage?.failure_count ?? 0)}
           </span>
         </>
       ),
-      trend: sparklines.requests
+      trend: sparklines.requests,
     },
     {
       key: 'tokens',
@@ -215,14 +250,16 @@ export function StatCards({
       meta: (
         <>
           <span className={styles.statMetaItem}>
-            {t('usage_stats.cached_tokens')}: {loading ? '-' : <TokenNumber value={tokenBreakdown.cachedTokens} />}
+            {t('usage_stats.cached_tokens')}:{' '}
+            {loading ? '-' : <TokenNumber value={tokenBreakdown.cachedTokens} />}
           </span>
           <span className={styles.statMetaItem}>
-            {t('usage_stats.reasoning_tokens')}: {loading ? '-' : <TokenNumber value={tokenBreakdown.reasoningTokens} />}
+            {t('usage_stats.reasoning_tokens')}:{' '}
+            {loading ? '-' : <TokenNumber value={tokenBreakdown.reasoningTokens} />}
           </span>
         </>
       ),
-      trend: sparklines.tokens
+      trend: sparklines.tokens,
     },
     {
       key: 'rpm',
@@ -236,11 +273,15 @@ export function StatCards({
         <div className={cardStyles.enhancedMeta}>
           <div className={cardStyles.rateRow}>
             <span className={cardStyles.rateLabel}>{t('usage_stats.current')}</span>
-            <span className={cardStyles.rateValue}><RateNumber value={rateStats.rpm} /></span>
+            <span className={cardStyles.rateValue}>
+              <RateNumber value={rateStats.rpm} />
+            </span>
           </div>
           <div className={cardStyles.rateRow}>
             <span className={cardStyles.rateLabel}>{t('usage_stats.peak')}</span>
-            <span className={cardStyles.rateValue}><RateNumber value={rateStats.peakRpm} /></span>
+            <span className={cardStyles.rateValue}>
+              <RateNumber value={rateStats.peakRpm} />
+            </span>
           </div>
           <div className={cardStyles.rateRow}>
             <span className={cardStyles.rateLabel}>{t('usage_stats.total_requests')}</span>
@@ -249,7 +290,7 @@ export function StatCards({
         </div>
       ),
       trend: sparklines.rpm,
-      enhanced: true
+      enhanced: true,
     },
     {
       key: 'tpm',
@@ -263,20 +304,26 @@ export function StatCards({
         <div className={cardStyles.enhancedMeta}>
           <div className={cardStyles.rateRow}>
             <span className={cardStyles.rateLabel}>{t('usage_stats.current')}</span>
-            <span className={cardStyles.rateValue}><RateNumber value={rateStats.tpm} /></span>
+            <span className={cardStyles.rateValue}>
+              <RateNumber value={rateStats.tpm} />
+            </span>
           </div>
           <div className={cardStyles.rateRow}>
             <span className={cardStyles.rateLabel}>{t('usage_stats.peak')}</span>
-            <span className={cardStyles.rateValue}><RateNumber value={rateStats.peakTpm} /></span>
+            <span className={cardStyles.rateValue}>
+              <RateNumber value={rateStats.peakTpm} />
+            </span>
           </div>
           <div className={cardStyles.rateRow}>
             <span className={cardStyles.rateLabel}>{t('usage_stats.total_tokens')}</span>
-            <span className={cardStyles.rateValue}><TokenNumber value={rateStats.tokenCount} /></span>
+            <span className={cardStyles.rateValue}>
+              <TokenNumber value={rateStats.tokenCount} />
+            </span>
           </div>
         </div>
       ),
       trend: sparklines.tpm,
-      enhanced: true
+      enhanced: true,
     },
     {
       key: 'cost',
@@ -289,7 +336,8 @@ export function StatCards({
       meta: (
         <>
           <span className={styles.statMetaItem}>
-            {t('usage_stats.total_tokens')}: {loading ? '-' : <TokenNumber value={usage?.total_tokens ?? 0} />}
+            {t('usage_stats.total_tokens')}:{' '}
+            {loading ? '-' : <TokenNumber value={usage?.total_tokens ?? 0} />}
           </span>
           {!hasPrices && (
             <span className={`${styles.statMetaItem} ${styles.statSubtle}`}>
@@ -298,8 +346,8 @@ export function StatCards({
           )}
         </>
       ),
-      trend: hasPrices ? sparklines.cost : null
-    }
+      trend: hasPrices ? sparklines.cost : null,
+    },
   ];
 
   return (
@@ -312,7 +360,7 @@ export function StatCards({
             {
               '--accent': card.accent,
               '--accent-soft': card.accentSoft,
-              '--accent-border': card.accentBorder
+              '--accent-border': card.accentBorder,
             } as CSSProperties
           }
         >
@@ -326,7 +374,11 @@ export function StatCards({
           {card.meta && <div className={styles.statMetaRow}>{card.meta}</div>}
           <div className={styles.statTrend}>
             {card.trend ? (
-              <Line className={styles.sparkline} data={card.trend.data} options={sparklineOptions} />
+              <Line
+                className={styles.sparkline}
+                data={card.trend.data}
+                options={sparklineOptions}
+              />
             ) : (
               <div className={styles.statTrendPlaceholder}></div>
             )}
@@ -342,6 +394,8 @@ export function StatCards({
       />
 
       <SLAMonitorCard assessment={slaAssessment} loading={loading} />
+
+      <ModelUsageSummaryCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
     </div>
   );
 }

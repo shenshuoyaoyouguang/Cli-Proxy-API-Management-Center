@@ -1579,5 +1579,14 @@
     "build_date": "构建时间",
     "version": "管理中心版本",
     "author": "作者"
+  },
+  "model_usage_summary": {
+    "title": "模型使用",
+    "active_models": "活跃模型",
+    "top_by_requests": "请求最多",
+    "top_by_cost": "成本最高",
+    "overall_success_rate": "成功率",
+    "no_data_title": "暂无模型数据",
+    "no_data_desc": "所选时间范围内没有可用的模型使用数据。"
   }
 }

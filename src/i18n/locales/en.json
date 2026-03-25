@@ -1579,5 +1579,14 @@
     "build_date": "Build Time",
     "version": "Management UI Version",
     "author": "Author"
+  },
+  "model_usage_summary": {
+    "title": "Model Usage",
+    "active_models": "Active Models",
+    "top_by_requests": "Top by Requests",
+    "top_by_cost": "Top by Cost",
+    "overall_success_rate": "Success Rate",
+    "no_data_title": "No model data",
+    "no_data_desc": "No model usage data available for the selected time range."
   }
 }

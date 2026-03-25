@@ -7,7 +7,6 @@ import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
-import { useLogin } from '@/hooks/useAuthApi';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
@@ -81,9 +80,6 @@ export function LoginPage() {
   const storedKey = useAuthStore((state) => state.managementKey);
   const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
 
-  // Use useLogin hook for auth operations
-  const { login: loginWithHook, loading: loginLoading, error: loginError } = useLogin();
-
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
   const [showCustomBase, setShowCustomBase] = useState(false);
@@ -92,12 +88,10 @@ export function LoginPage() {
   const [autoLoading, setAutoLoading] = useState(true);
   const [autoLoginSuccess, setAutoLoginSuccess] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Use error from hook or local error
-  const error = loginError || localError;
-
-  // Use loading from hook
-  const loading = loginLoading;
+  const error = localError;
+  const loading = isSubmitting;
 
   const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
   const languageOptions = useMemo(
@@ -119,13 +113,19 @@ export function LoginPage() {
   );
 
   useEffect(() => {
+    let redirectTimer: ReturnType<typeof setTimeout> | null = null;
+
     const init = async () => {
+      let shouldKeepSplash = false;
+
       try {
         const autoLoggedIn = await restoreSession();
+        shouldKeepSplash = autoLoggedIn;
+
         if (autoLoggedIn) {
           setAutoLoginSuccess(true);
           // 延迟跳转，让用户看到成功动画
-          setTimeout(() => {
+          redirectTimer = setTimeout(() => {
             const redirect = (location.state as RedirectState | null)?.from?.pathname || '/';
             navigate(redirect, { replace: true });
           }, 1500);
@@ -135,13 +135,19 @@ export function LoginPage() {
           setRememberPassword(storedRememberPassword || Boolean(storedKey));
         }
       } finally {
-        if (!autoLoginSuccess) {
+        if (!shouldKeepSplash) {
           setAutoLoading(false);
         }
       }
     };
 
-    init();
+    void init();
+
+    return () => {
+      if (redirectTimer) {
+        clearTimeout(redirectTimer);
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -154,17 +160,8 @@ export function LoginPage() {
     const baseToUse = apiBase ? normalizeApiBase(apiBase) : detectedBase;
 
     try {
-      // First verify the key using useLogin hook
-      const result = await loginWithHook({
-        apiKey: managementKey.trim(),
-      });
-
-      if (!result.success) {
-        setLocalError(result.message || t('login.error_invalid'));
-        return;
-      }
-
-      // Then perform the actual login with auth store
+      setIsSubmitting(true);
+      setLocalError('');
       await login({
         apiBase: baseToUse,
         managementKey: managementKey.trim(),
@@ -176,12 +173,13 @@ export function LoginPage() {
       const message = getLocalizedErrorMessage(err, t);
       setLocalError(message);
       showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   }, [
     apiBase,
     detectedBase,
     login,
-    loginWithHook,
     managementKey,
     navigate,
     rememberPassword,

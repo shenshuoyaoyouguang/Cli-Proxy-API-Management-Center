@@ -16,8 +16,6 @@ class ApiClient {
   constructor() {
     this.instance = axios.create({
       timeout: REQUEST_TIMEOUT_MS,
-      xsrfCookieName: 'XSRF-TOKEN',
-      xsrfHeaderName: 'X-XSRF-TOKEN',
       headers: {
         'Content-Type': 'application/json',
       },

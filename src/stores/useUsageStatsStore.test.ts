@@ -99,7 +99,7 @@ describe('useUsageStatsStore', () => {
         },
       };
 
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: mockUsage } as any);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: mockUsage } as unknown);
 
       await useUsageStatsStore.getState().loadUsageStats();
 
@@ -120,7 +120,7 @@ describe('useUsageStatsStore', () => {
 
     it('sets loading state during fetch', async () => {
       vi.mocked(usageApi.getUsage).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ usage: {} } as any), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve({ usage: {} } as unknown), 100))
       );
 
       const fetchPromise = useUsageStatsStore.getState().loadUsageStats();
@@ -145,7 +145,7 @@ describe('useUsageStatsStore', () => {
     });
 
     it('fetches when force is true', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
 
       // Set recent refresh time but force refresh
       useUsageStatsStore.setState({
@@ -159,7 +159,7 @@ describe('useUsageStatsStore', () => {
     });
 
     it('updates scopeKey when connection changes', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
 
       // Set different scope
       useUsageStatsStore.setState({
@@ -181,7 +181,7 @@ describe('useUsageStatsStore', () => {
   describe('clearUsageStats', () => {
     it('clears all usage stats', () => {
       useUsageStatsStore.setState({
-        usage: { apis: {} } as any,
+        usage: { apis: {} } as unknown,
         keyStats: { bySource: { 'k:test': { success: 1, failure: 0 } }, byAuthIndex: {} },
         usageDetails: [
           {
@@ -213,7 +213,7 @@ describe('useUsageStatsStore', () => {
 
   describe('state updates', () => {
     it('updates lastRefreshedAt after successful fetch', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
 
       await useUsageStatsStore.getState().loadUsageStats();
 
@@ -221,7 +221,7 @@ describe('useUsageStatsStore', () => {
     });
 
     it('preserves keyStats structure after fetch', async () => {
-      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as unknown);
 
       await useUsageStatsStore.getState().loadUsageStats();
 

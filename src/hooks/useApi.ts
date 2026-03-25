@@ -58,6 +58,34 @@ const pendingRequests = new Map<string, PendingRequest>();
 const BASE_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 30000;
 
+// Request expiry for cleanup (30 seconds)
+const REQUEST_EXPIRY_MS = 30000;
+const CLEANUP_INTERVAL_MS = 10000;
+
+// Cleanup expired pending requests
+function cleanupExpiredRequests(): void {
+  const now = Date.now();
+  for (const [key, request] of pendingRequests) {
+    if (now - request.timestamp > REQUEST_EXPIRY_MS) {
+      request.abortController.abort();
+      pendingRequests.delete(key);
+    }
+  }
+}
+
+// Set up periodic cleanup interval
+let cleanupTimerId: ReturnType<typeof setInterval> | null = null;
+
+function getCleanupInterval(): ReturnType<typeof setInterval> | null {
+  if (!cleanupTimerId) {
+    cleanupTimerId = setInterval(cleanupExpiredRequests, CLEANUP_INTERVAL_MS);
+  }
+  return cleanupTimerId;
+}
+
+// Start cleanup on module load
+getCleanupInterval();
+
 /**
  * Generate a deduplication key from URL and method
  */
@@ -116,7 +144,6 @@ export function useApi<T, P = unknown>(
 
   // Cleanup on unmount
   useEffect(() => {
-    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       // Abort any in-flight request

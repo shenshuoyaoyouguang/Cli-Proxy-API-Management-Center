@@ -36,7 +36,6 @@ export function useUsageReliabilitySnapshot({
   // Use a ref to capture Date.now() once at first render, avoiding repeated calls
   const fallbackNowRef = { current: 0 };
   if (fallbackNowRef.current === 0) {
-    // eslint-disable-next-line react-hooks/purity
     fallbackNowRef.current = Date.now();
   }
 
@@ -58,5 +57,6 @@ export function useUsageReliabilitySnapshot({
       slaAssessment,
       serviceHealth: reliabilitySnapshot.serviceHealth,
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fallbackNowRef is stable, set once at render
   }, [monthlyFee, nowMs, snapshot, tier, usageDetails]);
 }

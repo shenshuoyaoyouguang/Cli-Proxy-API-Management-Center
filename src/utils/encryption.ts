@@ -2,24 +2,45 @@
  * 加密工具函数
  * 从原项目 src/utils/secure-storage.js 迁移
  * v2: 使用 AES-256-GCM 替换 XOR 加密
+ * v2.1: PBKDF2 salt 混入 origin，使每个部署唯一（向后兼容旧 salt 解密）
  */
 
 const ENC_PREFIX = 'enc::v1::';
 const ENC_PREFIX_V2 = 'enc::v2::';
 const SECRET_SALT = 'cli-proxy-api-webui::secure-storage';
 
-// Fixed salt for PBKDF2 key derivation (32 bytes)
-const PBKDF2_SALT = new Uint8Array([
+// Base salt for PBKDF2 key derivation (32 bytes)
+const PBKDF2_SALT_BASE = new Uint8Array([
   0x7a, 0x1f, 0x9c, 0x8b, 0x4d, 0x2e, 0x6a, 0x5f, 0x3c, 0x7d, 0x8e, 0x9f, 0x1a, 0x2b, 0x3c, 0x4d,
   0x5e, 0x6f, 0x7a, 0x8b, 0x9c, 0xad, 0xbe, 0xcf, 0xd0, 0xe1, 0xf2, 0x03, 0x14, 0x25, 0x36, 0x47,
 ]);
 
 let cachedKeyBytes: Uint8Array | null = null;
-let cachedCryptoKey: CryptoKey | null = null;
+let cachedCryptoKeyNew: CryptoKey | null = null;
+let cachedCryptoKeyLegacy: CryptoKey | null = null;
 
-function encodeText(text: string): Uint8Array {
+/**
+ * 获取动态 salt：base salt + origin（每个部署唯一）
+ */
+function getDynamicSalt(): Uint8Array<ArrayBuffer> {
+  const origin = typeof location !== 'undefined' ? location.origin : 'fallback';
+  const originBytes = encodeText(origin);
+  const combined = new Uint8Array(PBKDF2_SALT_BASE.length + originBytes.length);
+  combined.set(PBKDF2_SALT_BASE);
+  combined.set(originBytes, PBKDF2_SALT_BASE.length);
+  return combined as Uint8Array<ArrayBuffer>;
+}
+
+/**
+ * 获取旧版固定 salt（用于解密历史数据）
+ */
+function getLegacySalt(): Uint8Array<ArrayBuffer> {
+  return PBKDF2_SALT_BASE as Uint8Array<ArrayBuffer>;
+}
+
+function encodeText(text: string): Uint8Array<ArrayBuffer> {
   const encoder = new TextEncoder();
-  return encoder.encode(text);
+  return encoder.encode(text) as Uint8Array<ArrayBuffer>;
 }
 
 function decodeText(bytes: Uint8Array): string {
@@ -73,22 +94,27 @@ function xorBytes(data: Uint8Array, keyBytes: Uint8Array): Uint8Array {
 
 /**
  * 使用 PBKDF2 从 SECRET_SALT 派生 AES-256 密钥
+ * @param useLegacySalt - 是否使用旧版固定 salt（用于解密历史数据）
  */
-async function deriveAesKey(): Promise<CryptoKey> {
-  if (cachedCryptoKey) return cachedCryptoKey;
+async function deriveAesKey(useLegacySalt = false): Promise<CryptoKey> {
+  // 检查缓存
+  if (!useLegacySalt && cachedCryptoKeyNew) return cachedCryptoKeyNew;
+  if (useLegacySalt && cachedCryptoKeyLegacy) return cachedCryptoKeyLegacy;
 
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
-    new Uint8Array(encodeText(SECRET_SALT)),
+    encodeText(SECRET_SALT),
     { name: 'PBKDF2' },
     false,
     ['deriveKey']
   );
 
+  const salt = useLegacySalt ? getLegacySalt() : getDynamicSalt();
+
   const key = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: PBKDF2_SALT,
+      salt,
       iterations: 100000,
       hash: 'SHA-256',
     },
@@ -98,7 +124,13 @@ async function deriveAesKey(): Promise<CryptoKey> {
     ['encrypt', 'decrypt']
   );
 
-  cachedCryptoKey = key;
+  // 缓存对应的密钥
+  if (useLegacySalt) {
+    cachedCryptoKeyLegacy = key;
+  } else {
+    cachedCryptoKeyNew = key;
+  }
+
   return key;
 }
 
@@ -130,32 +162,30 @@ async function encryptAesGcm(plaintext: string): Promise<string> {
 }
 
 /**
- * 使用 AES-256-GCM 解密数据
+ * 使用 AES-256-GCM 解密数据（支持新旧两种 salt）
  */
 async function decryptAesGcm(encryptedPayload: string): Promise<string> {
-  const key = await deriveAesKey();
-
   const combined = fromBase64(encryptedPayload);
-
-  // 提取 IV (前 12 字节) 和密文
   const iv = combined.slice(0, 12);
   const ciphertext = combined.slice(12);
 
-  const decrypted = await crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv,
-    },
-    key,
-    ciphertext
-  );
-
-  return decodeText(new Uint8Array(decrypted));
+  // 先尝试新 salt 解密
+  try {
+    const key = await deriveAesKey(false);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    return decodeText(new Uint8Array(decrypted));
+  } catch {
+    // 新 salt 失败，回退到旧 salt（兼容历史数据）
+    const legacyKey = await deriveAesKey(true);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, legacyKey, ciphertext);
+    return decodeText(new Uint8Array(decrypted));
+  }
 }
 
 /**
  * 加密数据（使用 AES-256-GCM，v2）
  * @returns 返回加密后的字符串，格式为 enc::v2::{base64(iv+ciphertext)}
+ * @throws 加密失败时抛出错误，不静默降级
  */
 export async function encryptData(value: string): Promise<string> {
   if (!value) return value;
@@ -163,8 +193,8 @@ export async function encryptData(value: string): Promise<string> {
   try {
     return await encryptAesGcm(value);
   } catch (error) {
-    console.warn('AES-GCM encryption failed, fallback to plaintext:', error);
-    return value;
+    console.error('AES-GCM encryption failed:', error);
+    throw new Error('Encryption failed. Data was NOT stored securely.');
   }
 }
 

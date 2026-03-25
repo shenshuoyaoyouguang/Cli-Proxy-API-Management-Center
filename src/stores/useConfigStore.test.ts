@@ -49,7 +49,7 @@ describe('useConfigStore', () => {
         raw: { debug: false },
       };
 
-      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig as any);
+      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig as unknown);
 
       const result = await useConfigStore.getState().fetchConfig();
 
@@ -67,7 +67,7 @@ describe('useConfigStore', () => {
         raw: { debug: true },
       };
 
-      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig as any);
+      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig as unknown);
 
       const result = await useConfigStore.getState().fetchConfig('debug');
 
@@ -84,7 +84,7 @@ describe('useConfigStore', () => {
     });
 
     it('sets loading state during fetch', async () => {
-      let fetchPromise: Promise<any>;
+      let fetchPromise: Promise<unknown>;
       vi.mocked(configApi.getConfig).mockImplementation(() => {
         fetchPromise = new Promise((resolve) => {
           setTimeout(() => resolve({ debug: false, raw: {} }), 100);
@@ -104,7 +104,7 @@ describe('useConfigStore', () => {
   describe('updateConfigValue', () => {
     it('updates boolean config value (debug)', () => {
       useConfigStore.setState({
-        config: { debug: false, raw: { debug: false } } as any,
+        config: { debug: false, raw: { debug: false } } as unknown,
       });
 
       useConfigStore.getState().updateConfigValue('debug', true);
@@ -114,7 +114,7 @@ describe('useConfigStore', () => {
 
     it('updates string config value (proxy-url)', () => {
       useConfigStore.setState({
-        config: { proxyUrl: '', raw: { 'proxy-url': '' } } as any,
+        config: { proxyUrl: '', raw: { 'proxy-url': '' } } as unknown,
       });
 
       useConfigStore.getState().updateConfigValue('proxy-url', 'http://proxy:8080');
@@ -124,7 +124,7 @@ describe('useConfigStore', () => {
 
     it('updates number config value (request-retry)', () => {
       useConfigStore.setState({
-        config: { requestRetry: 3, raw: { 'request-retry': 3 } } as any,
+        config: { requestRetry: 3, raw: { 'request-retry': 3 } } as unknown,
       });
 
       useConfigStore.getState().updateConfigValue('request-retry', 5);
@@ -134,7 +134,7 @@ describe('useConfigStore', () => {
 
     it('updates raw config section', () => {
       useConfigStore.setState({
-        config: { raw: {} } as any,
+        config: { raw: {} } as unknown,
       });
 
       useConfigStore.getState().updateConfigValue('custom-section', { foo: 'bar' });
@@ -147,7 +147,7 @@ describe('useConfigStore', () => {
       const cache = new Map();
       cache.set('debug', { data: false, timestamp: Date.now() });
       useConfigStore.setState({
-        config: { debug: false, raw: { debug: false } } as any,
+        config: { debug: false, raw: { debug: false } } as unknown,
         cache,
       });
 

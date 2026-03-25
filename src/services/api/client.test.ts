@@ -56,7 +56,7 @@ describe('ApiClient', () => {
       const mockInstance = axios.create();
       (mockInstance.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { result: 'ok' } });
 
-      const result = await apiClient.get('/test');
+      await apiClient.get('/test');
       expect(mockInstance.get).toHaveBeenCalledWith('/test', undefined);
     });
 
@@ -64,7 +64,7 @@ describe('ApiClient', () => {
       const mockInstance = axios.create();
       (mockInstance.post as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { id: 1 } });
 
-      const result = await apiClient.post('/test', { name: 'test' });
+      await apiClient.post('/test', { name: 'test' });
       expect(mockInstance.post).toHaveBeenCalledWith('/test', { name: 'test' }, undefined);
     });
 
@@ -136,7 +136,7 @@ describe('ApiClient', () => {
       (mockInstance.request as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
 
       const config = { url: '/custom', method: 'GET' };
-      const result = await apiClient.requestRaw(config);
+      await apiClient.requestRaw(config);
       expect(mockInstance.request).toHaveBeenCalledWith(config);
     });
   });

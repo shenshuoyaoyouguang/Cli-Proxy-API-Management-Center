@@ -418,7 +418,11 @@ export function useUsageSubscriptionTier(
     () => buildUsageSubscriptionTierScopeKey(authFiles, apiBase, managementKey),
     [apiBase, authFiles, managementKey]
   );
-  const authFilesForRemoteTier = useMemo(() => authFiles, [scopeKey]);
+  const authFilesForRemoteTier = useMemo(
+    () => authFiles,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only update when scopeKey changes
+    [scopeKey]
+  );
 
   const [remoteTiers, setRemoteTiers] = useState<RemoteTierState>(
     () => remoteTierCache.get(scopeKey) ?? emptyRemoteTierState()
@@ -426,7 +430,6 @@ export function useUsageSubscriptionTier(
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
     setRemoteTiers(remoteTierCache.get(scopeKey) ?? emptyRemoteTierState());
     setLoading(false);
   }, [scopeKey]);
@@ -465,7 +468,6 @@ export function useUsageSubscriptionTier(
       };
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
     setLoading(true);
 
     void Promise.all(

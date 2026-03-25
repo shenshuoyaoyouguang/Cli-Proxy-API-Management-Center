@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Navigate, useNavigate, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -7,6 +7,7 @@ import { Select } from '@/components/ui/Select';
 import { SelectionCheckbox } from '@/components/ui/SelectionCheckbox';
 import { IconEye, IconEyeOff } from '@/components/ui/icons';
 import { useAuthStore, useLanguageStore, useNotificationStore } from '@/stores';
+import { useLogin } from '@/hooks/useAuthApi';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
@@ -80,22 +81,30 @@ export function LoginPage() {
   const storedKey = useAuthStore((state) => state.managementKey);
   const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
 
+  // Use useLogin hook for auth operations
+  const { login: loginWithHook, loading: loginLoading, error: loginError } = useLogin();
+
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
   const [showCustomBase, setShowCustomBase] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [rememberPassword, setRememberPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [autoLoading, setAutoLoading] = useState(true);
   const [autoLoginSuccess, setAutoLoginSuccess] = useState(false);
-  const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
+
+  // Use error from hook or local error
+  const error = loginError || localError;
+
+  // Use loading from hook
+  const loading = loginLoading;
 
   const detectedBase = useMemo(() => detectApiBaseFromLocation(), []);
   const languageOptions = useMemo(
     () =>
       LANGUAGE_ORDER.map((lang) => ({
         value: lang,
-        label: t(LANGUAGE_LABEL_KEYS[lang])
+        label: t(LANGUAGE_LABEL_KEYS[lang]),
       })),
     [t]
   );
@@ -138,29 +147,47 @@ export function LoginPage() {
 
   const handleSubmit = useCallback(async () => {
     if (!managementKey.trim()) {
-      setError(t('login.error_required'));
+      setLocalError(t('login.error_required'));
       return;
     }
 
     const baseToUse = apiBase ? normalizeApiBase(apiBase) : detectedBase;
-    setLoading(true);
-    setError('');
+
     try {
+      // First verify the key using useLogin hook
+      const result = await loginWithHook({
+        apiKey: managementKey.trim(),
+      });
+
+      if (!result.success) {
+        setLocalError(result.message || t('login.error_invalid'));
+        return;
+      }
+
+      // Then perform the actual login with auth store
       await login({
         apiBase: baseToUse,
         managementKey: managementKey.trim(),
-        rememberPassword
+        rememberPassword,
       });
       showNotification(t('common.connected_status'), 'success');
       navigate('/', { replace: true });
     } catch (err: unknown) {
       const message = getLocalizedErrorMessage(err, t);
-      setError(message);
+      setLocalError(message);
       showNotification(`${t('notification.login_failed')}: ${message}`, 'error');
-    } finally {
-      setLoading(false);
     }
-  }, [apiBase, detectedBase, login, managementKey, navigate, rememberPassword, showNotification, t]);
+  }, [
+    apiBase,
+    detectedBase,
+    login,
+    loginWithHook,
+    managementKey,
+    navigate,
+    rememberPassword,
+    showNotification,
+    t,
+  ]);
 
   const handleSubmitKeyDown = useCallback(
     (event: React.KeyboardEvent) => {

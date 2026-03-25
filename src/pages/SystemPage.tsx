@@ -12,7 +12,8 @@ import {
   useModelsStore,
   useThemeStore,
 } from '@/stores';
-import { configApi, versionApi } from '@/services/api';
+import { useUpdateRequestLog } from '@/hooks/useConfigApi';
+import { versionApi } from '@/services/api';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
@@ -77,6 +78,7 @@ export function SystemPage() {
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
   const updateConfigValue = useConfigStore((state) => state.updateConfigValue);
+  const { updateRequestLog } = useUpdateRequestLog();
 
   const models = useModelsStore((state) => state.models);
   const modelsLoading = useModelsStore((state) => state.loading);
@@ -263,22 +265,16 @@ export function SystemPage() {
     setRequestLogSaving(true);
     updateConfigValue('request-log', requestLogDraft);
 
-    try {
-      await configApi.updateRequestLog(requestLogDraft);
+    const success = await updateRequestLog(requestLogDraft);
+    if (success) {
       clearCache('request-log');
       showNotification(t('notification.request_log_updated'), 'success');
       setRequestLogModalOpen(false);
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+    } else {
       updateConfigValue('request-log', previous);
-      showNotification(
-        `${t('notification.update_failed')}${message ? `: ${message}` : ''}`,
-        'error'
-      );
-    } finally {
-      setRequestLogSaving(false);
+      showNotification(t('notification.update_failed'), 'error');
     }
+    setRequestLogSaving(false);
   };
 
   const handleVersionCheck = useCallback(async () => {

@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { useLocation, type Location } from 'react-router-dom';
+import { useLocation, type Location } from 'react-router';
 import { animate } from 'motion/mini';
 import type { AnimationPlaybackControlsWithThen } from 'motion-dom';
 import { PageTransitionLayerContext, type LayerStatus } from './PageTransitionLayer';

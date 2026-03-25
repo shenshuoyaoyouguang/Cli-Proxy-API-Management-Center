@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { Outlet, RouterProvider, createHashRouter } from 'react-router-dom';
+import { Outlet, RouterProvider, createHashRouter } from 'react-router';
 import { LoginPage } from '@/pages/LoginPage';
 import { NotificationContainer } from '@/components/common/NotificationContainer';
 import { ConfirmationModal } from '@/components/common/ConfirmationModal';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ProtectedRoute } from '@/router/ProtectedRoute';
 import { useLanguageStore, useThemeStore } from '@/stores';
@@ -53,7 +54,11 @@ function App() {
     document.documentElement.lang = language;
   }, [language]);
 
-  return <RouterProvider router={router} />;
+  return (
+    <ErrorBoundary>
+      <RouterProvider router={router} />
+    </ErrorBoundary>
+  );
 }
 
 export default App;

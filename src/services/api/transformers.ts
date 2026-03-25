@@ -7,13 +7,15 @@ import type {
   ProviderKeyConfig,
   AmpcodeConfig,
   AmpcodeModelMapping,
-  AmpcodeUpstreamApiKeyMapping
+  AmpcodeUpstreamApiKeyMapping,
 } from '@/types';
 import type { Config } from '@/types/config';
 import { buildHeaderObject } from '@/utils/headers';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const isNotNull = <T>(value: T | null): value is T => value !== null;
 
 const normalizeBoolean = (value: unknown): boolean | undefined => {
   if (value === undefined || value === null) return undefined;
@@ -58,21 +60,24 @@ const normalizeModelAliases = (models: unknown): ModelAlias[] => {
       }
       return entry;
     })
-    .filter(Boolean) as ModelAlias[];
+    .filter(isNotNull);
 };
 
 const normalizeHeaders = (headers: unknown) => {
   if (!headers || typeof headers !== 'object') return undefined;
-  const normalized = buildHeaderObject(
-    Array.isArray(headers)
-      ? (headers as Array<{ key: string; value: string }>)
-      : (headers as Record<string, string | undefined | null>)
-  );
+  const headerInput = Array.isArray(headers)
+    ? (headers as Array<{ key: string; value: string }>)
+    : (headers as Record<string, string | undefined | null>);
+  const normalized = buildHeaderObject(headerInput);
   return Object.keys(normalized).length ? normalized : undefined;
 };
 
 const normalizeExcludedModels = (input: unknown): string[] => {
-  const rawList = Array.isArray(input) ? input : typeof input === 'string' ? input.split(/[\n,]/) : [];
+  const rawList = Array.isArray(input)
+    ? input
+    : typeof input === 'string'
+      ? input.split(/[\n,]/)
+      : [];
   const seen = new Set<string>();
   const normalized: string[] = [];
 
@@ -98,17 +103,20 @@ const normalizeApiKeyEntry = (entry: unknown): ApiKeyEntry | null => {
   if (entry === undefined || entry === null) return null;
   const record = isRecord(entry) ? entry : null;
   const apiKey =
-    record?.['api-key'] ?? record?.apiKey ?? record?.key ?? (typeof entry === 'string' ? entry : '');
+    record?.['api-key'] ??
+    record?.apiKey ??
+    record?.key ??
+    (typeof entry === 'string' ? entry : '');
   const trimmed = String(apiKey || '').trim();
   if (!trimmed) return null;
 
-  const proxyUrl = record ? record['proxy-url'] ?? record.proxyUrl : undefined;
+  const proxyUrl = record ? (record['proxy-url'] ?? record.proxyUrl) : undefined;
   const headers = record ? normalizeHeaders(record.headers) : undefined;
 
   return {
     apiKey: trimmed,
     proxyUrl: proxyUrl ? String(proxyUrl) : undefined,
-    headers
+    headers,
   };
 };
 
@@ -129,8 +137,8 @@ const normalizeProviderKeyConfig = (item: unknown): ProviderKeyConfig | null => 
   }
   const prefix = normalizePrefix(record?.prefix ?? record?.['prefix']);
   if (prefix) config.prefix = prefix;
-  const baseUrl = record ? record['base-url'] ?? record.baseUrl : undefined;
-  const proxyUrl = record ? record['proxy-url'] ?? record.proxyUrl : undefined;
+  const baseUrl = record ? (record['base-url'] ?? record.baseUrl) : undefined;
+  const proxyUrl = record ? (record['proxy-url'] ?? record.proxyUrl) : undefined;
   if (baseUrl) config.baseUrl = String(baseUrl);
   const websockets = normalizeBoolean(record?.websockets ?? record?.['websockets']);
   if (websockets !== undefined) config.websockets = websockets;
@@ -194,15 +202,19 @@ const normalizeGeminiKeyConfig = (item: unknown): GeminiKeyConfig | null => {
   }
   const prefix = normalizePrefix(record?.prefix ?? record?.['prefix']);
   if (prefix) config.prefix = prefix;
-  const baseUrl = record ? record['base-url'] ?? record.baseUrl ?? record['base_url'] : undefined;
+  const baseUrl = record ? (record['base-url'] ?? record.baseUrl ?? record['base_url']) : undefined;
   if (baseUrl) config.baseUrl = String(baseUrl);
-  const proxyUrl = record ? record['proxy-url'] ?? record.proxyUrl ?? record['proxy_url'] : undefined;
+  const proxyUrl = record
+    ? (record['proxy-url'] ?? record.proxyUrl ?? record['proxy_url'])
+    : undefined;
   if (proxyUrl) config.proxyUrl = String(proxyUrl);
   const models = normalizeModelAliases(record?.models);
   if (models.length) config.models = models;
   const headers = normalizeHeaders(record?.headers);
   if (headers) config.headers = headers;
-  const excludedModels = normalizeExcludedModels(record?.['excluded-models'] ?? record?.excludedModels);
+  const excludedModels = normalizeExcludedModels(
+    record?.['excluded-models'] ?? record?.excludedModels
+  );
   if (excludedModels.length) config.excludedModels = excludedModels;
   return config;
 };
@@ -217,11 +229,11 @@ const normalizeOpenAIProvider = (provider: unknown): OpenAIProviderConfig | null
   if (Array.isArray(provider['api-key-entries'])) {
     apiKeyEntries = provider['api-key-entries']
       .map((entry) => normalizeApiKeyEntry(entry))
-      .filter(Boolean) as ApiKeyEntry[];
+      .filter(isNotNull);
   } else if (Array.isArray(provider['api-keys'])) {
     apiKeyEntries = provider['api-keys']
       .map((key) => normalizeApiKeyEntry({ 'api-key': key }))
-      .filter(Boolean) as ApiKeyEntry[];
+      .filter(isNotNull);
   }
 
   const headers = normalizeHeaders(provider.headers);
@@ -232,7 +244,7 @@ const normalizeOpenAIProvider = (provider: unknown): OpenAIProviderConfig | null
   const result: OpenAIProviderConfig = {
     name: String(name),
     baseUrl: String(baseUrl),
-    apiKeyEntries
+    apiKeyEntries,
   };
 
   const prefix = normalizePrefix(provider.prefix ?? provider['prefix']);
@@ -312,7 +324,8 @@ const normalizeAmpcodeConfig = (payload: unknown): AmpcodeConfig | undefined => 
   const config: AmpcodeConfig = {};
   const upstreamUrl = source['upstream-url'] ?? source.upstreamUrl ?? source['upstream_url'];
   if (upstreamUrl) config.upstreamUrl = String(upstreamUrl);
-  const upstreamApiKey = source['upstream-api-key'] ?? source.upstreamApiKey ?? source['upstream_api_key'];
+  const upstreamApiKey =
+    source['upstream-api-key'] ?? source.upstreamApiKey ?? source['upstream_api_key'];
   if (upstreamApiKey) config.upstreamApiKey = String(upstreamApiKey);
 
   const upstreamApiKeys = normalizeAmpcodeUpstreamApiKeys(
@@ -351,7 +364,11 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
   config.debug = normalizeBoolean(raw.debug);
   const proxyUrl = raw['proxy-url'] ?? raw.proxyUrl;
   config.proxyUrl =
-    typeof proxyUrl === 'string' ? proxyUrl : proxyUrl === undefined || proxyUrl === null ? undefined : String(proxyUrl);
+    typeof proxyUrl === 'string'
+      ? proxyUrl
+      : proxyUrl === undefined || proxyUrl === null
+        ? undefined
+        : String(proxyUrl);
   const requestRetry = raw['request-retry'] ?? raw.requestRetry;
   if (typeof requestRetry === 'number' && Number.isFinite(requestRetry)) {
     config.requestRetry = requestRetry;
@@ -366,7 +383,9 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
   if (isRecord(quota)) {
     config.quotaExceeded = {
       switchProject: normalizeBoolean(quota['switch-project'] ?? quota.switchProject),
-      switchPreviewModel: normalizeBoolean(quota['switch-preview-model'] ?? quota.switchPreviewModel)
+      switchPreviewModel: normalizeBoolean(
+        quota['switch-preview-model'] ?? quota.switchPreviewModel
+      ),
     };
   }
 
@@ -402,35 +421,36 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
   if (Array.isArray(geminiList)) {
     config.geminiApiKeys = geminiList
       .map((item) => normalizeGeminiKeyConfig(item))
-      .filter(Boolean) as GeminiKeyConfig[];
+      .filter(isNotNull);
   }
 
   const codexList = raw['codex-api-key'] ?? raw.codexApiKey ?? raw.codexApiKeys;
   if (Array.isArray(codexList)) {
     config.codexApiKeys = codexList
       .map((item) => normalizeProviderKeyConfig(item))
-      .filter(Boolean) as ProviderKeyConfig[];
+      .filter(isNotNull);
   }
 
   const claudeList = raw['claude-api-key'] ?? raw.claudeApiKey ?? raw.claudeApiKeys;
   if (Array.isArray(claudeList)) {
     config.claudeApiKeys = claudeList
       .map((item) => normalizeProviderKeyConfig(item))
-      .filter(Boolean) as ProviderKeyConfig[];
+      .filter(isNotNull);
   }
 
   const vertexList = raw['vertex-api-key'] ?? raw.vertexApiKey ?? raw.vertexApiKeys;
   if (Array.isArray(vertexList)) {
     config.vertexApiKeys = vertexList
       .map((item) => normalizeProviderKeyConfig(item))
-      .filter(Boolean) as ProviderKeyConfig[];
+      .filter(isNotNull);
   }
 
-  const openaiList = raw['openai-compatibility'] ?? raw.openaiCompatibility ?? raw.openAICompatibility;
+  const openaiList =
+    raw['openai-compatibility'] ?? raw.openaiCompatibility ?? raw.openAICompatibility;
   if (Array.isArray(openaiList)) {
     config.openaiCompatibility = openaiList
       .map((item) => normalizeOpenAIProvider(item))
-      .filter(Boolean) as OpenAIProviderConfig[];
+      .filter(isNotNull);
   }
 
   const ampcode = normalizeAmpcodeConfig(raw.ampcode);
@@ -438,7 +458,9 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
     config.ampcode = ampcode;
   }
 
-  const oauthExcluded = normalizeOauthExcluded(raw['oauth-excluded-models'] ?? raw.oauthExcludedModels);
+  const oauthExcluded = normalizeOauthExcluded(
+    raw['oauth-excluded-models'] ?? raw.oauthExcludedModels
+  );
   if (oauthExcluded) {
     config.oauthExcludedModels = oauthExcluded;
   }
@@ -456,5 +478,5 @@ export {
   normalizeExcludedModels,
   normalizeAmpcodeConfig,
   normalizeAmpcodeModelMappings,
-  normalizeAmpcodeUpstreamApiKeys
+  normalizeAmpcodeUpstreamApiKeys,
 };

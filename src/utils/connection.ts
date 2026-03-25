@@ -6,7 +6,21 @@ export const normalizeApiBase = (input: string): string => {
   base = base.replace(/\/?v0\/management\/?$/i, '');
   base = base.replace(/\/+$/i, '');
   if (!/^https?:\/\//i.test(base)) {
-    base = `http://${base}`;
+    // Extract hostname (before port) to check if localhost
+    // Handle IPv6 addresses like [::1]:port
+    let hostname: string;
+    if (base.startsWith('[')) {
+      // IPv6: extract between brackets
+      const closeBracket = base.indexOf(']');
+      hostname = closeBracket > -1 ? base.slice(0, closeBracket + 1) : base;
+    } else {
+      hostname = base.split(':')[0];
+    }
+    if (isLocalhost(hostname)) {
+      base = `http://${base}`;
+    } else {
+      base = `https://${base}`;
+    }
   }
   return base;
 };

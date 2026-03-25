@@ -1,6 +1,6 @@
 import { CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { useThemeStore } from '@/stores';
 import iconGemini from '@/assets/icons/gemini.svg';

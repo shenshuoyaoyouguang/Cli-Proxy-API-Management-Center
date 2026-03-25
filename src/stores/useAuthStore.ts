@@ -52,17 +52,30 @@ export const useAuthStore = create<AuthStoreState>()(
           const legacyBase =
             secureStorage.getItem<string>('apiBase') ||
             secureStorage.getItem<string>('apiUrl', { encrypt: true });
-          const legacyKey = secureStorage.getItem<string>('managementKey');
+
+          // 从 secureStorage (localStorage) 获取 managementKey
+          let legacyKey = secureStorage.getItem<string>('managementKey');
+
+          // 如果 localStorage 没有 key，检查 sessionStorage
+          if (!legacyKey) {
+            const sessionKey = sessionStorage.getItem('sessionManagementKey');
+            if (sessionKey) {
+              legacyKey = sessionKey;
+            }
+          }
 
           const { apiBase, managementKey, rememberPassword } = get();
-          const resolvedBase = normalizeApiBase(apiBase || legacyBase || detectApiBaseFromLocation());
+          const resolvedBase = normalizeApiBase(
+            apiBase || legacyBase || detectApiBaseFromLocation()
+          );
           const resolvedKey = managementKey || legacyKey || '';
-          const resolvedRememberPassword = rememberPassword || Boolean(managementKey) || Boolean(legacyKey);
+          const resolvedRememberPassword =
+            rememberPassword || Boolean(managementKey) || Boolean(legacyKey);
 
           set({
             apiBase: resolvedBase,
             managementKey: resolvedKey,
-            rememberPassword: resolvedRememberPassword
+            rememberPassword: resolvedRememberPassword,
           });
           apiClient.setConfig({ apiBase: resolvedBase, managementKey: resolvedKey });
 
@@ -71,7 +84,7 @@ export const useAuthStore = create<AuthStoreState>()(
               await get().login({
                 apiBase: resolvedBase,
                 managementKey: resolvedKey,
-                rememberPassword: resolvedRememberPassword
+                rememberPassword: resolvedRememberPassword,
               });
               return true;
             } catch (error) {
@@ -98,7 +111,7 @@ export const useAuthStore = create<AuthStoreState>()(
           // 配置 API 客户端
           apiClient.setConfig({
             apiBase,
-            managementKey
+            managementKey,
           });
 
           // 测试连接 - 获取配置
@@ -111,12 +124,17 @@ export const useAuthStore = create<AuthStoreState>()(
             managementKey,
             rememberPassword,
             connectionStatus: 'connected',
-            connectionError: null
+            connectionError: null,
           });
+
+          // 根据 rememberPassword 选择存储方式
           if (rememberPassword) {
             localStorage.setItem('isLoggedIn', 'true');
+            sessionStorage.removeItem('sessionManagementKey');
           } else {
             localStorage.removeItem('isLoggedIn');
+            // 将 key 存储在 sessionStorage (tab 关闭后自动清除)
+            sessionStorage.setItem('sessionManagementKey', managementKey);
           }
         } catch (error: unknown) {
           const message =
@@ -127,7 +145,7 @@ export const useAuthStore = create<AuthStoreState>()(
                 : 'Connection failed';
           set({
             connectionStatus: 'error',
-            connectionError: message || 'Connection failed'
+            connectionError: message || 'Connection failed',
           });
           throw error;
         }
@@ -145,9 +163,11 @@ export const useAuthStore = create<AuthStoreState>()(
           serverVersion: null,
           serverBuildDate: null,
           connectionStatus: 'disconnected',
-          connectionError: null
+          connectionError: null,
         });
+        // 清除所有存储的认证信息
         localStorage.removeItem('isLoggedIn');
+        sessionStorage.removeItem('sessionManagementKey');
       },
 
       // 检查认证状态
@@ -167,14 +187,14 @@ export const useAuthStore = create<AuthStoreState>()(
 
           set({
             isAuthenticated: true,
-            connectionStatus: 'connected'
+            connectionStatus: 'connected',
           });
 
           return true;
         } catch {
           set({
             isAuthenticated: false,
-            connectionStatus: 'error'
+            connectionStatus: 'error',
           });
           return false;
         }
@@ -189,9 +209,9 @@ export const useAuthStore = create<AuthStoreState>()(
       updateConnectionStatus: (status, error = null) => {
         set({
           connectionStatus: status,
-          connectionError: error
+          connectionError: error,
         });
-      }
+      },
     }),
     {
       name: STORAGE_KEY_AUTH,
@@ -205,15 +225,15 @@ export const useAuthStore = create<AuthStoreState>()(
         },
         removeItem: (name) => {
           secureStorage.removeItem(name);
-        }
+        },
       })),
       partialize: (state) => ({
         apiBase: state.apiBase,
         ...(state.rememberPassword ? { managementKey: state.managementKey } : {}),
         rememberPassword: state.rememberPassword,
         serverVersion: state.serverVersion,
-        serverBuildDate: state.serverBuildDate
-      })
+        serverBuildDate: state.serverBuildDate,
+      }),
     }
   )
 );
@@ -224,11 +244,8 @@ if (typeof window !== 'undefined') {
     useAuthStore.getState().logout();
   });
 
-  window.addEventListener(
-    'server-version-update',
-    ((e: CustomEvent) => {
-      const detail = e.detail || {};
-      useAuthStore.getState().updateServerVersion(detail.version || null, detail.buildDate || null);
-    }) as EventListener
-  );
+  window.addEventListener('server-version-update', ((e: CustomEvent) => {
+    const detail = e.detail || {};
+    useAuthStore.getState().updateServerVersion(detail.version || null, detail.buildDate || null);
+  }) as EventListener);
 }

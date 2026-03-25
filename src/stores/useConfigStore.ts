@@ -9,6 +9,26 @@ import type { RawConfigSection } from '@/types/config';
 import { configApi } from '@/services/api/config';
 import { CACHE_EXPIRY_MS } from '@/utils/constants';
 
+// Type guards for config value assignment
+const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
+const isString = (value: unknown): value is string => typeof value === 'string';
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === 'string');
+const isQuotaExceededConfig = (value: unknown): value is Config['quotaExceeded'] =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const isGeminiKeyConfigArray = (value: unknown): value is Config['geminiApiKeys'] =>
+  Array.isArray(value);
+const isProviderKeyConfigArray = (value: unknown): value is Config['codexApiKeys'] =>
+  Array.isArray(value);
+const isOpenAIProviderConfigArray = (value: unknown): value is Config['openaiCompatibility'] =>
+  Array.isArray(value);
+const isAmpcodeConfig = (value: unknown): value is Config['ampcode'] =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const isOauthExcludedModels = (value: unknown): value is Config['oauthExcludedModels'] =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
 interface ConfigCache {
   data: unknown;
   timestamp: number;
@@ -52,7 +72,7 @@ const SECTION_KEYS: RawConfigSection[] = [
   'claude-api-key',
   'vertex-api-key',
   'openai-compatibility',
-  'oauth-excluded-models'
+  'oauth-excluded-models',
 ];
 
 const extractSectionValue = (config: Config | null, section?: RawConfigSection) => {
@@ -162,17 +182,21 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       set({
         config: data,
         cache: newCache,
-        loading: false
+        loading: false,
       });
 
       return section ? extractSectionValue(data, section) : data;
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : 'Failed to fetch config';
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'Failed to fetch config';
       if (requestId === configRequestToken) {
         set({
           error: message || 'Failed to fetch config',
-          loading: false
+          loading: false,
         });
       }
       throw error;
@@ -191,61 +215,61 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
       switch (section) {
         case 'debug':
-          nextConfig.debug = value as Config['debug'];
+          if (isBoolean(value)) nextConfig.debug = value;
           break;
         case 'proxy-url':
-          nextConfig.proxyUrl = value as Config['proxyUrl'];
+          if (isString(value)) nextConfig.proxyUrl = value;
           break;
         case 'request-retry':
-          nextConfig.requestRetry = value as Config['requestRetry'];
+          if (isNumber(value)) nextConfig.requestRetry = value;
           break;
         case 'quota-exceeded':
-          nextConfig.quotaExceeded = value as Config['quotaExceeded'];
+          if (isQuotaExceededConfig(value)) nextConfig.quotaExceeded = value;
           break;
         case 'usage-statistics-enabled':
-          nextConfig.usageStatisticsEnabled = value as Config['usageStatisticsEnabled'];
+          if (isBoolean(value)) nextConfig.usageStatisticsEnabled = value;
           break;
         case 'request-log':
-          nextConfig.requestLog = value as Config['requestLog'];
+          if (isBoolean(value)) nextConfig.requestLog = value;
           break;
         case 'logging-to-file':
-          nextConfig.loggingToFile = value as Config['loggingToFile'];
+          if (isBoolean(value)) nextConfig.loggingToFile = value;
           break;
         case 'logs-max-total-size-mb':
-          nextConfig.logsMaxTotalSizeMb = value as Config['logsMaxTotalSizeMb'];
+          if (isNumber(value)) nextConfig.logsMaxTotalSizeMb = value;
           break;
         case 'ws-auth':
-          nextConfig.wsAuth = value as Config['wsAuth'];
+          if (isBoolean(value)) nextConfig.wsAuth = value;
           break;
         case 'force-model-prefix':
-          nextConfig.forceModelPrefix = value as Config['forceModelPrefix'];
+          if (isBoolean(value)) nextConfig.forceModelPrefix = value;
           break;
         case 'routing/strategy':
-          nextConfig.routingStrategy = value as Config['routingStrategy'];
+          if (isString(value)) nextConfig.routingStrategy = value;
           break;
         case 'api-keys':
-          nextConfig.apiKeys = value as Config['apiKeys'];
+          if (isStringArray(value)) nextConfig.apiKeys = value;
           break;
         case 'ampcode':
-          nextConfig.ampcode = value as Config['ampcode'];
+          if (isAmpcodeConfig(value)) nextConfig.ampcode = value;
           break;
         case 'gemini-api-key':
-          nextConfig.geminiApiKeys = value as Config['geminiApiKeys'];
+          if (isGeminiKeyConfigArray(value)) nextConfig.geminiApiKeys = value;
           break;
         case 'codex-api-key':
-          nextConfig.codexApiKeys = value as Config['codexApiKeys'];
+          if (isProviderKeyConfigArray(value)) nextConfig.codexApiKeys = value;
           break;
         case 'claude-api-key':
-          nextConfig.claudeApiKeys = value as Config['claudeApiKeys'];
+          if (isProviderKeyConfigArray(value)) nextConfig.claudeApiKeys = value;
           break;
         case 'vertex-api-key':
-          nextConfig.vertexApiKeys = value as Config['vertexApiKeys'];
+          if (isProviderKeyConfigArray(value)) nextConfig.vertexApiKeys = value;
           break;
         case 'openai-compatibility':
-          nextConfig.openaiCompatibility = value as Config['openaiCompatibility'];
+          if (isOpenAIProviderConfigArray(value)) nextConfig.openaiCompatibility = value;
           break;
         case 'oauth-excluded-models':
-          nextConfig.oauthExcludedModels = value as Config['oauthExcludedModels'];
+          if (isOauthExcludedModels(value)) nextConfig.oauthExcludedModels = value;
           break;
         default:
           break;
@@ -288,5 +312,5 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     if (!cached) return false;
 
     return Date.now() - cached.timestamp < CACHE_EXPIRY_MS;
-  }
+  },
 }));

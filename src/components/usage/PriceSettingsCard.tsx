@@ -19,7 +19,7 @@ export interface PriceSettingsCardProps {
 export function PriceSettingsCard({
   modelNames,
   modelPrices,
-  onPricesChange
+  onPricesChange,
 }: PriceSettingsCardProps) {
   const { t } = useTranslation();
 
@@ -41,6 +41,7 @@ export function PriceSettingsCard({
   const currentPage = Math.min(page, totalPages);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
     setPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
 
@@ -227,7 +228,8 @@ export function PriceSettingsCard({
                           {t('usage_stats.model_price_prompt')}: ${price.prompt.toFixed(4)}/1M
                         </span>
                         <span>
-                          {t('usage_stats.model_price_completion')}: ${price.completion.toFixed(4)}/1M
+                          {t('usage_stats.model_price_completion')}: ${price.completion.toFixed(4)}
+                          /1M
                         </span>
                         <span>
                           {t('usage_stats.model_price_cache')}: ${price.cache.toFixed(4)}/1M

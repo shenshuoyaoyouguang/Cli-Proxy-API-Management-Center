@@ -1,8 +1,9 @@
-import { type CSSProperties, useMemo } from 'react';
+import { type CSSProperties, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconModelCluster } from '@/components/ui/icons';
 import { formatPercent } from '@/utils/numberFormat';
 import { formatCompactNumber, formatUsd } from '@/utils/usage';
+import { SUCCESS_RATE_COLORS, MODEL_USAGE_SUMMARY } from '@/constants/colors';
 import { type ModelStat } from './ModelStatsCard';
 import styles from '@/pages/UsagePage.module.scss';
 import cardStyles from './StatCards.module.scss';
@@ -14,12 +15,12 @@ export interface ModelUsageSummaryCardProps {
 }
 
 function getSuccessRateColor(rate: number): string {
-  if (rate >= 95) return '#22c55e'; // green
-  if (rate >= 80) return '#eab308'; // yellow
-  return '#ef4444'; // red
+  if (rate >= 95) return SUCCESS_RATE_COLORS.excellent;
+  if (rate >= 80) return SUCCESS_RATE_COLORS.good;
+  return SUCCESS_RATE_COLORS.poor;
 }
 
-export function ModelUsageSummaryCard({
+export const ModelUsageSummaryCard = memo(function ModelUsageSummaryCard({
   modelStats,
   loading,
   hasPrices,
@@ -64,7 +65,7 @@ export function ModelUsageSummaryCard({
     };
   }, [modelStats, hasPrices]);
 
-  const accentColor = '#6366f1'; // indigo
+  const accentColor = MODEL_USAGE_SUMMARY.accent;
 
   return (
     <div
@@ -72,8 +73,8 @@ export function ModelUsageSummaryCard({
       style={
         {
           '--accent': accentColor,
-          '--accent-soft': 'rgba(99, 102, 241, 0.18)',
-          '--accent-border': 'rgba(99, 102, 241, 0.5)',
+          '--accent-soft': MODEL_USAGE_SUMMARY.soft,
+          '--accent-border': MODEL_USAGE_SUMMARY.border,
         } as CSSProperties
       }
     >
@@ -193,4 +194,4 @@ export function ModelUsageSummaryCard({
       )}
     </div>
   );
-}
+});

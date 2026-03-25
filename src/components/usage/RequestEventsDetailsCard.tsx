@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -29,7 +29,7 @@ const encodeCsv = (value: string | number): string => {
   return `"${safeText.replace(/"/g, '""')}"`;
 };
 
-export function RequestEventsDetailsCard({
+export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   rows,
   loading,
   externalModelFilter = null,
@@ -37,7 +37,7 @@ export function RequestEventsDetailsCard({
   externalSourceRawFilter = null,
   externalAuthIndexFilter = null,
   externalResultFilter = null,
-  onClearExternalFilters
+  onClearExternalFilters,
 }: RequestEventsDetailsCardProps) {
   const { t } = useTranslation();
 
@@ -72,8 +72,8 @@ export function RequestEventsDetailsCard({
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
       ...Array.from(new Set(rows.map((row) => row.model))).map((model) => ({
         value: model,
-        label: model
-      }))
+        label: model,
+      })),
     ],
     [rows, t]
   );
@@ -83,8 +83,8 @@ export function RequestEventsDetailsCard({
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
       ...Array.from(new Set(rows.map((row) => row.source))).map((source) => ({
         value: source,
-        label: source
-      }))
+        label: source,
+      })),
     ],
     [rows, t]
   );
@@ -93,7 +93,7 @@ export function RequestEventsDetailsCard({
     () => [
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
       { value: 'failure', label: t('stats.failure') },
-      { value: 'success', label: t('stats.success') }
+      { value: 'success', label: t('stats.success') },
     ],
     [t]
   );
@@ -103,15 +103,24 @@ export function RequestEventsDetailsCard({
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
       ...Array.from(new Set(rows.map((row) => row.authIndex))).map((authIndex) => ({
         value: authIndex,
-        label: authIndex
-      }))
+        label: authIndex,
+      })),
     ],
     [rows, t]
   );
 
-  const modelOptionSet = useMemo(() => new Set(modelOptions.map((option) => option.value)), [modelOptions]);
-  const sourceOptionSet = useMemo(() => new Set(sourceOptions.map((option) => option.value)), [sourceOptions]);
-  const resultOptionSet = useMemo(() => new Set(resultOptions.map((option) => option.value)), [resultOptions]);
+  const modelOptionSet = useMemo(
+    () => new Set(modelOptions.map((option) => option.value)),
+    [modelOptions]
+  );
+  const sourceOptionSet = useMemo(
+    () => new Set(sourceOptions.map((option) => option.value)),
+    [sourceOptions]
+  );
+  const resultOptionSet = useMemo(
+    () => new Set(resultOptions.map((option) => option.value)),
+    [resultOptions]
+  );
   const authIndexOptionSet = useMemo(
     () => new Set(authIndexOptions.map((option) => option.value)),
     [authIndexOptions]
@@ -119,6 +128,7 @@ export function RequestEventsDetailsCard({
 
   useEffect(() => {
     if (externalModelFilter && modelOptionSet.has(externalModelFilter)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
       setModelFilter(externalModelFilter);
       setPage(1);
       return;
@@ -131,6 +141,7 @@ export function RequestEventsDetailsCard({
 
   useEffect(() => {
     if (externalSourceFilter && sourceOptionSet.has(externalSourceFilter)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
       setSourceFilter(externalSourceFilter);
       setAuthIndexFilter(ALL_FILTER);
       setPage(1);
@@ -144,6 +155,7 @@ export function RequestEventsDetailsCard({
 
   useEffect(() => {
     if (externalAuthIndexFilter && authIndexOptionSet.has(externalAuthIndexFilter)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
       setAuthIndexFilter(externalAuthIndexFilter);
       setPage(1);
       return;
@@ -156,6 +168,7 @@ export function RequestEventsDetailsCard({
 
   useEffect(() => {
     if (externalResultFilter && resultOptionSet.has(externalResultFilter)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
       setResultFilter(externalResultFilter);
       setPage(1);
       return;
@@ -176,15 +189,20 @@ export function RequestEventsDetailsCard({
   const filteredRows = useMemo(
     () =>
       rows.filter((row) => {
-        const modelMatched = effectiveModelFilter === ALL_FILTER || row.model === effectiveModelFilter;
-        const sourceMatched = effectiveSourceFilter === ALL_FILTER || row.source === effectiveSourceFilter;
-        const sourceRawMatched = externalSourceRawFilter === null || row.sourceRaw === externalSourceRawFilter;
+        const modelMatched =
+          effectiveModelFilter === ALL_FILTER || row.model === effectiveModelFilter;
+        const sourceMatched =
+          effectiveSourceFilter === ALL_FILTER || row.source === effectiveSourceFilter;
+        const sourceRawMatched =
+          externalSourceRawFilter === null || row.sourceRaw === externalSourceRawFilter;
         const resultMatched =
           effectiveResultFilter === ALL_FILTER ||
           (effectiveResultFilter === 'failure' ? row.failed : !row.failed);
         const authIndexMatched =
           effectiveAuthIndexFilter === ALL_FILTER || row.authIndex === effectiveAuthIndexFilter;
-        return modelMatched && sourceMatched && sourceRawMatched && resultMatched && authIndexMatched;
+        return (
+          modelMatched && sourceMatched && sourceRawMatched && resultMatched && authIndexMatched
+        );
       }),
     [
       effectiveAuthIndexFilter,
@@ -192,7 +210,7 @@ export function RequestEventsDetailsCard({
       effectiveResultFilter,
       effectiveSourceFilter,
       externalSourceRawFilter,
-      rows
+      rows,
     ]
   );
 
@@ -200,6 +218,7 @@ export function RequestEventsDetailsCard({
   const currentPage = Math.min(page, totalPages);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
     setPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
 
@@ -224,8 +243,12 @@ export function RequestEventsDetailsCard({
     externalSourceRawFilter !== null;
 
   const drilldownLabels = [
-    externalModelFilter ? `${t('usage_stats.request_events_filter_model')}: ${externalModelFilter}` : null,
-    externalSourceFilter ? `${t('usage_stats.request_events_filter_source')}: ${externalSourceFilter}` : null,
+    externalModelFilter
+      ? `${t('usage_stats.request_events_filter_model')}: ${externalModelFilter}`
+      : null,
+    externalSourceFilter
+      ? `${t('usage_stats.request_events_filter_source')}: ${externalSourceFilter}`
+      : null,
     externalAuthIndexFilter
       ? `${t('usage_stats.request_events_filter_auth_index')}: ${externalAuthIndexFilter}`
       : null,
@@ -233,7 +256,7 @@ export function RequestEventsDetailsCard({
       ? `${t('usage_stats.request_events_result')}: ${
           externalResultFilter === 'failure' ? t('stats.failure') : t('stats.success')
         }`
-      : null
+      : null,
   ].filter((value): value is string => Boolean(value));
 
   const handleClearFilters = () => {
@@ -259,7 +282,7 @@ export function RequestEventsDetailsCard({
       'output_tokens',
       'reasoning_tokens',
       'cached_tokens',
-      'total_tokens'
+      'total_tokens',
     ];
 
     const csvRows = filteredRows.map((row) =>
@@ -274,7 +297,7 @@ export function RequestEventsDetailsCard({
         row.outputTokens,
         row.reasoningTokens,
         row.cachedTokens,
-        row.totalTokens
+        row.totalTokens,
       ]
         .map((value) => encodeCsv(value))
         .join(',')
@@ -284,7 +307,7 @@ export function RequestEventsDetailsCard({
     const fileTime = new Date().toISOString().replace(/[:.]/g, '-');
     downloadBlob({
       filename: `usage-events-${fileTime}.csv`,
-      blob: new Blob([content], { type: 'text/csv;charset=utf-8' })
+      blob: new Blob([content], { type: 'text/csv;charset=utf-8' }),
     });
   };
 
@@ -303,15 +326,15 @@ export function RequestEventsDetailsCard({
         output_tokens: row.outputTokens,
         reasoning_tokens: row.reasoningTokens,
         cached_tokens: row.cachedTokens,
-        total_tokens: row.totalTokens
-      }
+        total_tokens: row.totalTokens,
+      },
     }));
 
     const content = JSON.stringify(payload, null, 2);
     const fileTime = new Date().toISOString().replace(/[:.]/g, '-');
     downloadBlob({
       filename: `usage-events-${fileTime}.json`,
-      blob: new Blob([content], { type: 'application/json;charset=utf-8' })
+      blob: new Blob([content], { type: 'application/json;charset=utf-8' }),
     });
   };
 
@@ -320,13 +343,28 @@ export function RequestEventsDetailsCard({
       title={t('usage_stats.request_events_title')}
       extra={
         <div className={styles.requestEventsActions}>
-          <Button variant="ghost" size="sm" onClick={handleClearFilters} disabled={!hasActiveFilters}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearFilters}
+            disabled={!hasActiveFilters}
+          >
             {t('usage_stats.clear_filters')}
           </Button>
-          <Button variant="secondary" size="sm" onClick={handleExportCsv} disabled={filteredRows.length === 0}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={filteredRows.length === 0}
+          >
             {t('usage_stats.export_csv')}
           </Button>
-          <Button variant="secondary" size="sm" onClick={handleExportJson} disabled={filteredRows.length === 0}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleExportJson}
+            disabled={filteredRows.length === 0}
+          >
             {t('usage_stats.export_json')}
           </Button>
         </div>
@@ -335,7 +373,9 @@ export function RequestEventsDetailsCard({
       {hasExternalDrilldown && (
         <div className={styles.requestEventsDrilldownBanner}>
           <div className={styles.requestEventsDrilldownInfo}>
-            <span className={styles.requestEventsDrilldownText}>{t('usage_stats.drilldown_active')}</span>
+            <span className={styles.requestEventsDrilldownText}>
+              {t('usage_stats.drilldown_active')}
+            </span>
             {drilldownLabels.length > 0 && (
               <div className={styles.requestEventsDrilldownChips}>
                 {drilldownLabels.map((label) => (
@@ -440,7 +480,9 @@ export function RequestEventsDetailsCard({
               >
                 {t('auth_files.pagination_prev')}
               </Button>
-              <span className={styles.requestEventsPaginationInfo}>{currentPage}/{totalPages}</span>
+              <span className={styles.requestEventsPaginationInfo}>
+                {currentPage}/{totalPages}
+              </span>
               <Button
                 variant="secondary"
                 size="sm"
@@ -477,14 +519,20 @@ export function RequestEventsDetailsCard({
                     <td className={styles.modelCell}>{row.model}</td>
                     <td className={styles.requestEventsSourceCell} title={row.source}>
                       <span>{row.source}</span>
-                      {row.sourceType && <span className={styles.credentialType}>{row.sourceType}</span>}
+                      {row.sourceType && (
+                        <span className={styles.credentialType}>{row.sourceType}</span>
+                      )}
                     </td>
                     <td className={styles.requestEventsAuthIndex} title={row.authIndex}>
                       {row.authIndex}
                     </td>
                     <td>
                       <span
-                        className={row.failed ? styles.requestEventsResultFailed : styles.requestEventsResultSuccess}
+                        className={
+                          row.failed
+                            ? styles.requestEventsResultFailed
+                            : styles.requestEventsResultSuccess
+                        }
                       >
                         {row.failed ? t('stats.failure') : t('stats.success')}
                       </span>
@@ -503,4 +551,4 @@ export function RequestEventsDetailsCard({
       )}
     </Card>
   );
-}
+});

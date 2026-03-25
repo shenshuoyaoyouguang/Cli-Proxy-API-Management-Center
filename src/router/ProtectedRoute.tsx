@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router';
 import { useAuthStore } from '@/stores';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 

@@ -8,7 +8,7 @@ import type {
   CodexQuotaState,
   CodexUsagePayload,
   GeminiCliCodeAssistPayload,
-  GeminiCliQuotaState
+  GeminiCliQuotaState,
 } from '@/types';
 import {
   CLAUDE_PROFILE_URL,
@@ -25,7 +25,7 @@ import {
   resolveAuthProvider,
   resolveCodexChatgptAccountId,
   resolveCodexPlanType,
-  resolveGeminiCliProjectId
+  resolveGeminiCliProjectId,
 } from '@/utils/quota';
 import type { SubscriptionTier } from '@/utils/usage/slaCalculator';
 
@@ -51,13 +51,13 @@ const tierRank: Record<SubscriptionTier, number> = {
   free: 0,
   basic: 1,
   pro: 2,
-  enterprise: 3
+  enterprise: 3,
 };
 
 const emptyRemoteTierState = (): RemoteTierState => ({
   claudePlanTypes: {},
   codexPlanTypes: {},
-  geminiTierIds: {}
+  geminiTierIds: {},
 });
 
 const remoteTierCache = new Map<string, RemoteTierState>();
@@ -78,7 +78,7 @@ const buildAuthFileScopeSignature = (file: AuthFileItem): string => {
     file.disabled === true ? 'disabled' : 'enabled',
     codexAccountId ?? '',
     codexPlanType ?? '',
-    geminiProjectId ?? ''
+    geminiProjectId ?? '',
   ].join('|');
 };
 
@@ -86,7 +86,12 @@ const buildUsageSubscriptionTierScopeKey = (
   authFiles: AuthFileItem[],
   apiBase: string | null | undefined,
   managementKey: string | null | undefined
-): string => [apiBase || '', managementKey || '', authFiles.map(buildAuthFileScopeSignature).sort().join('||')].join('::');
+): string =>
+  [
+    apiBase || '',
+    managementKey || '',
+    authFiles.map(buildAuthFileScopeSignature).sort().join('||'),
+  ].join('::');
 
 const mergeRemoteTierState = (
   previous: RemoteTierState,
@@ -96,7 +101,7 @@ const mergeRemoteTierState = (
   const next: RemoteTierState = {
     claudePlanTypes: { ...previous.claudePlanTypes },
     codexPlanTypes: { ...previous.codexPlanTypes },
-    geminiTierIds: { ...previous.geminiTierIds }
+    geminiTierIds: { ...previous.geminiTierIds },
   };
 
   results.forEach(({ fileName, provider, value }) => {
@@ -131,7 +136,7 @@ const mergeRemoteTierState = (
 
 export const usageSubscriptionTierTestUtils = {
   buildUsageSubscriptionTierScopeKey,
-  mergeRemoteTierState
+  mergeRemoteTierState,
 };
 
 const hasOwn = (record: Record<string, unknown>, key: string) =>
@@ -186,7 +191,9 @@ const resolveGeminiCliTierId = (payload: GeminiCliCodeAssistPayload | null): str
   return rawId ? rawId.toLowerCase() : null;
 };
 
-const mapPlanTypeToSubscriptionTier = (planType: string | null | undefined): SubscriptionTier | null => {
+const mapPlanTypeToSubscriptionTier = (
+  planType: string | null | undefined
+): SubscriptionTier | null => {
   const normalized = normalizePlanType(planType);
   switch (normalized) {
     case 'free':
@@ -210,7 +217,9 @@ const mapPlanTypeToSubscriptionTier = (planType: string | null | undefined): Sub
   }
 };
 
-const mapGeminiTierIdToSubscriptionTier = (tierId: string | null | undefined): SubscriptionTier | null => {
+const mapGeminiTierIdToSubscriptionTier = (
+  tierId: string | null | undefined
+): SubscriptionTier | null => {
   switch ((tierId ?? '').trim().toLowerCase()) {
     case 'free-tier':
       return 'free';
@@ -239,10 +248,10 @@ const createSyntheticClaudeQuota = (
       name,
       {
         ...(quotas[name] ?? { status: 'success', windows: [] }),
-        planType
-      }
+        planType,
+      },
     ])
-  )
+  ),
 });
 
 const createSyntheticCodexQuota = (
@@ -255,10 +264,10 @@ const createSyntheticCodexQuota = (
       name,
       {
         ...(quotas[name] ?? { status: 'success', windows: [] }),
-        planType
-      }
+        planType,
+      },
     ])
-  )
+  ),
 });
 
 const createSyntheticGeminiQuota = (
@@ -271,10 +280,10 @@ const createSyntheticGeminiQuota = (
       name,
       {
         ...(quotas[name] ?? { status: 'success', buckets: [] }),
-        tierId
-      }
+        tierId,
+      },
     ])
-  )
+  ),
 });
 
 const fetchClaudePlanType = async (file: AuthFileItem): Promise<string | null> => {
@@ -286,7 +295,7 @@ const fetchClaudePlanType = async (file: AuthFileItem): Promise<string | null> =
       authIndex,
       method: 'GET',
       url: CLAUDE_PROFILE_URL,
-      header: { ...CLAUDE_REQUEST_HEADERS }
+      header: { ...CLAUDE_REQUEST_HEADERS },
     });
 
     if (result.statusCode < 200 || result.statusCode >= 300) {
@@ -311,15 +320,17 @@ const fetchCodexPlanType = async (file: AuthFileItem): Promise<string | null> =>
       url: CODEX_USAGE_URL,
       header: {
         ...CODEX_REQUEST_HEADERS,
-        'Chatgpt-Account-Id': accountId
-      }
+        'Chatgpt-Account-Id': accountId,
+      },
     });
 
     if (result.statusCode < 200 || result.statusCode >= 300) {
       return null;
     }
 
-    const payload = parseCodexUsagePayload(result.body ?? result.bodyText) as CodexUsagePayload | null;
+    const payload = parseCodexUsagePayload(
+      result.body ?? result.bodyText
+    ) as CodexUsagePayload | null;
     return normalizePlanType(payload?.plan_type ?? payload?.planType);
   } catch {
     return null;
@@ -343,9 +354,9 @@ const fetchGeminiTierId = async (file: AuthFileItem): Promise<string | null> => 
           ideType: 'IDE_UNSPECIFIED',
           platform: 'PLATFORM_UNSPECIFIED',
           pluginType: 'GEMINI',
-          duetProject: projectId
-        }
-      })
+          duetProject: projectId,
+        },
+      }),
     });
 
     if (result.statusCode < 200 || result.statusCode >= 300) {
@@ -362,7 +373,7 @@ export function resolveUsageSubscriptionTier({
   authFiles,
   claudeQuota,
   codexQuota,
-  geminiCliQuota
+  geminiCliQuota,
 }: ResolveUsageSubscriptionTierOptions): SubscriptionTier {
   const candidates = authFiles.reduce<SubscriptionTier[]>((result, file) => {
     if (file.disabled === true) {
@@ -374,7 +385,9 @@ export function resolveUsageSubscriptionTier({
       provider === 'claude'
         ? mapPlanTypeToSubscriptionTier(claudeQuota[file.name]?.planType)
         : provider === 'codex'
-          ? mapPlanTypeToSubscriptionTier(codexQuota[file.name]?.planType ?? resolveCodexPlanType(file))
+          ? mapPlanTypeToSubscriptionTier(
+              codexQuota[file.name]?.planType ?? resolveCodexPlanType(file)
+            )
           : provider === 'gemini-cli'
             ? mapGeminiTierIdToSubscriptionTier(geminiCliQuota[file.name]?.tierId)
             : null;
@@ -393,7 +406,9 @@ export function resolveUsageSubscriptionTier({
   return candidates.reduce(pickHigherTier, candidates[0]);
 }
 
-export function useUsageSubscriptionTier(authFiles: AuthFileItem[]): UseUsageSubscriptionTierResult {
+export function useUsageSubscriptionTier(
+  authFiles: AuthFileItem[]
+): UseUsageSubscriptionTierResult {
   const claudeQuota = useQuotaStore((state) => state.claudeQuota);
   const codexQuota = useQuotaStore((state) => state.codexQuota);
   const geminiCliQuota = useQuotaStore((state) => state.geminiCliQuota);
@@ -405,12 +420,13 @@ export function useUsageSubscriptionTier(authFiles: AuthFileItem[]): UseUsageSub
   );
   const authFilesForRemoteTier = useMemo(() => authFiles, [scopeKey]);
 
-  const [remoteTiers, setRemoteTiers] = useState<RemoteTierState>(() =>
-    remoteTierCache.get(scopeKey) ?? emptyRemoteTierState()
+  const [remoteTiers, setRemoteTiers] = useState<RemoteTierState>(
+    () => remoteTierCache.get(scopeKey) ?? emptyRemoteTierState()
   );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
     setRemoteTiers(remoteTierCache.get(scopeKey) ?? emptyRemoteTierState());
     setLoading(false);
   }, [scopeKey]);
@@ -429,7 +445,11 @@ export function useUsageSubscriptionTier(authFiles: AuthFileItem[]): UseUsageSub
       }
 
       if (provider === 'codex') {
-        return !codexQuota[file.name]?.planType && !resolveCodexPlanType(file) && !hasOwn(remoteTiers.codexPlanTypes, file.name);
+        return (
+          !codexQuota[file.name]?.planType &&
+          !resolveCodexPlanType(file) &&
+          !hasOwn(remoteTiers.codexPlanTypes, file.name)
+        );
       }
 
       if (provider === 'gemini-cli') {
@@ -445,6 +465,7 @@ export function useUsageSubscriptionTier(authFiles: AuthFileItem[]): UseUsageSub
       };
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
     setLoading(true);
 
     void Promise.all(
@@ -503,13 +524,13 @@ export function useUsageSubscriptionTier(authFiles: AuthFileItem[]): UseUsageSub
         authFiles,
         claudeQuota: mergedClaudeQuota,
         codexQuota: mergedCodexQuota,
-        geminiCliQuota: mergedGeminiQuota
+        geminiCliQuota: mergedGeminiQuota,
       }),
     [authFiles, mergedClaudeQuota, mergedCodexQuota, mergedGeminiQuota]
   );
 
   return {
     subscriptionTier,
-    loading
+    loading,
   };
 }

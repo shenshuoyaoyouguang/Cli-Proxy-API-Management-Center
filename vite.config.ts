@@ -14,7 +14,10 @@ function getVersion(): string {
 
   // 2. Try git tag
   try {
-    const gitTag = execSync('git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo ""', { encoding: 'utf8' }).trim();
+    const gitTag = execSync(
+      'git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo ""',
+      { encoding: 'utf8' }
+    ).trim();
     if (gitTag) {
       return gitTag;
     }
@@ -40,32 +43,32 @@ export default defineConfig({
   plugins: [
     react(),
     viteSingleFile({
-      removeViteModuleLoader: true
-    })
+      removeViteModuleLoader: true,
+    }),
   ],
   define: {
-    __APP_VERSION__: JSON.stringify(getVersion())
+    __APP_VERSION__: JSON.stringify(getVersion()),
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
-    }
+      '@': path.resolve(__dirname, './src'),
+    },
   },
   test: {
     globals: true,
-    environment: 'node',
-    include: ['src/**/*.{test,spec}.ts']
+    environment: 'jsdom',
+    include: ['src/**/*.{test,spec}.ts'],
   },
   css: {
     modules: {
       localsConvention: 'camelCase',
-      generateScopedName: '[name]__[local]___[hash:base64:5]'
+      generateScopedName: '[name]__[local]___[hash:base64:5]',
     },
     preprocessorOptions: {
       scss: {
-        additionalData: `@use "@/styles/variables.scss" as *;`
-      }
-    }
+        additionalData: `@use "@/styles/variables.scss" as *;`,
+      },
+    },
   },
   build: {
     target: 'es2020',
@@ -76,8 +79,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         inlineDynamicImports: true,
-        manualChunks: undefined
-      }
-    }
-  }
+        manualChunks: undefined,
+      },
+    },
+  },
 });

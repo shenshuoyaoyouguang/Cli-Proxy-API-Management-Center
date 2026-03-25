@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, type ReactNode, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
 import {
@@ -24,6 +24,7 @@ import { HealthScoreCard } from './HealthScoreCard';
 import { SLAMonitorCard } from './SLAMonitorCard';
 import { ModelUsageSummaryCard } from './ModelUsageSummaryCard';
 import type { ModelStat } from './ModelStatsCard';
+import { STAT_COLORS, STATUS_COLORS } from '@/constants/colors';
 import styles from '@/pages/UsagePage.module.scss';
 import cardStyles from './StatCards.module.scss';
 
@@ -78,7 +79,7 @@ export interface StatCardsProps {
   };
 }
 
-export function StatCards({
+export const StatCards = memo(function StatCards({
   usage,
   details: usageDetails,
   loading,
@@ -221,18 +222,24 @@ export function StatCards({
       key: 'requests',
       label: t('usage_stats.total_requests'),
       icon: <IconSatellite size={16} />,
-      accent: '#8b8680',
-      accentSoft: 'rgba(139, 134, 128, 0.18)',
-      accentBorder: 'rgba(139, 134, 128, 0.35)',
+      accent: STAT_COLORS.requests.accent,
+      accentSoft: STAT_COLORS.requests.soft,
+      accentBorder: STAT_COLORS.requests.border,
       value: loading ? '-' : (usage?.total_requests ?? 0).toLocaleString(),
       meta: (
         <>
           <span className={styles.statMetaItem}>
-            <span className={styles.statMetaDot} style={{ backgroundColor: '#10b981' }} />
+            <span
+              className={styles.statMetaDot}
+              style={{ backgroundColor: STATUS_COLORS.success }}
+            />
             {t('usage_stats.success_requests')}: {loading ? '-' : (usage?.success_count ?? 0)}
           </span>
           <span className={styles.statMetaItem}>
-            <span className={styles.statMetaDot} style={{ backgroundColor: '#c65746' }} />
+            <span
+              className={styles.statMetaDot}
+              style={{ backgroundColor: STATUS_COLORS.failure }}
+            />
             {t('usage_stats.failed_requests')}: {loading ? '-' : (usage?.failure_count ?? 0)}
           </span>
         </>
@@ -243,9 +250,9 @@ export function StatCards({
       key: 'tokens',
       label: t('usage_stats.total_tokens'),
       icon: <IconDiamond size={16} />,
-      accent: '#8b5cf6',
-      accentSoft: 'rgba(139, 92, 246, 0.18)',
-      accentBorder: 'rgba(139, 92, 246, 0.35)',
+      accent: STAT_COLORS.tokens.accent,
+      accentSoft: STAT_COLORS.tokens.soft,
+      accentBorder: STAT_COLORS.tokens.border,
       value: loading ? '-' : <TokenNumber value={usage?.total_tokens ?? 0} />,
       meta: (
         <>
@@ -265,9 +272,9 @@ export function StatCards({
       key: 'rpm',
       label: t('usage_stats.rpm_30m'),
       icon: <IconTimer size={16} />,
-      accent: '#22c55e',
-      accentSoft: 'rgba(34, 197, 94, 0.18)',
-      accentBorder: 'rgba(34, 197, 94, 0.32)',
+      accent: STAT_COLORS.rpm.accent,
+      accentSoft: STAT_COLORS.rpm.soft,
+      accentBorder: STAT_COLORS.rpm.border,
       value: loading ? '-' : <RateNumber value={rateStats.rpm} />,
       meta: (
         <div className={cardStyles.enhancedMeta}>
@@ -296,9 +303,9 @@ export function StatCards({
       key: 'tpm',
       label: t('usage_stats.tpm_30m'),
       icon: <IconTrendingUp size={16} />,
-      accent: '#f97316',
-      accentSoft: 'rgba(249, 115, 22, 0.18)',
-      accentBorder: 'rgba(249, 115, 22, 0.32)',
+      accent: STAT_COLORS.tpm.accent,
+      accentSoft: STAT_COLORS.tpm.soft,
+      accentBorder: STAT_COLORS.tpm.border,
       value: loading ? '-' : <RateNumber value={rateStats.tpm} />,
       meta: (
         <div className={cardStyles.enhancedMeta}>
@@ -329,9 +336,9 @@ export function StatCards({
       key: 'cost',
       label: t('usage_stats.total_cost'),
       icon: <IconDollarSign size={16} />,
-      accent: '#f59e0b',
-      accentSoft: 'rgba(245, 158, 11, 0.18)',
-      accentBorder: 'rgba(245, 158, 11, 0.32)',
+      accent: STAT_COLORS.cost.accent,
+      accentSoft: STAT_COLORS.cost.soft,
+      accentBorder: STAT_COLORS.cost.border,
       value: loading ? '-' : hasPrices ? <CostNumber value={totalCost} /> : '--',
       meta: (
         <>
@@ -398,4 +405,4 @@ export function StatCards({
       <ModelUsageSummaryCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
     </div>
   );
-}
+});

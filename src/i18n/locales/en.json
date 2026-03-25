@@ -52,7 +52,10 @@
     "model_alias_placeholder": "Model alias (optional)",
     "invalid_provider_index": "Invalid provider index.",
     "unsaved_changes_title": "Unsaved changes",
-    "unsaved_changes_message": "You have unsaved changes. Leaving now will discard them. Do you want to leave?"
+    "unsaved_changes_message": "You have unsaved changes. Leaving now will discard them. Do you want to leave?",
+    "error_boundary_title": "Something went wrong",
+    "error_boundary_message": "An unexpected error occurred. Please try reloading the page.",
+    "reload_page": "Reload Page"
   },
   "title": {
     "main": "CLI Proxy API Management Center",

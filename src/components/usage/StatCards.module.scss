@@ -455,3 +455,73 @@
   border-radius: $radius-md;
   background-color: var(--bg-secondary);
 }
+
+// Model Summary Card Styles
+.modelSummaryCard {
+  grid-column: span 4;
+
+  @include tablet {
+    grid-column: span 6;
+  }
+
+  @include mobile {
+    grid-column: auto;
+  }
+}
+
+.modelSummaryContent {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.summarySection {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modelRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modelRowHeader {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.modelBarContainer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  background-color: var(--bg-secondary);
+  border-radius: $radius-md;
+}
+
+.modelBarFill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--accent-soft);
+  border-radius: $radius-md;
+}
+
+.modelInfo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.successRateRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}

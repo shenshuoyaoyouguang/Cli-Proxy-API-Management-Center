@@ -10,7 +10,7 @@ export type {
   SparklineData,
   SparklineBundle,
   UseSparklinesOptions,
-  UseSparklinesReturn
+  UseSparklinesReturn,
 } from './hooks/useSparklines';
 
 export { useChartData } from './hooks/useChartData';
@@ -19,13 +19,13 @@ export type { UseChartDataOptions, UseChartDataReturn } from './hooks/useChartDa
 export { useUsageAnalyticsSnapshot } from './hooks/useUsageAnalyticsSnapshot';
 export type {
   UseUsageAnalyticsSnapshotOptions,
-  UseUsageAnalyticsSnapshotReturn
+  UseUsageAnalyticsSnapshotReturn,
 } from './hooks/useUsageAnalyticsSnapshot';
 
 export { useUsageReliabilitySnapshot } from './hooks/useUsageReliabilitySnapshot';
 export type {
   UseUsageReliabilitySnapshotOptions,
-  UseUsageReliabilitySnapshotReturn
+  UseUsageReliabilitySnapshotReturn,
 } from './hooks/useUsageReliabilitySnapshot';
 
 export { useUsageSubscriptionTier } from './hooks/useUsageSubscriptionTier';
@@ -37,7 +37,7 @@ export type {
   ModelEfficiencyRow,
   RequestEventRow,
   RuntimeQualitySummary,
-  TokenDistribution
+  TokenDistribution,
 } from './hooks/usageAnalyticsSnapshot';
 
 // Components
@@ -61,6 +61,9 @@ export type { ApiDetailsCardProps } from './ApiDetailsCard';
 
 export { ModelStatsCard } from './ModelStatsCard';
 export type { ModelStatsCardProps, ModelStat } from './ModelStatsCard';
+
+export { ModelUsageSummaryCard } from './ModelUsageSummaryCard';
+export type { ModelUsageSummaryCardProps } from './ModelUsageSummaryCard';
 
 export { PriceSettingsCard } from './PriceSettingsCard';
 export type { PriceSettingsCardProps } from './PriceSettingsCard';

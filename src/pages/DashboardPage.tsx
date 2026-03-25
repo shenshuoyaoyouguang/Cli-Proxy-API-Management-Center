@@ -3,7 +3,6 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconKey, IconBot, IconFileText, IconSatellite } from '@/components/ui/icons';
 import { useAuthStore, useConfigStore, useModelsStore } from '@/stores';
-import { useConfig } from '@/hooks/useConfigApi';
 import { apiKeysApi, providersApi, authFilesApi } from '@/services/api';
 import styles from './DashboardPage.module.scss';
 
@@ -30,11 +29,8 @@ export function DashboardPage() {
   const serverBuildDate = useAuthStore((state) => state.serverBuildDate);
   const apiBase = useAuthStore((state) => state.apiBase);
 
-  // Use hook for config data
-  const { config: hookConfig } = useConfig();
-  // Use store config as fallback for initial render
-  const storeConfig = useConfigStore((state) => state.config);
-  const config = hookConfig ?? storeConfig;
+  const config = useConfigStore((state) => state.config);
+  const fetchConfig = useConfigStore((state) => state.fetchConfig);
 
   const models = useModelsStore((state) => state.models);
   const modelsLoading = useModelsStore((state) => state.loading);
@@ -55,6 +51,14 @@ export function DashboardPage() {
   });
 
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (connectionStatus === 'connected' && !config) {
+      fetchConfig().catch(() => {
+        // ignore config preload errors here; page handles missing config state gracefully
+      });
+    }
+  }, [connectionStatus, config, fetchConfig]);
 
   useEffect(() => {
     const fetchStats = async () => {

@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { IconKey, IconBot, IconFileText, IconSatellite } from '@/components/ui/icons';
 import { useAuthStore, useConfigStore, useModelsStore } from '@/stores';
 import { useConfig } from '@/hooks/useConfigApi';
-import { useModels } from '@/hooks/useModelsApi';
 import { apiKeysApi, providersApi, authFilesApi } from '@/services/api';
 import styles from './DashboardPage.module.scss';
 
@@ -37,11 +36,8 @@ export function DashboardPage() {
   const storeConfig = useConfigStore((state) => state.config);
   const config = hookConfig ?? storeConfig;
 
-  // Use hook for models data - hooks handle their own loading/fetching
-  const { models: hookModels, loading: modelsLoading } = useModels();
-  // Use store models as fallback for initial render
-  const storeModels = useModelsStore((state) => state.models);
-  const models = hookModels.length > 0 ? hookModels : storeModels;
+  const models = useModelsStore((state) => state.models);
+  const modelsLoading = useModelsStore((state) => state.loading);
 
   const [stats, setStats] = useState<{
     apiKeys: number | null;
@@ -149,7 +145,7 @@ export function DashboardPage() {
     },
     {
       label: t('dashboard.available_models'),
-      value: modelsLoading ? '-' : models.length,
+      value: modelsLoading ? '-' : models.length > 0 ? models.length : '-',
       icon: <IconSatellite size={24} />,
       path: '/system',
       loading: modelsLoading,

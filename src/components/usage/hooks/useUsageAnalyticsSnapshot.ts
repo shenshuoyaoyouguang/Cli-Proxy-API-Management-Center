@@ -21,6 +21,7 @@ import {
   createRequestEventRowsForRange,
   createRuntimeQualitySummary,
   createTokenDistribution,
+  createUsageSummaryMetrics,
   filterUsageDetailsByTimeRange,
   type CredentialEfficiencyRow,
   type CredentialRow,
@@ -28,7 +29,8 @@ import {
   type ModelEfficiencyRow,
   type RequestEventRow,
   type RuntimeQualitySummary,
-  type TokenDistribution
+  type TokenDistribution,
+  type UsageSummaryMetrics
 } from './usageAnalyticsSnapshot';
 
 export interface UseUsageAnalyticsSnapshotOptions {
@@ -54,6 +56,7 @@ export interface UseUsageAnalyticsSnapshotReturn {
   apiStats: ReturnType<typeof getApiStats>;
   modelStats: ReturnType<typeof getModelStats>;
   tokenDistribution: TokenDistribution;
+  usageSummary: UsageSummaryMetrics;
   requestEventRows: RequestEventRow[];
   healthRequestEventRows: RequestEventRow[];
   credentialRows: CredentialRow[];
@@ -115,6 +118,11 @@ export function useUsageAnalyticsSnapshot({
   const tokenDistribution = useMemo(
     () => createTokenDistribution(filteredDetails),
     [filteredDetails]
+  );
+
+  const usageSummary = useMemo(
+    () => createUsageSummaryMetrics(filteredDetails, modelPrices, nowMs),
+    [filteredDetails, modelPrices, nowMs]
   );
 
   const requestEventRows = useMemo(
@@ -180,6 +188,7 @@ export function useUsageAnalyticsSnapshot({
     apiStats,
     modelStats,
     tokenDistribution,
+    usageSummary,
     requestEventRows,
     healthRequestEventRows,
     credentialRows,

@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode, memo, type CSSProperties } from 'react';
+import { type ReactNode, memo, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
 import {
@@ -11,10 +11,10 @@ import {
 import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
 import type { HealthScore } from '@/utils/usage/healthScore';
 import type { SLAMetrics } from '@/utils/usage/slaCalculator';
-import { calculateCost, extractTotalTokens, type ModelPrice, type UsageDetail } from '@/utils/usage';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
 import type { SparklineBundle } from './hooks/useSparklines';
+import type { UsageSummaryMetrics } from './hooks/usageAnalyticsSnapshot';
 import { HealthScoreCard } from './HealthScoreCard';
 import { SLAMonitorCard } from './SLAMonitorCard';
 import { ModelUsageSummaryCard } from './ModelUsageSummaryCard';
@@ -36,32 +36,12 @@ interface StatCardData {
   enhanced?: boolean;
 }
 
-interface StatCardsSummary {
-  tokenBreakdown: {
-    cachedTokens: number;
-    reasoningTokens: number;
-    inputTokens: number;
-    outputTokens: number;
-  };
-  rateStats: {
-    rpm: number;
-    tpm: number;
-    windowMinutes: number;
-    requestCount: number;
-    tokenCount: number;
-    peakRpm: number;
-    peakTpm: number;
-  };
-  totalCost: number;
-}
-
 export interface StatCardsProps {
   usage: UsagePayload | null;
-  details: UsageDetail[];
   loading: boolean;
-  modelPrices: Record<string, ModelPrice>;
+  hasPrices: boolean;
   modelStats: ModelStat[];
-  nowMs: number;
+  usageSummary: UsageSummaryMetrics;
   healthAssessment: HealthScore;
   slaAssessment: SLAMetrics;
   onAvailabilityDrillDown?: () => void;
@@ -77,11 +57,10 @@ export interface StatCardsProps {
 
 export const StatCards = memo(function StatCards({
   usage,
-  details: usageDetails,
   loading,
-  modelPrices,
+  hasPrices,
   modelStats,
-  nowMs,
+  usageSummary,
   healthAssessment,
   slaAssessment,
   onAvailabilityDrillDown,
@@ -90,106 +69,7 @@ export const StatCards = memo(function StatCards({
 }: StatCardsProps) {
   const { t } = useTranslation();
 
-  const hasPrices = Object.keys(modelPrices).length > 0;
-
-  const { tokenBreakdown, rateStats, totalCost } = useMemo<StatCardsSummary>(() => {
-    const empty = {
-      tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0, inputTokens: 0, outputTokens: 0 },
-      rateStats: {
-        rpm: 0,
-        tpm: 0,
-        windowMinutes: 30,
-        requestCount: 0,
-        tokenCount: 0,
-        peakRpm: 0,
-        peakTpm: 0,
-      },
-      totalCost: 0,
-    };
-
-    if (!usage) return empty;
-    if (!usageDetails.length) return empty;
-
-    let cachedTokens = 0;
-    let reasoningTokens = 0;
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let totalCost = 0;
-
-    const now = nowMs;
-    const windowMinutes = 30;
-    const windowStart = now - windowMinutes * 60 * 1000;
-    let requestCount = 0;
-    let tokenCount = 0;
-    const hasValidNow = Number.isFinite(now) && now > 0;
-
-    const minuteBuckets = new Map<number, { requests: number; tokens: number }>();
-
-    usageDetails.forEach((detail) => {
-      const tokens = detail.tokens;
-      const cached = Math.max(
-        typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-        typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
-      );
-      cachedTokens += cached;
-      if (typeof tokens.reasoning_tokens === 'number') {
-        reasoningTokens += tokens.reasoning_tokens;
-      }
-      if (typeof tokens.input_tokens === 'number') {
-        inputTokens += tokens.input_tokens;
-      }
-      if (typeof tokens.output_tokens === 'number') {
-        outputTokens += tokens.output_tokens;
-      }
-
-      const timestamp = detail.__timestampMs ?? 0;
-      if (
-        hasValidNow &&
-        Number.isFinite(timestamp) &&
-        timestamp >= windowStart &&
-        timestamp <= now
-      ) {
-        requestCount += 1;
-        tokenCount += extractTotalTokens(detail);
-
-        const minuteKey = Math.floor(timestamp / 60000);
-        const existing = minuteBuckets.get(minuteKey);
-        if (existing) {
-          existing.requests += 1;
-          existing.tokens += extractTotalTokens(detail);
-        } else {
-          minuteBuckets.set(minuteKey, { requests: 1, tokens: extractTotalTokens(detail) });
-        }
-      }
-
-      if (hasPrices) {
-        totalCost += calculateCost(detail, modelPrices);
-      }
-    });
-
-    let peakRpm = 0;
-    let peakTpm = 0;
-    minuteBuckets.forEach((bucket) => {
-      peakRpm = Math.max(peakRpm, bucket.requests);
-      peakTpm = Math.max(peakTpm, bucket.tokens);
-    });
-
-    const denominator = windowMinutes > 0 ? windowMinutes : 1;
-
-    return {
-      tokenBreakdown: { cachedTokens, reasoningTokens, inputTokens, outputTokens },
-      rateStats: {
-        rpm: requestCount / denominator,
-        tpm: tokenCount / denominator,
-        windowMinutes,
-        requestCount,
-        tokenCount,
-        peakRpm,
-        peakTpm,
-      },
-      totalCost,
-    };
-  }, [hasPrices, modelPrices, nowMs, usage, usageDetails]);
+  const { tokenBreakdown, rateStats, totalCost } = usageSummary;
 
   const statsCards: StatCardData[] = [
     {

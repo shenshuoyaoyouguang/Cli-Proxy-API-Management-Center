@@ -195,11 +195,11 @@ export function UsagePage() {
 
   const {
     filteredUsage,
-    filteredDetails,
     modelNames,
     apiStats,
     modelStats,
     tokenDistribution,
+    usageSummary,
     requestEventRows,
     healthRequestEventRows,
     credentialRows,
@@ -384,11 +384,10 @@ export function UsagePage() {
 
       <StatCards
         usage={filteredUsage}
-        details={filteredDetails}
         loading={loading || subscriptionTierLoading}
-        modelPrices={modelPrices}
+        hasPrices={hasPrices}
         modelStats={modelStats}
-        nowMs={nowMs}
+        usageSummary={usageSummary}
         healthAssessment={healthAssessment}
         slaAssessment={slaAssessment}
         onAvailabilityDrillDown={handleAvailabilityDrillDown}

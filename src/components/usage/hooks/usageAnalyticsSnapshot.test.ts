@@ -11,6 +11,7 @@ import {
   createRequestEventRowsForRange,
   createRuntimeQualitySummary,
   createTokenDistribution,
+  createUsageSummaryMetrics,
   filterUsageDetailsByTimeRange
 } from './usageAnalyticsSnapshot';
 
@@ -138,6 +139,58 @@ describe('usageAnalyticsSnapshot helpers', () => {
       output: 16,
       cached: 5,
       reasoning: 4
+    });
+  });
+
+  it('aggregates usage summary metrics for stat cards in a single pass', () => {
+    const summary = createUsageSummaryMetrics(
+      [
+        createDetail({ minutesAgo: 5, __modelName: 'model-a', tokens: { input_tokens: 20, output_tokens: 10, cached_tokens: 5, reasoning_tokens: 1, total_tokens: 36 } }),
+        createDetail({ minutesAgo: 5, __modelName: 'model-a', tokens: { input_tokens: 4, output_tokens: 6, cached_tokens: 0, reasoning_tokens: 3, total_tokens: 13 } }),
+        createDetail({ minutesAgo: 45, __modelName: 'model-b', tokens: { input_tokens: 10, output_tokens: 2, cached_tokens: 1, reasoning_tokens: 0, total_tokens: 13 } })
+      ],
+      {
+        'model-a': { prompt: 1, completion: 2, cache: 0.5 },
+        'model-b': { prompt: 1.5, completion: 3, cache: 0.5 }
+      },
+      baseNow
+    );
+
+    expect(summary.tokenBreakdown).toEqual({
+      cachedTokens: 6,
+      reasoningTokens: 4,
+      inputTokens: 34,
+      outputTokens: 18
+    });
+    expect(summary.rateStats.requestCount).toBe(2);
+    expect(summary.rateStats.tokenCount).toBe(49);
+    expect(summary.rateStats.peakRpm).toBe(2);
+    expect(summary.rateStats.peakTpm).toBe(49);
+    expect(summary.rateStats.rpm).toBeCloseTo(2 / 30, 5);
+    expect(summary.rateStats.tpm).toBeCloseTo(49 / 30, 5);
+    expect(summary.totalCost).toBeGreaterThan(0);
+  });
+
+  it('returns empty usage summary metrics without details or prices', () => {
+    const summary = createUsageSummaryMetrics([], {}, baseNow);
+
+    expect(summary).toEqual({
+      tokenBreakdown: {
+        cachedTokens: 0,
+        reasoningTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0
+      },
+      rateStats: {
+        rpm: 0,
+        tpm: 0,
+        windowMinutes: 30,
+        requestCount: 0,
+        tokenCount: 0,
+        peakRpm: 0,
+        peakTpm: 0
+      },
+      totalCost: 0
     });
   });
 

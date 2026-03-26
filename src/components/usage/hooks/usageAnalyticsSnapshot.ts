@@ -66,6 +66,25 @@ export interface TokenDistribution {
   reasoning: number;
 }
 
+export interface UsageSummaryMetrics {
+  tokenBreakdown: {
+    cachedTokens: number;
+    reasoningTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+  };
+  rateStats: {
+    rpm: number;
+    tpm: number;
+    windowMinutes: number;
+    requestCount: number;
+    tokenCount: number;
+    peakRpm: number;
+    peakTpm: number;
+  };
+  totalCost: number;
+}
+
 export type RuntimeQualityStatus = 'healthy' | 'warning' | 'critical' | 'empty';
 export type RuntimeIncidentType = 'credential' | 'endpoint' | 'model' | 'none';
 
@@ -615,6 +634,101 @@ export function createTokenDistribution(details: UsageDetail[]): TokenDistributi
   });
 
   return { input, output, cached, reasoning };
+}
+
+export function createUsageSummaryMetrics(
+  details: UsageDetail[],
+  modelPrices: Record<string, ModelPrice>,
+  nowMs: number,
+  windowMinutes: number = 30
+): UsageSummaryMetrics {
+  const empty: UsageSummaryMetrics = {
+    tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0, inputTokens: 0, outputTokens: 0 },
+    rateStats: {
+      rpm: 0,
+      tpm: 0,
+      windowMinutes,
+      requestCount: 0,
+      tokenCount: 0,
+      peakRpm: 0,
+      peakTpm: 0
+    },
+    totalCost: 0
+  };
+
+  if (!details.length) {
+    return empty;
+  }
+
+  let cachedTokens = 0;
+  let reasoningTokens = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let totalCost = 0;
+  let requestCount = 0;
+  let tokenCount = 0;
+
+  const hasPrices = Object.keys(modelPrices).length > 0;
+  const hasValidNow = Number.isFinite(nowMs) && nowMs > 0;
+  const safeWindowMinutes = windowMinutes > 0 ? windowMinutes : 1;
+  const windowStart = nowMs - safeWindowMinutes * 60 * 1000;
+  const minuteBuckets = new Map<number, { requests: number; tokens: number }>();
+
+  details.forEach((detail) => {
+    const tokens = detail.tokens;
+    const totalTokens = extractTotalTokens(detail);
+    const cached = getCachedTokens(tokens);
+
+    cachedTokens += cached;
+    inputTokens += Math.max(toNumber(tokens?.input_tokens), 0);
+    outputTokens += Math.max(toNumber(tokens?.output_tokens), 0);
+    reasoningTokens += Math.max(toNumber(tokens?.reasoning_tokens), 0);
+
+    if (hasPrices) {
+      totalCost += calculateCost(detail, modelPrices);
+    }
+
+    const timestamp = getDetailTimestampMs(detail);
+    if (
+      hasValidNow &&
+      Number.isFinite(timestamp) &&
+      timestamp >= windowStart &&
+      timestamp <= nowMs
+    ) {
+      requestCount += 1;
+      tokenCount += totalTokens;
+
+      const minuteKey = Math.floor(timestamp / 60000);
+      const existing = minuteBuckets.get(minuteKey);
+      if (existing) {
+        existing.requests += 1;
+        existing.tokens += totalTokens;
+      } else {
+        minuteBuckets.set(minuteKey, { requests: 1, tokens: totalTokens });
+      }
+    }
+  });
+
+  let peakRpm = 0;
+  let peakTpm = 0;
+  minuteBuckets.forEach((bucket) => {
+    peakRpm = Math.max(peakRpm, bucket.requests);
+    peakTpm = Math.max(peakTpm, bucket.tokens);
+  });
+
+  return {
+    tokenBreakdown: { cachedTokens, reasoningTokens, inputTokens, outputTokens },
+    rateStats: {
+      rpm: requestCount / safeWindowMinutes,
+      tpm: tokenCount / safeWindowMinutes,
+      windowMinutes: safeWindowMinutes,
+      requestCount,
+      tokenCount,
+      peakRpm,
+      peakTpm
+    },
+    totalCost
+  };
 }
 
 export function createEfficiencyOverview(

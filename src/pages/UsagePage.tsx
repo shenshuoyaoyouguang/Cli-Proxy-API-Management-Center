@@ -191,6 +191,8 @@ export function UsagePage() {
   const nowMs = lastRefreshedAt?.getTime() ?? 0;
   const hourWindowHours = timeRange === 'all' ? undefined : HOUR_WINDOW_BY_TIME_RANGE[timeRange];
 
+  const includeHealthRequestEventRows = requestEventsResultFilter !== null;
+
   const {
     filteredUsage,
     filteredDetails,
@@ -217,7 +219,8 @@ export function UsagePage() {
     claudeConfigs: config?.claudeApiKeys || [],
     codexConfigs: config?.codexApiKeys || [],
     vertexConfigs: config?.vertexApiKeys || [],
-    openaiProviders: config?.openaiCompatibility || []
+    openaiProviders: config?.openaiCompatibility || [],
+    includeHealthRequestEventRows
   });
 
   const {
@@ -384,6 +387,7 @@ export function UsagePage() {
         details={filteredDetails}
         loading={loading || subscriptionTierLoading}
         modelPrices={modelPrices}
+        modelStats={modelStats}
         nowMs={nowMs}
         healthAssessment={healthAssessment}
         slaAssessment={slaAssessment}

@@ -11,12 +11,7 @@ import {
 import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
 import type { HealthScore } from '@/utils/usage/healthScore';
 import type { SLAMetrics } from '@/utils/usage/slaCalculator';
-import {
-  calculateCost,
-  extractTotalTokens,
-  type ModelPrice,
-  type UsageDetail,
-} from '@/utils/usage';
+import { calculateCost, extractTotalTokens, type ModelPrice, type UsageDetail } from '@/utils/usage';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
 import type { SparklineBundle } from './hooks/useSparklines';
@@ -65,6 +60,7 @@ export interface StatCardsProps {
   details: UsageDetail[];
   loading: boolean;
   modelPrices: Record<string, ModelPrice>;
+  modelStats: ModelStat[];
   nowMs: number;
   healthAssessment: HealthScore;
   slaAssessment: SLAMetrics;
@@ -84,6 +80,7 @@ export const StatCards = memo(function StatCards({
   details: usageDetails,
   loading,
   modelPrices,
+  modelStats,
   nowMs,
   healthAssessment,
   slaAssessment,
@@ -94,29 +91,6 @@ export const StatCards = memo(function StatCards({
   const { t } = useTranslation();
 
   const hasPrices = Object.keys(modelPrices).length > 0;
-
-  const modelStats = useMemo<ModelStat[]>(() => {
-    if (!usage?.by_model) return [];
-
-    return Object.entries(usage.by_model)
-      .map(([model, data]) => {
-        const requests = data.total || 0;
-        const successCount = data.success || 0;
-        const failureCount = data.failure || 0;
-        const tokens = data.tokens || 0;
-        const cost = hasPrices ? data.cost || 0 : 0;
-
-        return {
-          model,
-          requests,
-          successCount,
-          failureCount,
-          tokens,
-          cost,
-        };
-      })
-      .filter((m) => m.requests > 0);
-  }, [usage, hasPrices]);
 
   const { tokenBreakdown, rateStats, totalCost } = useMemo<StatCardsSummary>(() => {
     const empty = {

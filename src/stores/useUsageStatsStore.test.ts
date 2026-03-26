@@ -47,9 +47,26 @@ vi.mock('@/i18n', () => ({
 import { useUsageStatsStore } from './useUsageStatsStore';
 import { usageApi } from '@/services/api';
 
+const hashScopeSegment = (value: string) => {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+const createScopeKey = (apiBase: string, managementKey: string) =>
+  `${apiBase}::${hashScopeSegment(managementKey)}`;
+
 describe('useUsageStatsStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+    useUsageStatsStore.getState().clearUsageStats();
     // Reset store state
     useUsageStatsStore.setState({
       usage: null,
@@ -63,6 +80,8 @@ describe('useUsageStatsStore', () => {
   });
 
   afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -135,7 +154,7 @@ describe('useUsageStatsStore', () => {
       // Set recent refresh time
       useUsageStatsStore.setState({
         lastRefreshedAt: Date.now(),
-        scopeKey: 'http://localhost:3000::test-key',
+        scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
       });
 
       await useUsageStatsStore.getState().loadUsageStats({ force: false });
@@ -150,7 +169,7 @@ describe('useUsageStatsStore', () => {
       // Set recent refresh time but force refresh
       useUsageStatsStore.setState({
         lastRefreshedAt: Date.now(),
-        scopeKey: 'http://localhost:3000::test-key',
+        scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
       });
 
       await useUsageStatsStore.getState().loadUsageStats({ force: true });
@@ -163,7 +182,7 @@ describe('useUsageStatsStore', () => {
 
       // Set different scope
       useUsageStatsStore.setState({
-        scopeKey: 'http://other:3000::other-key',
+        scopeKey: createScopeKey('http://other:3000', 'other-key'),
       });
 
       const { useAuthStore } = await import('./useAuthStore');
@@ -174,7 +193,7 @@ describe('useUsageStatsStore', () => {
 
       await useUsageStatsStore.getState().loadUsageStats();
 
-      expect(useUsageStatsStore.getState().scopeKey).toBe('http://localhost:3000::test-key');
+      expect(useUsageStatsStore.getState().scopeKey).toBe(createScopeKey('http://localhost:3000', 'test-key'));
     });
   });
 
@@ -201,7 +220,7 @@ describe('useUsageStatsStore', () => {
         loading: false,
         error: null,
         lastRefreshedAt: Date.now(),
-        scopeKey: 'http://localhost:3000::test-key',
+        scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
       });
 
       useUsageStatsStore.getState().clearUsageStats();

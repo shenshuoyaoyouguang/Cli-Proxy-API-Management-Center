@@ -44,6 +44,7 @@ export interface UseUsageAnalyticsSnapshotOptions {
   codexConfigs: ProviderKeyConfig[];
   vertexConfigs: ProviderKeyConfig[];
   openaiProviders: OpenAIProviderConfig[];
+  includeHealthRequestEventRows?: boolean;
 }
 
 export interface UseUsageAnalyticsSnapshotReturn {
@@ -74,7 +75,8 @@ export function useUsageAnalyticsSnapshot({
   claudeConfigs,
   codexConfigs,
   vertexConfigs,
-  openaiProviders
+  openaiProviders,
+  includeHealthRequestEventRows = false
 }: UseUsageAnalyticsSnapshotOptions): UseUsageAnalyticsSnapshotReturn {
   const filteredUsage = useMemo(
     () => (usage ? filterUsageByTimeRange(usage, timeRange, nowMs) : null),
@@ -121,8 +123,11 @@ export function useUsageAnalyticsSnapshot({
   );
 
   const healthRequestEventRows = useMemo(
-    () => createRequestEventRowsForRange(usageDetails, '24h', nowMs, sourceInfoMap, authFileMap, locale),
-    [authFileMap, locale, nowMs, sourceInfoMap, usageDetails]
+    () =>
+      includeHealthRequestEventRows
+        ? createRequestEventRowsForRange(usageDetails, '24h', nowMs, sourceInfoMap, authFileMap, locale)
+        : [],
+    [authFileMap, includeHealthRequestEventRows, locale, nowMs, sourceInfoMap, usageDetails]
   );
 
   const credentialRows = useMemo(

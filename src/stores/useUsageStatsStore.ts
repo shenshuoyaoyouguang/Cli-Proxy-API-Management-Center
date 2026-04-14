@@ -5,7 +5,7 @@ import {
   collectUsageDetails,
   computeKeyStatsFromDetails,
   type KeyStats,
-  type UsageDetail
+  type UsageDetail,
 } from '@/utils/usage';
 import i18n from '@/i18n';
 
@@ -35,6 +35,7 @@ const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
 let usageRequestToken = 0;
 let inFlightUsageRequest: { id: number; scopeKey: string; promise: Promise<void> } | null = null;
+let usageAbortController: AbortController | null = null;
 
 const getErrorMessage = (error: unknown) =>
   error instanceof Error
@@ -99,7 +100,7 @@ const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | n
               byAuthIndex:
                 parsed.keyStats.byAuthIndex && typeof parsed.keyStats.byAuthIndex === 'object'
                   ? parsed.keyStats.byAuthIndex
-                  : {}
+                  : {},
             }
           : createEmptyKeyStats(),
       usageDetails: Array.isArray(parsed.usageDetails)
@@ -109,7 +110,7 @@ const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | n
         typeof parsed.lastRefreshedAt === 'number' && Number.isFinite(parsed.lastRefreshedAt)
           ? parsed.lastRefreshedAt
           : null,
-      scopeKey
+      scopeKey,
     };
   } catch {
     return null;
@@ -164,16 +165,27 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       return;
     }
 
-    // 连接目标变化时，旧请求结果必须失效。
+    // 连接目标变化时，旧请求结果必须失效。Abort 旧请求以释放资源。
     if (inFlightUsageRequest && inFlightUsageRequest.scopeKey !== scopeKey) {
       usageRequestToken += 1;
       inFlightUsageRequest = null;
+      if (usageAbortController) {
+        usageAbortController.abort();
+        usageAbortController = null;
+      }
     }
+
+    // Abort any previous in-flight request before starting a new one (StrictMode protection)
+    if (usageAbortController) {
+      usageAbortController.abort();
+      usageAbortController = null;
+    }
+    usageAbortController = new AbortController();
 
     const persistedCache = readPersistedUsageStats(scopeKey);
     const cachedLastRefreshedAt = scopeChanged
-      ? persistedCache?.lastRefreshedAt ?? null
-      : state.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null;
+      ? (persistedCache?.lastRefreshedAt ?? null)
+      : (state.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null);
     const fresh = cachedLastRefreshedAt !== null && now - cachedLastRefreshedAt < staleTimeMs;
 
     if (scopeChanged) {
@@ -185,7 +197,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           error: null,
           lastRefreshedAt: persistedCache.lastRefreshedAt,
           scopeKey,
-          loading: false
+          loading: false,
         });
       } else {
         set({
@@ -195,7 +207,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           error: null,
           lastRefreshedAt: null,
           scopeKey,
-          loading: false
+          loading: false,
         });
       }
     } else if (!state.usage && persistedCache) {
@@ -206,7 +218,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         error: null,
         lastRefreshedAt: persistedCache.lastRefreshedAt,
         scopeKey,
-        loading: false
+        loading: false,
       });
     }
 
@@ -235,7 +247,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           keyStats,
           usageDetails,
           lastRefreshedAt,
-          scopeKey
+          scopeKey,
         });
 
         set({
@@ -245,21 +257,26 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           loading: false,
           error: null,
           lastRefreshedAt,
-          scopeKey
+          scopeKey,
         });
       } catch (error: unknown) {
+        // Ignore AbortError — it means the request was intentionally cancelled (StrictMode or logout)
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
         if (requestId !== usageRequestToken) return;
         const message = getErrorMessage(error);
         set({
           loading: false,
           error: message,
-          scopeKey
+          scopeKey,
         });
         throw new Error(message);
       } finally {
         if (inFlightUsageRequest?.id === requestId) {
           inFlightUsageRequest = null;
         }
+        usageAbortController = null;
       }
     })();
 
@@ -271,6 +288,10 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     const { scopeKey } = get();
     usageRequestToken += 1;
     inFlightUsageRequest = null;
+    if (usageAbortController) {
+      usageAbortController.abort();
+      usageAbortController = null;
+    }
     removePersistedUsageStats(scopeKey);
     set({
       usage: null,
@@ -279,7 +300,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       loading: false,
       error: null,
       lastRefreshedAt: null,
-      scopeKey: ''
+      scopeKey: '',
     });
-  }
+  },
 }));

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authFilesApi } from '@/services/api';
 import { useNotificationStore } from '@/stores';
@@ -6,6 +6,31 @@ import type { AuthFileItem } from '@/types';
 import type { AuthFileModelItem } from '@/features/authFiles/constants';
 
 type ModelsError = 'unsupported' | null;
+
+const MAX_MODELS_CACHE_SIZE = 50;
+
+// Module-level LRU cache for models (survives component remounts, cleared on logout)
+const modelsCache = new Map<string, AuthFileModelItem[]>();
+const modelsCacheOrder: string[] = [];
+
+/**
+ * Clears the models cache. Called on logout to prevent cross-account data leakage.
+ */
+export function clearModelsCache(): void {
+  modelsCache.clear();
+  modelsCacheOrder.length = 0;
+}
+
+/**
+ * Invalidates a specific file's models cache (e.g., after upload/delete/replace).
+ */
+export function invalidateModelsCacheForFile(fileName: string): void {
+  modelsCache.delete(fileName);
+  const idx = modelsCacheOrder.indexOf(fileName);
+  if (idx !== -1) {
+    modelsCacheOrder.splice(idx, 1);
+  }
+}
 
 export type UseAuthFilesModelsResult = {
   modelsModalOpen: boolean;
@@ -28,7 +53,6 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
   const [modelsFileName, setModelsFileName] = useState('');
   const [modelsFileType, setModelsFileType] = useState('');
   const [modelsError, setModelsError] = useState<ModelsError>(null);
-  const modelsCacheRef = useRef<Map<string, AuthFileModelItem[]>>(new Map());
 
   const closeModelsModal = useCallback(() => {
     setModelsModalOpen(false);
@@ -42,8 +66,14 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
       setModelsError(null);
       setModelsModalOpen(true);
 
-      const cached = modelsCacheRef.current.get(item.name);
+      const cached = modelsCache.get(item.name);
       if (cached) {
+        // Move to end of order array (most recently used)
+        const idx = modelsCacheOrder.indexOf(item.name);
+        if (idx !== -1) {
+          modelsCacheOrder.splice(idx, 1);
+        }
+        modelsCacheOrder.push(item.name);
         setModelsList(cached);
         setModelsLoading(false);
         return;
@@ -52,7 +82,21 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
       setModelsLoading(true);
       try {
         const models = await authFilesApi.getModelsForAuthFile(item.name);
-        modelsCacheRef.current.set(item.name, models);
+
+        // LRU eviction: remove oldest if at capacity
+        if (modelsCache.size >= MAX_MODELS_CACHE_SIZE && !modelsCache.has(item.name)) {
+          const oldest = modelsCacheOrder.shift();
+          if (oldest) {
+            modelsCache.delete(oldest);
+          }
+        }
+
+        modelsCache.set(item.name, models);
+        const idx = modelsCacheOrder.indexOf(item.name);
+        if (idx !== -1) {
+          modelsCacheOrder.splice(idx, 1);
+        }
+        modelsCacheOrder.push(item.name);
         setModelsList(models);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : '';
@@ -80,7 +124,6 @@ export function useAuthFilesModels(): UseAuthFilesModelsResult {
     modelsFileType,
     modelsError,
     showModels,
-    closeModelsModal
+    closeModelsModal,
   };
 }
-

@@ -11,7 +11,10 @@ import { secureStorage } from '@/services/storage/secureStorage';
 import { apiClient } from '@/services/api/client';
 import { useConfigStore } from './useConfigStore';
 import { useUsageStatsStore } from './useUsageStatsStore';
+import { useQuotaStore } from './useQuotaStore';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
+import { CacheLayer } from '@/services/cache';
+import { clearModelsCache } from '@/features/authFiles/hooks/useAuthFilesModels';
 
 interface AuthStoreState extends AuthState {
   connectionStatus: ConnectionStatus;
@@ -27,6 +30,18 @@ interface AuthStoreState extends AuthState {
 }
 
 let restoreSessionPromise: Promise<boolean> | null = null;
+
+// Scope key helpers (mirrors the logic in useUsageStatsStore to avoid circular imports)
+const hashScopeSegment = (value: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+const buildScopeKey = (apiBase: string, managementKey: string) =>
+  `${apiBase}::${hashScopeSegment(managementKey)}`;
 
 export const useAuthStore = create<AuthStoreState>()(
   persist(
@@ -153,9 +168,19 @@ export const useAuthStore = create<AuthStoreState>()(
 
       // 登出
       logout: () => {
+        const { apiBase, managementKey } = get();
         restoreSessionPromise = null;
         useConfigStore.getState().clearCache();
         useUsageStatsStore.getState().clearUsageStats();
+        useQuotaStore.getState().clearQuotaCache();
+        clearModelsCache();
+
+        // Invalidate all localStorage cache entries for this scope (cross-account data泄露)
+        const scopeKey = apiBase && managementKey ? buildScopeKey(apiBase, managementKey) : '';
+        if (scopeKey) {
+          CacheLayer.invalidateScope(scopeKey);
+        }
+
         set({
           isAuthenticated: false,
           apiBase: '',

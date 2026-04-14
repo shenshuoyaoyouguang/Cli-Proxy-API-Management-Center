@@ -12,6 +12,7 @@ import {
   hasAuthFileStatusMessage,
   isRuntimeOnlyAuthFile,
 } from '@/features/authFiles/constants';
+import { invalidateModelsCacheForFile } from './useAuthFilesModels';
 
 type DeleteAllOptions = {
   filter: string;
@@ -211,6 +212,8 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         );
         await loadFiles();
         await refreshKeyStats();
+        // Invalidate models cache for uploaded files
+        validFiles.forEach((file) => invalidateModelsCacheForFile(file.name));
       }
 
       if (failed.length > 0) {
@@ -243,6 +246,8 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
               next.delete(name);
               return next;
             });
+            // Invalidate models cache for deleted file
+            invalidateModelsCacheForFile(name);
           } catch (err: unknown) {
             const errorMessage = err instanceof Error ? err.message : '';
             showNotification(`${t('notification.delete_failed')}: ${errorMessage}`, 'error');

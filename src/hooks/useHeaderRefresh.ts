@@ -1,24 +1,19 @@
 import { useEffect } from 'react';
+import { RefreshCoordinator } from '@/services/refresh';
 
 export type HeaderRefreshHandler = () => void | Promise<void>;
 
-let activeHeaderRefreshHandler: HeaderRefreshHandler | null = null;
-
-export const triggerHeaderRefresh = async () => {
-  if (!activeHeaderRefreshHandler) return;
-  await activeHeaderRefreshHandler();
-};
+export const triggerHeaderRefresh = () => RefreshCoordinator.triggerAll();
 
 export const useHeaderRefresh = (handler?: HeaderRefreshHandler | null) => {
   useEffect(() => {
     if (!handler) return;
-
-    activeHeaderRefreshHandler = handler;
-
-    return () => {
-      if (activeHeaderRefreshHandler === handler) {
-        activeHeaderRefreshHandler = null;
-      }
-    };
+    const id = `header-${Date.now()}`;
+    const cleanup = RefreshCoordinator.register({
+      id,
+      handler,
+      priority: 'normal',
+    });
+    return cleanup;
   }, [handler]);
 };

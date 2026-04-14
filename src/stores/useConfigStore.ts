@@ -52,6 +52,7 @@ interface ConfigState {
 
 let configRequestToken = 0;
 let inFlightConfigRequest: { id: number; promise: Promise<Config> } | null = null;
+let configAbortController: AbortController | null = null;
 
 const SECTION_KEYS: RawConfigSection[] = [
   'debug',
@@ -154,6 +155,13 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       return section ? extractSectionValue(data, section) : data;
     }
 
+    // Abort any previous in-flight request before starting a new one
+    if (configAbortController) {
+      configAbortController.abort();
+      configAbortController = null;
+    }
+    configAbortController = new AbortController();
+
     // 获取新数据
     set({ loading: true, error: null });
 
@@ -187,6 +195,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
       return section ? extractSectionValue(data, section) : data;
     } catch (error: unknown) {
+      // Ignore AbortError — it means the request was intentionally cancelled (e.g., StrictMode double-invoke or logout)
+      if (error instanceof Error && error.name === 'AbortError') {
+        return section
+          ? get().config
+            ? extractSectionValue(get().config, section)
+            : undefined
+          : (get().config ?? ({} as Config));
+      }
       const message =
         error instanceof Error
           ? error.message
@@ -203,6 +219,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     } finally {
       if (inFlightConfigRequest?.id === requestId) {
         inFlightConfigRequest = null;
+      }
+      if (configAbortController && !configAbortController.signal.aborted) {
+        configAbortController = null;
       }
     }
   }) as ConfigState['fetchConfig'],
@@ -297,9 +316,13 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       newCache.clear();
     }
 
-    // 清除全部缓存一般代表“切换连接/登出/全量刷新”，需要让 in-flight 的旧请求失效
+    // 清除全部缓存一般代表”切换连接/登出/全量刷新”，需要让 in-flight 的旧请求失效
     configRequestToken += 1;
     inFlightConfigRequest = null;
+    if (configAbortController) {
+      configAbortController.abort();
+      configAbortController = null;
+    }
 
     set({ config: null, cache: newCache, loading: false, error: null });
   },

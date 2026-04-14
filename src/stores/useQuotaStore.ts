@@ -3,7 +3,16 @@
  */
 
 import { create } from 'zustand';
-import type { AntigravityQuotaState, ClaudeQuotaState, CodexQuotaState, GeminiCliQuotaState, KimiQuotaState } from '@/types';
+import { CacheLayer } from '@/services/cache';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { CACHE_EXPIRY_MS } from '@/utils/constants';
+import type {
+  AntigravityQuotaState,
+  ClaudeQuotaState,
+  CodexQuotaState,
+  GeminiCliQuotaState,
+  KimiQuotaState,
+} from '@/types';
 
 type QuotaUpdater<T> = T | ((prev: T) => T);
 
@@ -21,45 +30,85 @@ interface QuotaStoreState {
   clearQuotaCache: () => void;
 }
 
-const resolveUpdater = <T,>(updater: QuotaUpdater<T>, prev: T): T => {
+const hashScopeSegment = (value: string) => {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+const buildScopeKey = (apiBase: string, managementKey: string) =>
+  `${apiBase}::${hashScopeSegment(managementKey)}`;
+
+const resolveUpdater = <T>(updater: QuotaUpdater<T>, prev: T): T => {
   if (typeof updater === 'function') {
     return (updater as (value: T) => T)(prev);
   }
   return updater;
 };
 
-export const useQuotaStore = create<QuotaStoreState>((set) => ({
+export const useQuotaStore = create<QuotaStoreState>((set, get) => ({
   antigravityQuota: {},
   claudeQuota: {},
   codexQuota: {},
   geminiCliQuota: {},
   kimiQuota: {},
-  setAntigravityQuota: (updater) =>
-    set((state) => ({
-      antigravityQuota: resolveUpdater(updater, state.antigravityQuota)
-    })),
-  setClaudeQuota: (updater) =>
-    set((state) => ({
-      claudeQuota: resolveUpdater(updater, state.claudeQuota)
-    })),
-  setCodexQuota: (updater) =>
-    set((state) => ({
-      codexQuota: resolveUpdater(updater, state.codexQuota)
-    })),
-  setGeminiCliQuota: (updater) =>
-    set((state) => ({
-      geminiCliQuota: resolveUpdater(updater, state.geminiCliQuota)
-    })),
-  setKimiQuota: (updater) =>
-    set((state) => ({
-      kimiQuota: resolveUpdater(updater, state.kimiQuota)
-    })),
-  clearQuotaCache: () =>
+
+  setAntigravityQuota: (updater) => {
+    const prev = get().antigravityQuota;
+    const next = resolveUpdater(updater, prev);
+    set({ antigravityQuota: next });
+    const { apiBase, managementKey } = useAuthStore.getState();
+    const scopeKey = buildScopeKey(apiBase, managementKey);
+    CacheLayer.set('antigravity', next, { scopeKey, maxAgeMs: CACHE_EXPIRY_MS });
+  },
+  setClaudeQuota: (updater) => {
+    const prev = get().claudeQuota;
+    const next = resolveUpdater(updater, prev);
+    set({ claudeQuota: next });
+    const { apiBase, managementKey } = useAuthStore.getState();
+    const scopeKey = buildScopeKey(apiBase, managementKey);
+    CacheLayer.set('claude', next, { scopeKey, maxAgeMs: CACHE_EXPIRY_MS });
+  },
+  setCodexQuota: (updater) => {
+    const prev = get().codexQuota;
+    const next = resolveUpdater(updater, prev);
+    set({ codexQuota: next });
+    const { apiBase, managementKey } = useAuthStore.getState();
+    const scopeKey = buildScopeKey(apiBase, managementKey);
+    CacheLayer.set('codex', next, { scopeKey, maxAgeMs: CACHE_EXPIRY_MS });
+  },
+  setGeminiCliQuota: (updater) => {
+    const prev = get().geminiCliQuota;
+    const next = resolveUpdater(updater, prev);
+    set({ geminiCliQuota: next });
+    const { apiBase, managementKey } = useAuthStore.getState();
+    const scopeKey = buildScopeKey(apiBase, managementKey);
+    CacheLayer.set('gemini-cli', next, { scopeKey, maxAgeMs: CACHE_EXPIRY_MS });
+  },
+  setKimiQuota: (updater) => {
+    const prev = get().kimiQuota;
+    const next = resolveUpdater(updater, prev);
+    set({ kimiQuota: next });
+    const { apiBase, managementKey } = useAuthStore.getState();
+    const scopeKey = buildScopeKey(apiBase, managementKey);
+    CacheLayer.set('kimi', next, { scopeKey, maxAgeMs: CACHE_EXPIRY_MS });
+  },
+
+  clearQuotaCache: () => {
+    const { apiBase, managementKey } = useAuthStore.getState();
+    const scopeKey = buildScopeKey(apiBase, managementKey);
+    CacheLayer.invalidateScope(scopeKey);
     set({
       antigravityQuota: {},
       claudeQuota: {},
       codexQuota: {},
       geminiCliQuota: {},
-      kimiQuota: {}
-    })
+      kimiQuota: {},
+    });
+  },
 }));

@@ -28,12 +28,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { downloadBlob } from '@/utils/download';
 import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
 import { formatUnixTimestamp } from '@/utils/format';
-import {
-  HTTP_METHODS,
-  STATUS_GROUPS,
-  resolveStatusGroup,
-  type LogState,
-} from './hooks/logTypes';
+import { HTTP_METHODS, STATUS_GROUPS, resolveStatusGroup, type LogState } from './hooks/logTypes';
 import { parseLogLine } from './hooks/logParsing';
 import { useLogFilters } from './hooks/useLogFilters';
 import { isNearBottom, useLogScroller } from './hooks/useLogScroller';
@@ -97,7 +92,7 @@ export function LogsPage() {
     traceScopeKey,
     connectionStatus,
     config,
-    requestLogDownloading
+    requestLogDownloading,
   });
 
   const logScrollerRef = useRef<ReturnType<typeof useLogScroller> | null>(null);
@@ -344,14 +339,14 @@ export function LogsPage() {
     return {
       filteredParsedLines: filteredParsed,
       filteredLines: filteredParsed.map((line) => line.raw),
-      removedCount: Math.max(baseLines.length - filteredParsed.length, 0)
+      removedCount: Math.max(baseLines.length - filteredParsed.length, 0),
     };
   }, [
     baseLines,
     filters.methodFilterSet,
     filters.pathFilterSet,
     filters.statusFilterSet,
-    parsedSearchLines
+    parsedSearchLines,
   ]);
 
   const parsedVisibleLines = useMemo(
@@ -368,7 +363,7 @@ export function LogsPage() {
     isSearching,
     filteredLineCount: filteredLines.length,
     hasStructuredFilters: filters.hasStructuredFilters,
-    showRawLogs
+    showRawLogs,
   });
 
   logScrollerRef.current = scroller;
@@ -434,7 +429,7 @@ export function LogsPage() {
       const response = await logsApi.downloadRequestLogById(id);
       downloadBlob({
         filename: `request-${id}.log`,
-        blob: new Blob([response.data], { type: 'text/plain' })
+        blob: new Blob([response.data], { type: 'text/plain' }),
       });
       showNotification(t('logs.request_log_download_success'), 'success');
       setRequestLogId(null);
@@ -713,9 +708,7 @@ export function LogsPage() {
                   <div className={styles.loadMoreBanner}>
                     <span>{t('logs.load_more_hint')}</span>
                     <div className={styles.loadMoreStats}>
-                      <span>
-                        {t('logs.loaded_lines', { count: filteredLines.length })}
-                      </span>
+                      <span>{t('logs.loaded_lines', { count: filteredLines.length })}</span>
                       {removedCount > 0 && (
                         <span className={styles.loadMoreCount}>
                           {t('logs.filtered_lines', { count: removedCount })}
@@ -877,7 +870,9 @@ export function LogsPage() {
 
               {requestLogEnabled && (
                 <div>
-                  <div className="status-badge warning">{t('logs.error_logs_request_log_enabled')}</div>
+                  <div className="status-badge warning">
+                    {t('logs.error_logs_request_log_enabled')}
+                  </div>
                 </div>
               )}
 
@@ -1033,7 +1028,7 @@ export function LogsPage() {
                         {candidate.timeDeltaMs !== null && (
                           <span className={styles.traceDelta}>
                             {t('logs.trace_delta_seconds', {
-                              seconds: (candidate.timeDeltaMs / 1000).toFixed(2)
+                              seconds: (candidate.timeDeltaMs / 1000).toFixed(2),
                             })}
                           </span>
                         )}
@@ -1041,11 +1036,15 @@ export function LogsPage() {
                       <div className={styles.traceCandidateGrid}>
                         <div className={styles.traceInfoItem}>
                           <span className={styles.traceInfoLabel}>{t('logs.trace_endpoint')}</span>
-                          <span className={styles.traceInfoValue}>{candidate.detail.__endpoint}</span>
+                          <span className={styles.traceInfoValue}>
+                            {candidate.detail.__endpoint}
+                          </span>
                         </div>
                         <div className={styles.traceInfoItem}>
                           <span className={styles.traceInfoLabel}>{t('logs.trace_model')}</span>
-                          <span className={styles.traceInfoValue}>{candidate.detail.__modelName || '-'}</span>
+                          <span className={styles.traceInfoValue}>
+                            {candidate.detail.__modelName || '-'}
+                          </span>
                         </div>
                         <div className={styles.traceInfoItem}>
                           <span className={styles.traceInfoLabel}>{t('logs.trace_source')}</span>
@@ -1060,7 +1059,9 @@ export function LogsPage() {
                           </span>
                         </div>
                         <div className={styles.traceInfoItem}>
-                          <span className={styles.traceInfoLabel}>{t('logs.trace_auth_index')}</span>
+                          <span className={styles.traceInfoLabel}>
+                            {t('logs.trace_auth_index')}
+                          </span>
                           <span className={styles.traceInfoValue}>
                             {candidate.detail.auth_index ?? '-'}
                           </span>
@@ -1093,7 +1094,11 @@ export function LogsPage() {
         title={t('logs.request_log_download_title')}
         footer={
           <>
-            <Button variant="secondary" onClick={closeRequestLogModal} disabled={requestLogDownloading}>
+            <Button
+              variant="secondary"
+              onClick={closeRequestLogModal}
+              disabled={requestLogDownloading}
+            >
               {t('common.cancel')}
             </Button>
             <Button

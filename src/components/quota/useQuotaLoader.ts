@@ -57,14 +57,25 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
 
         const results = await Promise.all(
           targets.map(async (file): Promise<LoadQuotaResult<TData>> => {
-            try {
-              const data = await config.fetchQuota(file, t);
-              return { name: file.name, status: 'success', data };
-            } catch (err: unknown) {
-              const message = err instanceof Error ? err.message : t('common.unknown_error');
-              const errorStatus = getStatusFromError(err);
-              return { name: file.name, status: 'error', error: message, errorStatus };
+            let lastError: unknown;
+            for (let attempt = 0; attempt <= 3; attempt++) {
+              try {
+                const data = await config.fetchQuota(file, t);
+                return { name: file.name, status: 'success', data };
+              } catch (err: unknown) {
+                lastError = err;
+                if (attempt < 3) {
+                  // eslint-disable-next-line no-await-in-loop
+                  await new Promise<void>((resolve) =>
+                    setTimeout(resolve, 1000 * Math.pow(2, attempt))
+                  );
+                }
+              }
             }
+            const message =
+              lastError instanceof Error ? lastError.message : t('common.unknown_error');
+            const errorStatus = getStatusFromError(lastError);
+            return { name: file.name, status: 'error', error: message, errorStatus };
           })
         );
 

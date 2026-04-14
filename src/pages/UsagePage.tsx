@@ -10,12 +10,13 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
 } from 'chart.js';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Select } from '@/components/ui/Select';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useInterval } from '@/hooks/useInterval';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useThemeStore, useConfigStore } from '@/stores';
 import {
@@ -40,7 +41,7 @@ import {
   useUsageAnalyticsSnapshot,
   useUsageReliabilitySnapshot,
   useUsageSubscriptionTier,
-  type EfficiencyDrilldown
+  type EfficiencyDrilldown,
 } from '@/components/usage';
 import { type UsageTimeRange } from '@/utils/usage';
 import styles from './UsagePage.module.scss';
@@ -66,12 +67,12 @@ const TIME_RANGE_OPTIONS: ReadonlyArray<{ value: UsageTimeRange; labelKey: strin
   { value: 'all', labelKey: 'usage_stats.range_all' },
   { value: '7h', labelKey: 'usage_stats.range_7h' },
   { value: '24h', labelKey: 'usage_stats.range_24h' },
-  { value: '7d', labelKey: 'usage_stats.range_7d' }
+  { value: '7d', labelKey: 'usage_stats.range_7d' },
 ];
 const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> = {
   '7h': 7,
   '24h': 24,
-  '7d': 7 * 24
+  '7d': 7 * 24,
 };
 const SERVICE_HEALTH_SECTION_ID = 'usage-service-health-card';
 const REQUEST_EVENTS_SECTION_ID = 'usage-request-events-card';
@@ -141,23 +142,35 @@ export function UsagePage() {
     handleImportChange,
     importInputRef,
     exporting,
-    importing
+    importing,
   } = useUsageData();
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { authFileMap, authFiles } = useAuthFilesMap();
 
   useHeaderRefresh(loadUsage);
 
+  // Background polling every 60s (does not show loading overlay)
+  useInterval(() => {
+    setIsRefreshing(true);
+    void loadUsage().finally(() => setIsRefreshing(false));
+  }, 60000);
+
   const [chartLines, setChartLines] = useState<string[]>(loadChartLines);
   const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
-  const [efficiencyDrilldown, setEfficiencyDrilldown] = useState<EfficiencyDrilldown>({ type: 'none' });
-  const [requestEventsResultFilter, setRequestEventsResultFilter] = useState<'success' | 'failure' | null>(null);
+  const [efficiencyDrilldown, setEfficiencyDrilldown] = useState<EfficiencyDrilldown>({
+    type: 'none',
+  });
+  const [requestEventsResultFilter, setRequestEventsResultFilter] = useState<
+    'success' | 'failure' | null
+  >(null);
 
   const timeRangeOptions = useMemo(
     () =>
       TIME_RANGE_OPTIONS.map((opt) => ({
         value: opt.value,
-        label: t(opt.labelKey)
+        label: t(opt.labelKey),
       })),
     [t]
   );
@@ -206,7 +219,7 @@ export function UsagePage() {
     efficiencyOverview,
     modelEfficiencyRows,
     credentialEfficiencyRows,
-    runtimeQualitySummary
+    runtimeQualitySummary,
   } = useUsageAnalyticsSnapshot({
     usage,
     usageDetails,
@@ -220,23 +233,19 @@ export function UsagePage() {
     codexConfigs: config?.codexApiKeys || [],
     vertexConfigs: config?.vertexApiKeys || [],
     openaiProviders: config?.openaiCompatibility || [],
-    includeHealthRequestEventRows
+    includeHealthRequestEventRows,
   });
 
-  const {
-    requestsSparkline,
-    tokensSparkline,
-    rpmSparkline,
-    tpmSparkline,
-    costSparkline
-  } = useSparklines({ usage: filteredUsage, loading, nowMs });
+  const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
+    useSparklines({ usage: filteredUsage, loading, nowMs });
 
-  const { subscriptionTier, loading: subscriptionTierLoading } = useUsageSubscriptionTier(authFiles);
+  const { subscriptionTier, loading: subscriptionTierLoading } =
+    useUsageSubscriptionTier(authFiles);
 
   const { healthAssessment, slaAssessment, serviceHealth } = useUsageReliabilitySnapshot({
     usageDetails,
     tier: subscriptionTier,
-    nowMs
+    nowMs,
   });
 
   const {
@@ -247,11 +256,12 @@ export function UsagePage() {
     requestsChartData,
     tokensChartData,
     requestsChartOptions,
-    tokensChartOptions
+    tokensChartOptions,
   } = useChartData({ usage: filteredUsage, chartLines, isDark, isMobile, hourWindowHours });
 
   const hasPrices = Object.keys(modelPrices).length > 0;
-  const externalModelFilter = efficiencyDrilldown.type === 'model' ? efficiencyDrilldown.value ?? null : null;
+  const externalModelFilter =
+    efficiencyDrilldown.type === 'model' ? (efficiencyDrilldown.value ?? null) : null;
   const credentialDrilldown = useMemo(() => {
     if (efficiencyDrilldown.type !== 'credential' || !efficiencyDrilldown.value) {
       return { source: null, sourceRaw: null, authIndex: null };
@@ -268,12 +278,12 @@ export function UsagePage() {
         ? {
             source: null,
             sourceRaw: null,
-            authIndex: parsed.authIndex ?? null
+            authIndex: parsed.authIndex ?? null,
           }
         : {
             source: parsed.fallbackSource ?? null,
             sourceRaw: parsed.source ?? null,
-            authIndex: null
+            authIndex: null,
           };
     } catch {
       return { source: efficiencyDrilldown.value, sourceRaw: null, authIndex: null };
@@ -312,7 +322,9 @@ export function UsagePage() {
     setRequestEventsResultFilter(null);
   }, []);
 
-  const requestEventsRowsForDisplay = requestEventsResultFilter ? healthRequestEventRows : requestEventRows;
+  const requestEventsRowsForDisplay = requestEventsResultFilter
+    ? healthRequestEventRows
+    : requestEventRows;
 
   return (
     <div className={styles.container}>
@@ -375,6 +387,11 @@ export function UsagePage() {
           {lastRefreshedAt && (
             <span className={styles.lastRefreshed}>
               {t('usage_stats.last_updated')}: {lastRefreshedAt.toLocaleTimeString()}
+              {isRefreshing && (
+                <span title={t('common.loading')}>
+                  <LoadingSpinner size={12} />
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -397,7 +414,7 @@ export function UsagePage() {
           tokens: tokensSparkline,
           rpm: rpmSparkline,
           tpm: tpmSparkline,
-          cost: costSparkline
+          cost: costSparkline,
         }}
       />
 
@@ -466,7 +483,11 @@ export function UsagePage() {
       </div>
 
       <div className={styles.chartsGrid}>
-        <TokenDistributionChart distribution={tokenDistribution} loading={loading} isDark={isDark} />
+        <TokenDistributionChart
+          distribution={tokenDistribution}
+          loading={loading}
+          isDark={isDark}
+        />
         <TokenBreakdownChart
           usage={filteredUsage}
           loading={loading}

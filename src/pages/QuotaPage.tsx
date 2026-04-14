@@ -4,16 +4,18 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useInterval } from '@/hooks/useInterval';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useAuthStore } from '@/stores';
 import { authFilesApi, configFileApi } from '@/services/api';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import {
   QuotaSection,
   ANTIGRAVITY_CONFIG,
   CLAUDE_CONFIG,
   CODEX_CONFIG,
   GEMINI_CLI_CONFIG,
-  KIMI_CONFIG
+  KIMI_CONFIG,
 } from '@/components/quota';
 import type { AuthFileItem } from '@/types';
 import styles from './QuotaPage.module.scss';
@@ -24,6 +26,7 @@ export function QuotaPage() {
 
   const [files, setFiles] = useState<AuthFileItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   const disableControls = connectionStatus !== 'connected';
@@ -57,6 +60,13 @@ export function QuotaPage() {
 
   useHeaderRefresh(handleHeaderRefresh);
 
+  // Background polling every 60s (does not show loading overlay)
+  useInterval(() => {
+    if (connectionStatus !== 'connected') return;
+    setIsRefreshing(true);
+    void Promise.all([loadConfig(), loadFiles()]).finally(() => setIsRefreshing(false));
+  }, 60000);
+
   useEffect(() => {
     loadFiles();
     loadConfig();
@@ -65,7 +75,14 @@ export function QuotaPage() {
   return (
     <div className={styles.container}>
       <div className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>{t('quota_management.title')}</h1>
+        <h1 className={styles.pageTitle}>
+          {t('quota_management.title')}
+          {isRefreshing && (
+            <span title={t('common.loading')}>
+              <LoadingSpinner size={14} />
+            </span>
+          )}
+        </h1>
         <p className={styles.description}>{t('quota_management.description')}</p>
       </div>
 

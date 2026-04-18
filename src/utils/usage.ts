@@ -4,6 +4,14 @@
  */
 
 import type { ScriptableContext } from 'chart.js';
+import type { LatencyAccumulator, LatencyStats } from './usage/latency';
+import {
+  addLatencySample,
+  calculateLatencyStatsFromDetails,
+  createLatencyAccumulator,
+  extractLatencyMs,
+  finalizeLatencyStats,
+} from './usage/latency';
 import { maskApiKey } from './format';
 import { extractCanonicalTotalTokens, normalizeUsageTokens } from './usageTokenNormalizer';
 
@@ -39,7 +47,8 @@ export interface ModelPrice {
 export interface UsageDetail {
   timestamp: string;
   source: string;
-  auth_index: number;
+  auth_index: string | number | null;
+  latency_ms?: number;
   tokens: {
     input_tokens: number;
     output_tokens: number;
@@ -166,7 +175,7 @@ export function filterUsageByTimeRange<T>(
         if (!detailRecord || typeof detailRecord.timestamp !== 'string') {
           return;
         }
-        const timestamp = Date.parse(detailRecord.timestamp);
+        const timestamp = parseTimestampMs(detailRecord.timestamp);
         if (Number.isNaN(timestamp) || timestamp < windowStart || timestamp > nowMs) {
           return;
         }
@@ -344,6 +353,10 @@ export function buildCandidateUsageSourceIds(input: {
 
   const apiKey = input.apiKey?.trim();
   if (apiKey) {
+    // Include the normalised form first so that "non-standard" keys (e.g. short tokens,
+    // keys containing '/' etc.) that are classified as text by normalizeUsageSourceId()
+    // can still match usage details.
+    result.push(normalizeUsageSourceId(apiKey));
     result.push(`${USAGE_SOURCE_PREFIX_KEY}${fnv1a64Hex(apiKey)}`);
     result.push(`${USAGE_SOURCE_PREFIX_MASKED}${maskApiKey(apiKey)}`);
   }
@@ -612,6 +625,13 @@ export function extractTotalTokens(detail: unknown): number {
   const record = isRecord(detail) ? detail : null;
   const tokensRaw = isRecord(record?.tokens) ? record.tokens : detail;
   return extractCanonicalTotalTokens(tokensRaw);
+}
+
+/**
+ * 计算耗时统计
+ */
+export function calculateLatencyStats(usageData: unknown): LatencyStats {
+  return calculateLatencyStatsFromDetails(collectUsageDetails(usageData));
 }
 
 /**
@@ -959,9 +979,10 @@ export function getModelStats(
         existing.failureCount += Number(modelData.failure_count) || 0;
       }
 
-      if (details.length > 0 && (!hasExplicitCounts || price)) {
+      if (details.length > 0) {
         details.forEach((detail) => {
           const detailRecord = isRecord(detail) ? detail : null;
+          const latencyMs = extractLatencyMs(detailRecord);
           if (!hasExplicitCounts) {
             if (detailRecord?.failed === true) {
               existing.failureCount += 1;
@@ -969,6 +990,8 @@ export function getModelStats(
               existing.successCount += 1;
             }
           }
+
+          addLatencySample(existing.latency, latencyMs);
 
           if (price && detailRecord) {
             existing.cost += calculateCost(
@@ -983,7 +1006,20 @@ export function getModelStats(
   });
 
   return Array.from(modelMap.entries())
-    .map(([model, stats]) => ({ model, ...stats }))
+    .map(([model, stats]) => {
+      const latencyStats = finalizeLatencyStats(stats.latency);
+      return {
+        model,
+        requests: stats.requests,
+        successCount: stats.successCount,
+        failureCount: stats.failureCount,
+        tokens: stats.tokens,
+        cost: stats.cost,
+        averageLatencyMs: latencyStats.averageMs,
+        totalLatencyMs: latencyStats.totalMs,
+        latencySampleCount: latencyStats.sampleCount,
+      };
+    })
     .sort((a, b) => b.requests - a.requests);
 }
 
@@ -1318,7 +1354,7 @@ export interface StatusBarData {
 export function calculateStatusBarData(
   usageDetails: UsageDetail[],
   sourceFilter?: string,
-  authIndexFilter?: number
+  authIndexFilter?: string | number
 ): StatusBarData {
   const BLOCK_COUNT = 20;
   const BLOCK_DURATION_MS = 10 * 60 * 1000; // 10 minutes

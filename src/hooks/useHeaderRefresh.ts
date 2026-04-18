@@ -5,7 +5,9 @@ export type HeaderRefreshHandler = () => void | Promise<void>;
 
 export const triggerHeaderRefresh = () => RefreshCoordinator.triggerAll();
 
-export const useHeaderRefresh = (handler?: HeaderRefreshHandler | null) => {
+export const useHeaderRefresh = (handler?: HeaderRefreshHandler | null, enabled = true) => {
+  const lastHandlerRef = useRef<HeaderRefreshHandler | null>(null);
+
   useEffect(() => {
     if (!handler) return;
     const id = `header-${Date.now()}`;

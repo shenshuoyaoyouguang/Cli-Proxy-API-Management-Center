@@ -68,6 +68,10 @@ export const StatCards = memo(function StatCards({
   sparklines,
 }: StatCardsProps) {
   const { t } = useTranslation();
+  const latencyHint = t('usage_stats.latency_unit_hint', {
+    field: LATENCY_SOURCE_FIELD,
+    unit: t('usage_stats.duration_unit_ms'),
+  });
 
   const { tokenBreakdown, rateStats, totalCost } = usageSummary;
 
@@ -96,6 +100,12 @@ export const StatCards = memo(function StatCards({
             />
             {t('usage_stats.failed_requests')}: {loading ? '-' : (usage?.failure_count ?? 0)}
           </span>
+          {latencyStats.sampleCount > 0 && (
+            <span className={styles.statMetaItem} title={latencyHint}>
+              {t('usage_stats.avg_time')}:{' '}
+              {loading ? '-' : formatDurationMs(latencyStats.averageMs)}
+            </span>
+          )}
         </>
       ),
       trend: sparklines.requests,

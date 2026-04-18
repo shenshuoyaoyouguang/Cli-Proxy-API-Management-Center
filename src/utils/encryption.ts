@@ -1,5 +1,5 @@
 /**
- * 加密工具函数
+ * 本地存储混淆工具函数（可逆）
  * 从原项目 src/utils/secure-storage.js 迁移
  * v2: 使用 AES-256-GCM 替换 XOR 加密
  * v2.1: PBKDF2 salt 混入 origin，使每个部署唯一（向后兼容旧 salt 解密）
@@ -77,7 +77,7 @@ export function getKeyBytes(): Uint8Array {
     const ua = navigator.userAgent;
     cachedKeyBytes = encodeText(`${SECRET_SALT}|${host}|${ua}`);
   } catch (error) {
-    console.warn('Encryption fallback to simple key:', error);
+    console.warn('Obfuscation fallback to simple key:', error);
     cachedKeyBytes = encodeText(SECRET_SALT);
   }
 
@@ -269,3 +269,8 @@ export function decryptDataSync(payload: string): string {
 
   return payload;
 }
+
+// Backward-compatible aliases (this module was historically named "encryption").
+export const encryptData = obfuscateData;
+export const decryptData = deobfuscateData;
+export const isEncrypted = isObfuscated;

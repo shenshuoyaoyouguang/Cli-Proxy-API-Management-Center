@@ -11,6 +11,7 @@ interface ModelsCache {
   data: ModelInfo[];
   timestamp: number;
   apiBase: string;
+  apiKey: string;
 }
 
 interface ModelsState {
@@ -36,6 +37,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
 
   fetchModels: async (apiBase, apiKey, forceRefresh = false) => {
     const { cache, isCacheValid } = get();
+    const apiKeyScope = apiKey?.trim() || '';
 
     // 检查缓存：只检查当前 apiBase 的缓存条目
     if (!forceRefresh && isCacheValid(apiBase)) {
@@ -116,7 +118,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     });
   },
 
-  isCacheValid: (apiBase) => {
+  isCacheValid: (apiBase, apiKey) => {
     const { cache } = get();
     const cached = cache.get(apiBase);
     if (!cached) return false;

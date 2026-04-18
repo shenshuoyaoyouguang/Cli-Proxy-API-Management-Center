@@ -1,5 +1,5 @@
 /**
- * 安全存储服务
+ * 本地存储混淆服务（可逆）
  * 基于原项目 src/utils/secure-storage.js
  * 注意：由于 Zustand persist middleware 要求同步存储接口，
  * setItem 保持同步但加密过程异步执行（fire-and-forget）。
@@ -9,6 +9,11 @@
 import { encryptData, isEncrypted } from '@/utils/encryption';
 
 interface StorageOptions {
+  /**
+   * Whether to obfuscate the stored value. This was historically called `encrypt`,
+   * but the implementation is reversible obfuscation, not cryptographic security.
+   */
+  obfuscate?: boolean;
   encrypt?: boolean;
 }
 
@@ -82,7 +87,7 @@ class SecureStorageService {
    * 首次写入存明文，加密完成后自动覆盖为密文。
    */
   setItem(key: string, value: unknown, options: StorageOptions = {}): void {
-    const { encrypt = true } = options;
+    const obfuscate = options.obfuscate ?? options.encrypt ?? true;
 
     if (value === null || value === undefined) {
       this.removeItem(key);
@@ -110,7 +115,7 @@ class SecureStorageService {
    * 获取数据
    */
   getItem<T = unknown>(key: string, options: StorageOptions = {}): T | null {
-    const { encrypt = true } = options;
+    const obfuscate = options.obfuscate ?? options.encrypt ?? true;
 
     const raw = localStorage.getItem(key);
     if (raw === null) return null;
@@ -188,4 +193,6 @@ class SecureStorageService {
   }
 }
 
-export const secureStorage = new SecureStorageService();
+export const obfuscatedStorage = new ObfuscatedStorageService();
+// Backward-compatible alias (historically named "secureStorage").
+export const secureStorage = obfuscatedStorage;

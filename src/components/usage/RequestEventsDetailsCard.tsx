@@ -67,6 +67,8 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     setPage(1);
   };
 
+  const hasLatencyData = useMemo(() => rows.some((row) => row.latencyMs !== null), [rows]);
+
   const modelOptions = useMemo(
     () => [
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
@@ -78,8 +80,15 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     [rows, t]
   );
 
-  const sourceOptions = useMemo(
-    () => [
+  const sourceOptions = useMemo(() => {
+    const optionMap = new Map<string, string>();
+    rows.forEach((row) => {
+      if (!optionMap.has(row.sourceKey)) {
+        optionMap.set(row.sourceKey, row.source);
+      }
+    });
+
+    return [
       { value: ALL_FILTER, label: t('usage_stats.filter_all') },
       ...Array.from(new Set(rows.map((row) => row.source))).map((source) => ({
         value: source,
@@ -278,6 +287,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
       'source_raw',
       'auth_index',
       'result',
+      ...(hasLatencyData ? ['latency_ms'] : []),
       'input_tokens',
       'output_tokens',
       'reasoning_tokens',
@@ -293,6 +303,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
         row.sourceRaw,
         row.authIndex,
         row.failed ? 'failed' : 'success',
+        ...(hasLatencyData ? [row.latencyMs ?? ''] : []),
         row.inputTokens,
         row.outputTokens,
         row.reasoningTokens,
@@ -321,6 +332,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
       source_raw: row.sourceRaw,
       auth_index: row.authIndex,
       failed: row.failed,
+      ...(hasLatencyData && row.latencyMs !== null ? { latency_ms: row.latencyMs } : {}),
       tokens: {
         input_tokens: row.inputTokens,
         output_tokens: row.outputTokens,
@@ -503,6 +515,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
                   <th>{t('usage_stats.request_events_source')}</th>
                   <th>{t('usage_stats.request_events_auth_index')}</th>
                   <th>{t('usage_stats.request_events_result')}</th>
+                  {hasLatencyData && <th title={latencyHint}>{t('usage_stats.time')}</th>}
                   <th>{t('usage_stats.input_tokens')}</th>
                   <th>{t('usage_stats.output_tokens')}</th>
                   <th>{t('usage_stats.reasoning_tokens')}</th>
@@ -537,6 +550,9 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
                         {row.failed ? t('stats.failure') : t('stats.success')}
                       </span>
                     </td>
+                    {hasLatencyData && (
+                      <td className={styles.durationCell}>{formatDurationMs(row.latencyMs)}</td>
+                    )}
                     <td>{row.inputTokens.toLocaleString()}</td>
                     <td>{row.outputTokens.toLocaleString()}</td>
                     <td>{row.reasoningTokens.toLocaleString()}</td>

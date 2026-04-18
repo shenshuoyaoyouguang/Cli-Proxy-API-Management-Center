@@ -118,6 +118,33 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
     setSelectedFiles(new Set());
   }, []);
 
+  const applyDeletedFiles = useCallback((names: string[]) => {
+    const deletedNames = Array.from(
+      new Set(
+        names
+          .map((name) => name.trim())
+          .filter(Boolean)
+      )
+    );
+    if (deletedNames.length === 0) return;
+
+    const deletedSet = new Set(deletedNames);
+    setFiles((prev) => prev.filter((file) => !deletedSet.has(file.name)));
+    setSelectedFiles((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((name) => {
+        if (deletedSet.has(name)) {
+          changed = true;
+        } else {
+          next.add(name);
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
   useEffect(() => {
     if (selectedFiles.size === 0) return;
     const existingNames = new Set(files.map((file) => file.name));
@@ -191,18 +218,19 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
       }
 
       setUploading(true);
-      let successCount = 0;
-      const failed: { name: string; message: string }[] = [];
+      try {
+        const result = await authFilesApi.uploadFiles(validFiles);
+        const successCount = result.uploaded;
 
-      for (const file of validFiles) {
-        try {
-          await authFilesApi.upload(file);
-          successCount++;
-        } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-          failed.push({ name: file.name, message: errorMessage });
+        if (successCount > 0) {
+          const suffix = validFiles.length > 1 ? ` (${successCount}/${validFiles.length})` : '';
+          showNotification(
+            `${t('auth_files.upload_success')}${suffix}`,
+            result.failed.length ? 'warning' : 'success'
+          );
+          await loadFiles();
+          await refreshKeyStats();
         }
-      }
 
       if (successCount > 0) {
         const suffix = validFiles.length > 1 ? ` (${successCount}/${validFiles.length})` : '';
@@ -215,14 +243,6 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         // Invalidate models cache for uploaded files
         validFiles.forEach((file) => invalidateModelsCacheForFile(file.name));
       }
-
-      if (failed.length > 0) {
-        const details = failed.map((item) => `${item.name}: ${item.message}`).join('; ');
-        showNotification(`${t('notification.upload_failed')}: ${details}`, 'error');
-      }
-
-      setUploading(false);
-      event.target.value = '';
     },
     [loadFiles, refreshKeyStats, showNotification, t]
   );
@@ -237,7 +257,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         onConfirm: async () => {
           setDeleting(name);
           try {
-            await authFilesApi.deleteFile(name);
+            const result = await authFilesApi.deleteFile(name);
             showNotification(t('auth_files.delete_success'), 'success');
             setFiles((prev) => prev.filter((item) => item.name !== name));
             setSelectedFiles((prev) => {
@@ -257,7 +277,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         },
       });
     },
-    [showConfirmation, showNotification, t]
+    [applyDeletedFiles, showConfirmation, showNotification, t]
   );
 
   const handleDeleteAll = useCallback(
@@ -306,35 +326,13 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
                 return;
               }
 
-              let success = 0;
-              let failed = 0;
-              const deletedNames: string[] = [];
+              const result = await authFilesApi.deleteFiles(
+                filesToDelete.map((file) => file.name)
+              );
+              const success = result.deleted;
+              const failed = result.failed.length;
 
-              for (const file of filesToDelete) {
-                try {
-                  await authFilesApi.deleteFile(file.name);
-                  success++;
-                  deletedNames.push(file.name);
-                } catch {
-                  failed++;
-                }
-              }
-
-              setFiles((prev) => prev.filter((f) => !deletedNames.includes(f.name)));
-              setSelectedFiles((prev) => {
-                if (prev.size === 0) return prev;
-                const deletedSet = new Set(deletedNames);
-                let changed = false;
-                const next = new Set<string>();
-                prev.forEach((name) => {
-                  if (deletedSet.has(name)) {
-                    changed = true;
-                  } else {
-                    next.add(name);
-                  }
-                });
-                return changed ? next : prev;
-              });
+              applyDeletedFiles(result.files);
 
               if (failed === 0 && isProblemOnly) {
                 showNotification(
@@ -385,7 +383,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         },
       });
     },
-    [deselectAll, files, showConfirmation, showNotification, t]
+    [applyDeletedFiles, deselectAll, files, showConfirmation, showNotification, t]
   );
 
   const handleDownload = useCallback(
@@ -584,59 +582,33 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         variant: 'danger',
         confirmText: t('common.confirm'),
         onConfirm: async () => {
-          const results = await Promise.allSettled(
-            uniqueNames.map((name) => authFilesApi.deleteFile(name))
-          );
+          try {
+            const result = await authFilesApi.deleteFiles(uniqueNames);
+            applyDeletedFiles(result.files);
 
-          const deleted: string[] = [];
-          let failCount = 0;
-          results.forEach((result, index) => {
-            if (result.status === 'fulfilled') {
-              deleted.push(uniqueNames[index]);
+            if (result.failed.length === 0) {
+              showNotification(
+                `${t('auth_files.delete_all_success')} (${result.deleted})`,
+                'success'
+              );
             } else {
-              failCount++;
+              showNotification(
+                t('auth_files.delete_filtered_partial', {
+                  success: result.deleted,
+                  failed: result.failed.length,
+                  type: t('auth_files.filter_all'),
+                }),
+                'warning'
+              );
             }
-          });
-
-          if (deleted.length > 0) {
-            const deletedSet = new Set(deleted);
-            setFiles((prev) => prev.filter((file) => !deletedSet.has(file.name)));
-          }
-
-          setSelectedFiles((prev) => {
-            if (prev.size === 0) return prev;
-            const deletedSet = new Set(deleted);
-            let changed = false;
-            const next = new Set<string>();
-            prev.forEach((name) => {
-              if (deletedSet.has(name)) {
-                changed = true;
-              } else {
-                next.add(name);
-              }
-            });
-            return changed ? next : prev;
-          });
-
-          if (failCount === 0) {
-            showNotification(
-              `${t('auth_files.delete_all_success')} (${deleted.length})`,
-              'success'
-            );
-          } else {
-            showNotification(
-              t('auth_files.delete_filtered_partial', {
-                success: deleted.length,
-                failed: failCount,
-                type: t('auth_files.filter_all'),
-              }),
-              'warning'
-            );
+          } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : '';
+            showNotification(`${t('notification.delete_failed')}: ${errorMessage}`, 'error');
           }
         },
       });
     },
-    [showConfirmation, showNotification, t]
+    [applyDeletedFiles, showConfirmation, showNotification, t]
   );
 
   return {

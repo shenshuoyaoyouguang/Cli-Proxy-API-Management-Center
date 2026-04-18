@@ -78,9 +78,35 @@ const flattenNumericLeaves = (
   return result;
 };
 
-const NEGATIVE_OUTPUT_SEGMENTS = ['prompt', 'input', 'cache', 'cached', 'reasoning', 'thinking', 'thought'] as const;
-const NEGATIVE_INPUT_SEGMENTS = ['completion', 'output', 'generated', 'generation', 'response', 'candidate', 'reasoning', 'thinking', 'thought'] as const;
-const NEGATIVE_TOTAL_SEGMENTS = ['rate', 'rpm', 'tpm', 'limit', 'remaining', 'max', 'quota'] as const;
+const NEGATIVE_OUTPUT_SEGMENTS = [
+  'prompt',
+  'input',
+  'cache',
+  'cached',
+  'reasoning',
+  'thinking',
+  'thought',
+] as const;
+const NEGATIVE_INPUT_SEGMENTS = [
+  'completion',
+  'output',
+  'generated',
+  'generation',
+  'response',
+  'candidate',
+  'reasoning',
+  'thinking',
+  'thought',
+] as const;
+const NEGATIVE_TOTAL_SEGMENTS = [
+  'rate',
+  'rpm',
+  'tpm',
+  'limit',
+  'remaining',
+  'max',
+  'quota',
+] as const;
 
 const classifyPath = (path: string[], value: number): TokenCandidate[] => {
   if (!path.length) {
@@ -277,8 +303,12 @@ export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
 
   const inputComponents = sumUniqueComponentValues(components.input);
 
-  const hasPromptTokensAggregate = aggregates.input.some((candidate) => candidate.key === 'prompt_tokens');
-  const hasInputTokensAggregate = aggregates.input.some((candidate) => candidate.key === 'input_tokens');
+  const hasPromptTokensAggregate = aggregates.input.some(
+    (candidate) => candidate.key === 'prompt_tokens'
+  );
+  const hasInputTokensAggregate = aggregates.input.some(
+    (candidate) => candidate.key === 'input_tokens'
+  );
   const hasCacheFragments = components.input.length > 0;
 
   let inputTokens = inputAggregate;
@@ -292,7 +322,10 @@ export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
   }
 
   const outputTokens = Math.max(outputAggregate, sumUniqueComponentValues(components.output));
-  const reasoningTokens = Math.max(reasoningAggregate, sumUniqueComponentValues(components.reasoning));
+  const reasoningTokens = Math.max(
+    reasoningAggregate,
+    sumUniqueComponentValues(components.reasoning)
+  );
   const cachedTokens = Math.max(cachedAggregate, sumUniqueComponentValues(components.cached));
 
   const derivedTotal = inputTokens + outputTokens + reasoningTokens + cachedTokens;

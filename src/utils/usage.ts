@@ -5,10 +5,7 @@
 
 import type { ScriptableContext } from 'chart.js';
 import { maskApiKey } from './format';
-import {
-  extractCanonicalTotalTokens,
-  normalizeUsageTokens,
-} from './usageTokenNormalizer';
+import { extractCanonicalTotalTokens, normalizeUsageTokens } from './usageTokenNormalizer';
 
 export interface KeyStatBucket {
   success: number;

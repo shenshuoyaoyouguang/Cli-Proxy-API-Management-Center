@@ -3,7 +3,6 @@ import iconAntigravity from '@/assets/icons/antigravity.svg';
 import iconClaude from '@/assets/icons/claude.svg';
 import iconCodex from '@/assets/icons/codex.svg';
 import iconGemini from '@/assets/icons/gemini.svg';
-import iconIflow from '@/assets/icons/iflow.svg';
 import iconKimiDark from '@/assets/icons/kimi-dark.svg';
 import iconKimiLight from '@/assets/icons/kimi-light.svg';
 import iconQwen from '@/assets/icons/qwen.svg';
@@ -87,11 +86,6 @@ export const TYPE_COLORS: Record<string, TypeColorSet> = {
     light: { bg: '#e0f7fa', text: '#006064' },
     dark: { bg: '#004d40', text: '#80deea' },
   },
-  // iFlow logo: 品红紫渐变 #5C5CFF → #AE5CFF，偏品红以区别于 Qwen 的紫罗兰
-  iflow: {
-    light: { bg: '#f5e3fc', text: '#9025c8' },
-    dark: { bg: '#521490', text: '#d49cf5' },
-  },
   // Vertex logo: Google 蓝 #4285F4
   vertex: {
     light: { bg: '#e4edfd', text: '#2b5fbc' },
@@ -114,7 +108,6 @@ export const AUTH_FILE_ICONS: Record<string, AuthFileIconAsset> = {
   codex: iconCodex,
   gemini: iconGemini,
   'gemini-cli': iconGemini,
-  iflow: iconIflow,
   kimi: { light: iconKimiLight, dark: iconKimiDark },
   qwen: iconQwen,
   vertex: iconVertex,
@@ -149,7 +142,6 @@ export const getTypeLabel = (t: TFunction, type: string): string => {
   const key = `auth_files.filter_${type}`;
   const translated = t(key);
   if (translated !== key) return translated;
-  if (type.toLowerCase() === 'iflow') return 'iFlow';
   return type.charAt(0).toUpperCase() + type.slice(1);
 };
 

@@ -6,7 +6,6 @@
 import { create } from 'zustand';
 // 移除 persist 中间件 - 与异步加密架构不兼容，改为手动异步恢复
 import type { AuthState, LoginCredentials, ConnectionStatus } from '@/types';
-import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { secureStorage } from '@/services/storage/secureStorage';
 import { apiClient } from '@/services/api/client';
 import { useConfigStore } from './useConfigStore';

@@ -230,18 +230,12 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
           );
           await loadFiles();
           await refreshKeyStats();
+          // Invalidate models cache for uploaded files
+          validFiles.forEach((file) => invalidateModelsCacheForFile(file.name));
         }
-
-      if (successCount > 0) {
-        const suffix = validFiles.length > 1 ? ` (${successCount}/${validFiles.length})` : '';
-        showNotification(
-          `${t('auth_files.upload_success')}${suffix}`,
-          failed.length ? 'warning' : 'success'
-        );
-        await loadFiles();
-        await refreshKeyStats();
-        // Invalidate models cache for uploaded files
-        validFiles.forEach((file) => invalidateModelsCacheForFile(file.name));
+      } finally {
+        setUploading(false);
+        event.target.value = '';
       }
     },
     [loadFiles, refreshKeyStats, showNotification, t]

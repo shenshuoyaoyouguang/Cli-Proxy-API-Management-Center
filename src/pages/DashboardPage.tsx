@@ -339,7 +339,7 @@ export function DashboardPage() {
           <Link to="/config" className={styles.viewMoreLink}>
             {t('dashboard.edit_settings')} →
           </Link>
-        </section>
+        </div>
       )}
     </div>
   );

@@ -94,8 +94,8 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
         value: source,
         label: source,
       })),
-    ],
-    [rows, t]
+    ];
+  }, [rows, t]
   );
 
   const resultOptions = useMemo(

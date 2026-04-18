@@ -48,9 +48,6 @@ const normalizeKey = (value: string): string => splitIntoSegments(value).join('_
 const hasAny = (segments: string[], words: readonly string[]) =>
   words.some((word) => segments.includes(word));
 
-const hasAll = (segments: string[], words: readonly string[]) =>
-  words.every((word) => segments.includes(word));
-
 const isCountLikePath = (segments: string[]) =>
   hasAny(segments, ['token', 'tokens', 'count', 'counts']);
 

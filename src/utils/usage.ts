@@ -7,7 +7,6 @@ import type { ScriptableContext } from 'chart.js';
 import { maskApiKey } from './format';
 import {
   extractCanonicalTotalTokens,
-  getCanonicalCachedTokens,
   normalizeUsageTokens,
 } from './usageTokenNormalizer';
 

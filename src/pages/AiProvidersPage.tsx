@@ -149,7 +149,7 @@ export function AiProvidersPage() {
     config?.openaiCompatibility,
   ]);
 
-  useHeaderRefresh(refreshKeyStats, isCurrentLayer);
+  useHeaderRefresh(refreshKeyStats);
 
   const openEditor = useCallback(
     (path: string) => {

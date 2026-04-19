@@ -1,5 +1,5 @@
 import type { AuthFileItem } from '@/types/authFile';
-import type { CredentialInfo, SourceInfo } from '@/types/sourceInfo';
+import type { CredentialInfo } from '@/types/sourceInfo';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
 import {
   buildCandidateUsageSourceIds,
@@ -11,7 +11,7 @@ import {
   type UsageDetail,
   type UsageTimeRange
 } from '@/utils/usage';
-import { resolveSourceDisplay, type SourceInfoMapInput } from '@/utils/sourceResolver';
+import { resolveSourceDisplay, type SourceInfoMap, type SourceInfoMapInput } from '@/utils/sourceResolver';
 
 const USAGE_TIME_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
   '7h': 7 * 60 * 60 * 1000,
@@ -779,7 +779,7 @@ export function createModelEfficiencyRows(
 
 export function createCredentialEfficiencyRows(
   details: UsageDetail[],
-  sourceInfoMap: Map<string, SourceInfo>,
+  sourceInfoMap: SourceInfoMap,
   authFileMap: Map<string, CredentialInfo>,
   modelPrices: Record<string, ModelPrice>
 ): CredentialEfficiencyRow[] {
@@ -858,7 +858,7 @@ export function createCredentialEfficiencyRows(
 
 export function createRequestEventRows(
   details: UsageDetail[],
-  sourceInfoMap: Map<string, SourceInfo>,
+  sourceInfoMap: SourceInfoMap,
   authFileMap: Map<string, CredentialInfo>,
   locale: string
 ): RequestEventRow[] {
@@ -909,7 +909,7 @@ export function createRequestEventRowsForRange(
   details: UsageDetail[],
   range: UsageTimeRange,
   nowMs: number,
-  sourceInfoMap: Map<string, SourceInfo>,
+  sourceInfoMap: SourceInfoMap,
   authFileMap: Map<string, CredentialInfo>,
   locale: string
 ): RequestEventRow[] {

@@ -84,7 +84,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
       ],
       '24h',
       baseNow,
-      new Map(),
+      buildSourceInfoMap({}),
       new Map(),
       'en-US'
     );
@@ -264,7 +264,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
         createDetail({ minutesAgo: 5, source: 't:tenant-a', auth_index: undefined, __modelName: 'model-a' }),
         createDetail({ minutesAgo: 4, source: 'tenant-a', auth_index: undefined, __modelName: 'model-a' })
       ],
-      new Map(),
+      buildSourceInfoMap({}),
       new Map(),
       {}
     );

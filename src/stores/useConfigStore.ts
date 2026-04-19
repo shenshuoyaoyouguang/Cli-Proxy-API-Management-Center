@@ -8,6 +8,8 @@ import type { Config } from '@/types';
 import type { RawConfigSection } from '@/types/config';
 import { configApi } from '@/services/api/config';
 import { CACHE_EXPIRY_MS } from '@/utils/constants';
+import { CacheLayer } from '@/services/cache';
+import { useAuthStore } from './useAuthStore';
 
 // Type guards for config value assignment
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
@@ -48,6 +50,7 @@ interface ConfigState {
   updateConfigValue: (section: RawConfigSection, value: unknown) => void;
   clearCache: (section?: RawConfigSection) => void;
   isCacheValid: (section?: RawConfigSection) => boolean;
+  restoreFromPersistence: () => void;
 }
 
 let configRequestToken = 0;
@@ -186,6 +189,13 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           newCache.set(key, { data: value, timestamp: now });
         }
       });
+
+      // 持久化到 CacheLayer
+      const { apiBase, managementKey } = useAuthStore.getState();
+      if (apiBase && managementKey) {
+        const scopeKey = `${apiBase}::${managementKey}`;
+        CacheLayer.set('config', data, { scopeKey, maxAgeMs: CACHE_EXPIRY_MS });
+      }
 
       set({
         config: data,
@@ -340,5 +350,28 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     if (!cached) return false;
 
     return Date.now() - cached.timestamp < CACHE_EXPIRY_MS;
+  },
+
+  restoreFromPersistence: () => {
+    const { apiBase, managementKey } = useAuthStore.getState();
+    if (!apiBase || !managementKey) return;
+
+    const scopeKey = `${apiBase}::${managementKey}`;
+    const entry = CacheLayer.get<Config>('config', scopeKey);
+    if (!entry) return;
+
+    const now = Date.now();
+    const data = entry.data;
+    const newCache = new Map<string, ConfigCache>();
+
+    newCache.set('__full__', { data, timestamp: now });
+    SECTION_KEYS.forEach((key) => {
+      const value = extractSectionValue(data, key);
+      if (value !== undefined) {
+        newCache.set(key, { data: value, timestamp: now });
+      }
+    });
+
+    set({ config: data, cache: newCache, loading: false, error: null });
   },
 }));

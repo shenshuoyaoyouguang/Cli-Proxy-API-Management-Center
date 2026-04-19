@@ -1,88 +1,110 @@
 @use 'sass:color';
 @use '../styles/variables.scss' as *;
 
-// ─── Container ──────────────────────────────────────────
+// ─── Dashboard Container ───────────────────────────────
 
 .dashboard {
   display: flex;
   flex-direction: column;
   gap: $spacing-xl;
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
+  padding: $spacing-xl;
   position: relative;
 }
 
-// ─── Decorative Background Orbs ─────────────────────────
+// ─── Animated Background Mesh ──────────────────────────
 
-.backgroundOrbs {
-  position: absolute;
+.backgroundMesh {
+  position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
   overflow: hidden;
+  background: var(--bg-secondary);
 }
 
-.orb1 {
+.meshGradient1 {
   position: absolute;
-  width: 420px;
-  height: 420px;
+  width: 600px;
+  height: 600px;
   border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--primary-color) 8%, transparent),
-    transparent 70%
-  );
-  top: -140px;
-  right: -80px;
-  animation: orbFloat 22s ease-in-out infinite alternate;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+  top: -200px;
+  right: -100px;
+  animation: meshFloat1 20s ease-in-out infinite;
+  filter: blur(60px);
 }
 
-.orb2 {
+.meshGradient2 {
   position: absolute;
-  width: 320px;
-  height: 320px;
+  width: 500px;
+  height: 500px;
   border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--success-color) 6%, transparent),
-    transparent 70%
-  );
-  bottom: 18%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.12) 0%, transparent 70%);
+  bottom: -150px;
   left: -100px;
-  animation: orbFloat 28s ease-in-out infinite alternate-reverse;
+  animation: meshFloat2 25s ease-in-out infinite;
+  filter: blur(60px);
 }
 
-@keyframes orbFloat {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-  100% {
-    transform: translate(30px, -20px) scale(1.1);
-  }
+.meshGradient3 {
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 70%);
+  top: 40%;
+  left: 30%;
+  animation: meshFloat3 18s ease-in-out infinite;
+  filter: blur(50px);
 }
 
-// ─── Hero Welcome Section ───────────────────────────────
+@keyframes meshFloat1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-50px, 50px) scale(1.1); }
+}
+
+@keyframes meshFloat2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, -30px) scale(1.05); }
+}
+
+@keyframes meshFloat3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-30px, -40px) scale(1.15); }
+}
+
+// ─── Hero Section ───────────────────────────────────────
 
 .hero {
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: $spacing-lg;
-  padding: $spacing-2xl $spacing-xl;
-  border-radius: $radius-lg;
-  --glass-blur: 12px;
+  gap: $spacing-xl;
+  padding: $spacing-2xl ($spacing-2xl + $spacing-md);
+  border-radius: 24px;
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--bg-primary) 92%, transparent),
-    color-mix(in srgb, var(--bg-secondary) 80%, transparent)
+    color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary)),
+    color-mix(in srgb, var(--primary-color) 4%, var(--bg-secondary))
   );
-  border: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
-  backdrop-filter: var(--glass-backdrop-filter);
-  -webkit-backdrop-filter: var(--glass-backdrop-filter);
+  border: 1px solid color-mix(in srgb, var(--border-color) 50%, transparent);
+  backdrop-filter: blur(20px);
   overflow: hidden;
-  animation: heroEnter 0.6s ease-out both;
+  animation: heroSlideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  }
 
   @media (max-width: $breakpoint-mobile) {
     flex-direction: column;
@@ -91,93 +113,62 @@
   }
 }
 
-// Large watermark text behind hero content
-.heroWatermark {
-  position: absolute;
-  top: 50%;
-  left: $spacing-xl;
-  transform: translateY(-50%);
-  font-size: clamp(64px, 12vw, 120px);
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  text-transform: uppercase;
-  color: var(--text-primary);
-  opacity: 0.04;
-  white-space: nowrap;
-  pointer-events: none;
-  user-select: none;
-  animation: watermarkEnter 0.8s ease-out 0.1s both;
-
-  @media (max-width: $breakpoint-mobile) {
-    font-size: clamp(48px, 14vw, 80px);
-    left: $spacing-lg;
-  }
-}
-
-@keyframes watermarkEnter {
+@keyframes heroSlideIn {
   from {
     opacity: 0;
-    transform: translateY(-50%) translateX(-20px);
+    transform: translateY(20px);
   }
   to {
-    opacity: 0.04;
-    transform: translateY(-50%) translateX(0);
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 .heroContent {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: $spacing-xs;
+  gap: $spacing-sm;
 }
 
 .heroGreeting {
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--primary-color);
-  animation: fadeSlideUp 0.5s ease-out 0.1s both;
+  animation: fadeInUp 0.5s ease-out 0.2s both;
 }
 
 .heroTitle {
   margin: 0;
-  font-size: clamp(32px, 5vw, 48px);
+  font-size: clamp(28px, 4vw, 42px);
   font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
-  animation: fadeSlideUp 0.5s ease-out 0.2s both;
+  animation: fadeInUp 0.5s ease-out 0.3s both;
 }
 
 .heroCaring {
   margin: $spacing-xs 0 0;
   font-size: 15px;
   color: var(--text-secondary);
-  line-height: 1.5;
-  animation: fadeSlideUp 0.5s ease-out 0.3s both;
+  line-height: 1.6;
+  max-width: 480px;
+  animation: fadeInUp 0.5s ease-out 0.4s both;
 }
 
-// ─── Hero Meta (right side) ─────────────────────────────
-
 .heroMeta {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: $spacing-sm;
-  flex-shrink: 0;
-  animation: fadeSlideUp 0.5s ease-out 0.35s both;
+  gap: $spacing-md;
+  animation: fadeInUp 0.5s ease-out 0.5s both;
 
   @media (max-width: $breakpoint-mobile) {
     align-items: flex-start;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: $spacing-sm;
+    width: 100%;
+    margin-top: $spacing-md;
   }
 }
 
@@ -185,7 +176,6 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
 
   @media (max-width: $breakpoint-mobile) {
     align-items: flex-start;
@@ -193,7 +183,7 @@
 }
 
 .time {
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 700;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -201,46 +191,66 @@
 }
 
 .date {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
 }
 
-// ─── Connection Pill ────────────────────────────────────
+// ─── Connection Status Pill ─────────────────────────────
 
 .connectionPill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: $radius-full;
-  --glass-blur: 8px;
-  background: var(--glass-bg-secondary);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: var(--glass-backdrop-filter);
-  -webkit-backdrop-filter: var(--glass-backdrop-filter);
-  font-size: 12px;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 50px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(10px);
+  font-size: 13px;
+  transition: all $transition-fast;
+
+  &:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
 }
 
 .statusDot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: $gray-400;
   flex-shrink: 0;
+  position: relative;
 
   &.connected {
     background: $success-color;
-    box-shadow: 0 0 6px rgba($success-color, 0.5);
+    box-shadow: 0 0 8px rgba($success-color, 0.6);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 50%;
+      background: rgba($success-color, 0.3);
+      animation: statusPulse 2s ease-in-out infinite;
+    }
   }
 
   &.connecting {
     background: $warning-color;
-    animation: pulse 1s ease-in-out infinite;
+    animation: pulse 1.2s ease-in-out infinite;
   }
 
   &.disconnected {
     background: $error-color;
   }
+}
+
+@keyframes statusPulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.5); opacity: 0; }
 }
 
 .pillText {
@@ -249,7 +259,7 @@
 }
 
 .buildDate {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-tertiary);
   text-align: right;
 
@@ -258,7 +268,7 @@
   }
 }
 
-// ─── Bento Stats Grid ───────────────────────────────────
+// ─── Stats Section ──────────────────────────────────────
 
 .statsSection {
   position: relative;
@@ -269,22 +279,25 @@
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   color: var(--text-tertiary);
-  margin: 0 0 $spacing-md;
+  margin: 0 0 $spacing-lg;
+  padding-left: $spacing-xs;
 }
+
+// ─── Bento Grid ─────────────────────────────────────────
 
 .bentoGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: auto auto;
-  gap: $spacing-md;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: auto;
+  gap: $spacing-lg;
 
-  @media (max-width: 900px) {
+  @media (max-width: 1100px) {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  @media (max-width: 500px) {
+  @media (max-width: 600px) {
     grid-template-columns: 1fr;
   }
 }
@@ -293,108 +306,152 @@
   display: flex;
   flex-direction: column;
   gap: $spacing-md;
-  padding: $spacing-lg;
+  padding: $spacing-xl;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: $radius-lg;
+  border-radius: 20px;
   text-decoration: none;
-  transition:
-    border-color $transition-fast,
-    box-shadow $transition-fast,
-    transform $transition-fast;
-  animation: cardEnter 0.4s ease-out both;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+  animation: cardEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  // Colored gradient background on hover
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 0;
+  }
 
   &:hover {
-    border-color: var(--primary-color);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-    transform: translateY(-3px);
+    transform: translateY(-6px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+    border-color: transparent;
+
+    &::before {
+      opacity: 1;
+    }
+  }
+
+  // Individual card colors
+  &:nth-child(1)::before {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, transparent 60%);
+  }
+  &:nth-child(2)::before {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, transparent 60%);
+  }
+  &:nth-child(3)::before {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, transparent 60%);
+  }
+  &:nth-child(4)::before {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, transparent 60%);
   }
 }
 
-// First card spans 2 rows — the "hero stat"
+// First card - featured stat (API Keys)
 .bentoLarge {
-  grid-row: 1 / 3;
-  justify-content: center;
+  grid-column: span 2;
+  grid-row: span 1;
   background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--primary-color) 6%, var(--bg-primary)),
+    135deg,
+    color-mix(in srgb, #8b5cf6 8%, var(--bg-primary)),
     var(--bg-primary)
   );
 
   .bentoValue {
-    font-size: 44px;
+    font-size: 48px;
   }
 
   .bentoIcon {
     width: 56px;
     height: 56px;
+    background: rgba(139, 92, 246, 0.15);
+    color: #8b5cf6;
   }
 
-  @media (max-width: 900px) {
-    grid-row: auto;
-
-    .bentoValue {
-      font-size: 32px;
-    }
-
-    .bentoIcon {
-      width: 44px;
-      height: 44px;
-    }
+  @media (max-width: 1100px) {
+    grid-column: span 1;
   }
 }
+
+@keyframes cardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+// Stagger animation delays
+.bentoCard:nth-child(1) { animation-delay: 0.1s; }
+.bentoCard:nth-child(2) { animation-delay: 0.2s; }
+.bentoCard:nth-child(3) { animation-delay: 0.3s; }
+.bentoCard:nth-child(4) { animation-delay: 0.4s; }
 
 .bentoIcon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: $radius-md;
-  background: color-mix(in srgb, var(--primary-color) 10%, var(--bg-secondary));
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary-color) 12%, var(--bg-secondary));
   color: var(--primary-color);
-  transition: background $transition-fast;
+  transition: all $transition-fast;
+  position: relative;
+  z-index: 1;
 }
 
 .bentoCard:hover .bentoIcon {
-  background: color-mix(in srgb, var(--primary-color) 16%, var(--bg-secondary));
+  transform: scale(1.1) rotate(3deg);
 }
 
 .bentoContent {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  position: relative;
+  z-index: 1;
 }
 
 .bentoValue {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 800;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 .bentoLabel {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .bentoSublabel {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
-  opacity: 0.7;
+  opacity: 0.8;
   margin-top: 2px;
+  line-height: 1.4;
 }
 
-// ─── Config Pills Section ───────────────────────────────
+// ─── Config Section ────────────────────────────────────
 
 .configSection {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: $spacing-md;
-  animation: cardEnter 0.4s ease-out 0.5s both;
+  gap: $spacing-lg;
+  animation: cardEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
 }
 
 .configPillGrid {
@@ -407,21 +464,23 @@
   display: inline-flex;
   align-items: center;
   gap: $spacing-sm;
-  padding: 6px 14px;
-  background: var(--bg-secondary);
+  padding: 10px 16px;
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: $radius-full;
+  border-radius: 12px;
   font-size: 13px;
-  transition: border-color $transition-fast;
+  transition: all $transition-fast;
 
   &:hover {
     border-color: var(--border-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   }
 }
 
 .configPillWide {
   flex-basis: 100%;
-  border-radius: $radius-md;
+  border-radius: 14px;
 }
 
 .configPillLabel {
@@ -449,13 +508,12 @@
   word-break: break-all;
 }
 
-// Config badges (routing strategy)
 .configBadge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 8px;
-  border-radius: $radius-full;
+  padding: 4px 10px;
+  border-radius: 20px;
   border: 1px solid var(--border-color);
   font-size: 11px;
   font-weight: 600;
@@ -467,80 +525,52 @@
 }
 
 .configBadgeRoundRobin {
-  color: var(--primary-color);
-  border-color: rgba($primary-color, 0.24);
-  background: rgba($primary-color, 0.12);
+  color: #8b5cf6;
+  border-color: rgba(139, 92, 246, 0.3);
+  background: rgba(139, 92, 246, 0.1);
 }
 
 .configBadgeFillFirst {
   color: $success-color;
   border-color: rgba($success-color, 0.3);
-  background: rgba($success-color, 0.12);
+  background: rgba($success-color, 0.1);
 }
 
 .configBadgeUnknown {
   color: var(--text-secondary);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
 }
-
-// ─── View More Link ─────────────────────────────────────
 
 .viewMoreLink {
   display: inline-flex;
   align-items: center;
   font-size: 13px;
+  font-weight: 600;
   color: var(--primary-color);
   text-decoration: none;
   margin-top: $spacing-xs;
-  transition: color $transition-fast;
+  transition: all $transition-fast;
 
   &:hover {
-    text-decoration: underline;
     color: var(--primary-hover);
+    transform: translateX(4px);
   }
 }
 
-// ─── Animations ─────────────────────────────────────────
+// ─── Animations ────────────────────────────────────────
 
-@keyframes heroEnter {
+@keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes fadeSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes cardEnter {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }

@@ -124,6 +124,8 @@
   "dashboard": {
     "title": "仪表盘",
     "subtitle": "欢迎使用 CLI Proxy API 管理中心",
+    "welcome_message": "运行中 v{{version}} · 监控 API 使用情况并管理提供商",
+    "overview": "概览",
     "openai_providers": "OpenAI 提供商",
     "quick_actions": "快捷操作",
     "current_config": "当前配置",

@@ -124,6 +124,8 @@
   "dashboard": {
     "title": "Dashboard",
     "subtitle": "Welcome to CLI Proxy API Management Center",
+    "welcome_message": "Running v{{version}} · Monitor your API usage and manage providers",
+    "overview": "Overview",
     "openai_providers": "OpenAI Providers",
     "quick_actions": "Quick Actions",
     "current_config": "Current Configuration",

@@ -123,6 +123,8 @@
   "dashboard": {
     "title": "儀表板",
     "subtitle": "歡迎使用 CLI Proxy API 管理中心",
+    "welcome_message": "執行中 v{{version}} · 監控 API 使用情況並管理供應商",
+    "overview": "概覽",
     "openai_providers": "OpenAI 供應商",
     "quick_actions": "快速操作",
     "current_config": "目前設定",

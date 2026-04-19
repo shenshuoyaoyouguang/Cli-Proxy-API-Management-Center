@@ -121,6 +121,8 @@
   "dashboard": {
     "title": "Панель управления",
     "subtitle": "Добро пожаловать в Центр управления CLI Proxy API",
+    "welcome_message": "Работает v{{version}} · Отслеживайте использование API и управляйте поставщиками",
+    "overview": "Обзор",
     "openai_providers": "Поставщики OpenAI",
     "quick_actions": "Быстрые действия",
     "current_config": "Текущая конфигурация",

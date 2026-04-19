@@ -27,7 +27,6 @@ export function DashboardPage() {
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const serverVersion = useAuthStore((state) => state.serverVersion);
   const serverBuildDate = useAuthStore((state) => state.serverBuildDate);
-  const apiBase = useAuthStore((state) => state.apiBase);
 
   const config = useConfigStore((state) => state.config);
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
@@ -175,39 +174,51 @@ export function DashboardPage() {
 
   return (
     <div className={styles.dashboard}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>{t('dashboard.title')}</h1>
-        <p className={styles.subtitle}>{t('dashboard.subtitle')}</p>
+      {/* Animated Background Mesh */}
+      <div className={styles.backgroundMesh}>
+        <div className={styles.meshGradient1} />
+        <div className={styles.meshGradient2} />
+        <div className={styles.meshGradient3} />
       </div>
 
-      <div className={styles.connectionCard}>
-        <div className={styles.connectionStatus}>
-          <span
-            className={`${styles.statusDot} ${
-              connectionStatus === 'connected'
-                ? styles.connected
-                : connectionStatus === 'connecting'
-                  ? styles.connecting
-                  : styles.disconnected
-            }`}
-          />
-          <span className={styles.statusText}>
-            {t(
-              connectionStatus === 'connected'
-                ? 'common.connected'
-                : connectionStatus === 'connecting'
-                  ? 'common.connecting'
-                  : 'common.disconnected'
-            )}
-          </span>
+      {/* Hero Section */}
+      <div className={styles.hero}>
+        <div className={styles.heroContent}>
+          <span className={styles.heroGreeting}>{t('dashboard.title')}</span>
+          <h1 className={styles.heroTitle}>{t('dashboard.subtitle')}</h1>
+          <p className={styles.heroCaring}>
+            {t('dashboard.welcome_message', { version: serverVersion?.trim() || '-' })}
+          </p>
         </div>
-        <div className={styles.connectionInfo}>
-          <span className={styles.serverUrl}>{apiBase || '-'}</span>
-          {serverVersion && (
-            <span className={styles.serverVersion}>
-              v{serverVersion.trim().replace(/^[vV]+/, '')}
+        <div className={styles.heroMeta}>
+          <div className={styles.dateTimeBlock}>
+            <span className={styles.time}>
+              {new Date().toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}
             </span>
-          )}
+            <span className={styles.date}>
+              {new Date().toLocaleDateString(i18n.language, { weekday: 'short', month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+          <div className={styles.connectionPill}>
+            <span
+              className={`${styles.statusDot} ${
+                connectionStatus === 'connected'
+                  ? styles.connected
+                  : connectionStatus === 'connecting'
+                    ? styles.connecting
+                    : styles.disconnected
+              }`}
+            />
+            <span className={styles.pillText}>
+              {t(
+                connectionStatus === 'connected'
+                  ? 'common.connected'
+                  : connectionStatus === 'connecting'
+                    ? 'common.connecting'
+                    : 'common.disconnected'
+              )}
+            </span>
+          </div>
           {serverBuildDate && (
             <span className={styles.buildDate}>
               {new Date(serverBuildDate).toLocaleDateString(i18n.language)}
@@ -216,75 +227,70 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div className={styles.statsGrid}>
-        {quickStats.map((stat) => (
-          <Link key={stat.path} to={stat.path} className={styles.statCard}>
-            <div className={styles.statIcon}>{stat.icon}</div>
-            <div className={styles.statContent}>
-              <span className={styles.statValue}>{stat.loading ? '...' : stat.value}</span>
-              <span className={styles.statLabel}>{stat.label}</span>
-              {stat.sublabel && !stat.loading && (
-                <span className={styles.statSublabel}>{stat.sublabel}</span>
-              )}
-            </div>
-          </Link>
-        ))}
+      {/* Stats Section - Bento Grid */}
+      <div className={styles.statsSection}>
+        <h2 className={styles.sectionHeading}>{t('dashboard.overview')}</h2>
+        <div className={styles.bentoGrid}>
+          {quickStats.map((stat, index) => (
+            <Link
+              key={stat.path}
+              to={stat.path}
+              className={`${styles.bentoCard} ${index === 0 ? styles.bentoLarge : ''}`}
+            >
+              <div className={styles.bentoIcon}>{stat.icon}</div>
+              <div className={styles.bentoContent}>
+                <span className={styles.bentoValue}>{stat.loading ? '...' : stat.value}</span>
+                <span className={styles.bentoLabel}>{stat.label}</span>
+                {stat.sublabel && !stat.loading && (
+                  <span className={styles.bentoSublabel}>{stat.sublabel}</span>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
+      {/* Config Section */}
       {config && (
-        <div className={styles.section}>
-          <h2 className={styles.sectionTitle}>{t('dashboard.current_config')}</h2>
-          <div className={styles.configGrid}>
-            <div className={styles.configItem}>
-              <span className={styles.configLabel}>{t('basic_settings.debug_enable')}</span>
-              <span
-                className={`${styles.configValue} ${config.debug ? styles.enabled : styles.disabled}`}
-              >
+        <div className={styles.configSection}>
+          <h2 className={styles.sectionHeading}>{t('dashboard.current_config')}</h2>
+          <div className={styles.configPillGrid}>
+            <div className={styles.configPill}>
+              <span className={styles.configPillLabel}>{t('basic_settings.debug_enable')}</span>
+              <span className={`${styles.configPillValue} ${config.debug ? styles.on : styles.off}`}>
                 {config.debug ? t('common.yes') : t('common.no')}
               </span>
             </div>
-            <div className={styles.configItem}>
-              <span className={styles.configLabel}>
-                {t('basic_settings.usage_statistics_enable')}
-              </span>
-              <span
-                className={`${styles.configValue} ${config.usageStatisticsEnabled ? styles.enabled : styles.disabled}`}
-              >
+            <div className={styles.configPill}>
+              <span className={styles.configPillLabel}>{t('basic_settings.usage_statistics_enable')}</span>
+              <span className={`${styles.configPillValue} ${config.usageStatisticsEnabled ? styles.on : styles.off}`}>
                 {config.usageStatisticsEnabled ? t('common.yes') : t('common.no')}
               </span>
             </div>
-            <div className={styles.configItem}>
-              <span className={styles.configLabel}>
-                {t('basic_settings.logging_to_file_enable')}
-              </span>
-              <span
-                className={`${styles.configValue} ${config.loggingToFile ? styles.enabled : styles.disabled}`}
-              >
+            <div className={styles.configPill}>
+              <span className={styles.configPillLabel}>{t('basic_settings.logging_to_file_enable')}</span>
+              <span className={`${styles.configPillValue} ${config.loggingToFile ? styles.on : styles.off}`}>
                 {config.loggingToFile ? t('common.yes') : t('common.no')}
               </span>
             </div>
-            <div className={styles.configItem}>
-              <span className={styles.configLabel}>{t('basic_settings.retry_count_label')}</span>
-              <span className={styles.configValue}>{config.requestRetry ?? 0}</span>
+            <div className={styles.configPill}>
+              <span className={styles.configPillLabel}>{t('basic_settings.retry_count_label')}</span>
+              <span className={styles.configPillValue}>{config.requestRetry ?? 0}</span>
             </div>
-            <div className={styles.configItem}>
-              <span className={styles.configLabel}>{t('basic_settings.ws_auth_enable')}</span>
-              <span
-                className={`${styles.configValue} ${config.wsAuth ? styles.enabled : styles.disabled}`}
-              >
+            <div className={styles.configPill}>
+              <span className={styles.configPillLabel}>{t('basic_settings.ws_auth_enable')}</span>
+              <span className={`${styles.configPillValue} ${config.wsAuth ? styles.on : styles.off}`}>
                 {config.wsAuth ? t('common.yes') : t('common.no')}
               </span>
             </div>
-            <div className={styles.configItem}>
-              <span className={styles.configLabel}>{t('dashboard.routing_strategy')}</span>
-              <span className={`${styles.configBadge} ${routingStrategyBadgeClass}`}>
-                {routingStrategyDisplay}
-              </span>
+            <div className={`${styles.configPill} ${styles.configBadge} ${routingStrategyBadgeClass}`}>
+              <span className={styles.configPillLabel}>{t('dashboard.routing_strategy')}</span>
+              <span className={styles.configPillValue}>{routingStrategyDisplay}</span>
             </div>
             {config.proxyUrl && (
-              <div className={`${styles.configItem} ${styles.configItemFull}`}>
-                <span className={styles.configLabel}>{t('basic_settings.proxy_url_label')}</span>
-                <span className={styles.configValueMono}>{config.proxyUrl}</span>
+              <div className={`${styles.configPill} ${styles.configPillWide}`}>
+                <span className={styles.configPillLabel}>{t('basic_settings.proxy_url_label')}</span>
+                <span className={styles.configPillMono}>{config.proxyUrl}</span>
               </div>
             )}
           </div>

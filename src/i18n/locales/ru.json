@@ -1319,7 +1319,9 @@
           "switch_project": "Переключить проект",
           "switch_project_desc": "Автоматически переходить на другой проект при превышении квоты",
           "switch_preview_model": "Переключить на preview-модель",
-          "switch_preview_model_desc": "Переключаться на preview-версию модели при превышении квоты"
+          "switch_preview_model_desc": "Переключаться на preview-версию модели при превышении квоты",
+          "antigravity_credits": "Antigravity Credits повтор",
+          "antigravity_credits_desc": "При возврате Antigravity quota_exhausted 429, повторить один раз с enabledCreditTypes=[\"GOOGLE_ONE_AI\"]"
         },
         "streaming": {
           "title": "Настройки стриминга",

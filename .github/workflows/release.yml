@@ -36,12 +36,14 @@ jobs:
           VERSION: ${{ github.ref_name }}
 
       - name: Prepare release assets
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           cd dist
           mv index.html management.html
           ls -lh management.html
 
       - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           set -euo pipefail
           current_tag="${GITHUB_REF_NAME}"
@@ -56,6 +58,7 @@ jobs:
           git log --pretty=format:"- %h %s" "${range}" >> release-notes.md
 
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           files: dist/management.html

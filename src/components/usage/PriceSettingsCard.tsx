@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -38,12 +38,8 @@ export function PriceSettingsCard({
 
   const priceEntries = useMemo(() => Object.entries(modelPrices), [modelPrices]);
   const totalPages = Math.max(1, Math.ceil(priceEntries.length / PRICE_PAGE_SIZE));
+  // currentPage 直接从 page 和 totalPages 计算，不需要 useEffect 同步
   const currentPage = Math.min(page, totalPages);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
-    setPage((prev) => Math.min(prev, totalPages));
-  }, [totalPages]);
 
   const visibleEntries = useMemo(() => {
     const start = (currentPage - 1) * PRICE_PAGE_SIZE;

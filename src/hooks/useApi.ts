@@ -136,23 +136,28 @@ export function useApi<T, P = unknown>(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllersRef = useRef<AbortController[]>([]);
   const lastParamsRef = useRef<P | undefined>(undefined);
   const isMountedRef = useRef(true);
 
   const showNotification = useNotificationStore((state) => state.showNotification);
 
+  // Abort all active controllers
+  const abortAll = useCallback(() => {
+    abortControllersRef.current.forEach((controller) => {
+      controller.abort();
+    });
+    abortControllersRef.current = [];
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
-      // Abort any in-flight request
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
+      // Abort all in-flight requests including retries
+      abortAll();
     };
-  }, []);
+  }, [abortAll]);
 
   /**
    * Execute the API request with retry logic
@@ -169,7 +174,7 @@ export function useApi<T, P = unknown>(
 
       // Create new AbortController for this request
       const abortController = new AbortController();
-      abortControllerRef.current = abortController;
+      abortControllersRef.current.push(abortController);
 
       // Prepare request config
       const config: AxiosRequestConfig = {
@@ -227,6 +232,11 @@ export function useApi<T, P = unknown>(
         const result = await requestPromise;
         return result;
       } finally {
+        // Remove this controller from active list
+        const index = abortControllersRef.current.indexOf(abortController);
+        if (index > -1) {
+          abortControllersRef.current.splice(index, 1);
+        }
         // Clean up pending request
         if (dedup) {
           pendingRequests.delete(dedupKey);
@@ -301,12 +311,9 @@ export function useApi<T, P = unknown>(
     setError(null);
     lastParamsRef.current = undefined;
 
-    // Abort any in-flight request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-  }, [initialData]);
+    // Abort all in-flight requests
+    abortAll();
+  }, [initialData, abortAll]);
 
   // Execute immediately if requested (for GET requests typically)
   useEffect(() => {

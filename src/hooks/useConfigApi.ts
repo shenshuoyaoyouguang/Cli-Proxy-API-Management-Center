@@ -2,7 +2,7 @@
  * 配置相关 API Hooks
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { configApi } from '@/services/api/config';
 import type { Config } from '@/types';
 
@@ -32,9 +32,9 @@ export function useConfig() {
   }, []);
 
   // Immediate fetch on mount
-  useState(() => {
+  useEffect(() => {
     refetch();
-  });
+  }, [refetch]);
 
   return { config, loading, error, refetch };
 }

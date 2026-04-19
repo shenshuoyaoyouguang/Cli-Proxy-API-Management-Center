@@ -2,7 +2,7 @@
  * Model Management Hooks
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   modelsManagementApi,
@@ -67,10 +67,13 @@ export function useModels(): UseModelsResult {
 
   // Initial load
   const [initialized, setInitialized] = useState(false);
-  if (!initialized) {
-    setInitialized(true);
-    refetch();
-  }
+
+  useEffect(() => {
+    if (!initialized) {
+      setInitialized(true);
+      refetch();
+    }
+  }, [initialized, refetch]);
 
   return { models, loading, error, refetch };
 }
@@ -189,10 +192,13 @@ export function useModelProviders(): UseModelProvidersResult {
 
   // Initial load
   const [initialized, setInitialized] = useState(false);
-  if (!initialized) {
-    setInitialized(true);
-    refetch();
-  }
+
+  useEffect(() => {
+    if (!initialized) {
+      setInitialized(true);
+      refetch();
+    }
+  }, [initialized, refetch]);
 
   return { providers, loading, error, refetch };
 }

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
@@ -110,7 +110,7 @@ export function LogsPage() {
 
   const disableControls = connectionStatus !== 'connected';
 
-  const loadLogs = async (incremental = false) => {
+  const loadLogs = useCallback(async (incremental = false) => {
     if (connectionStatus !== 'connected') {
       setLoading(false);
       return;
@@ -142,7 +142,7 @@ export function LogsPage() {
         incremental && latestTimestampRef.current > 0 ? { after: latestTimestampRef.current } : {};
       const data = await logsApi.fetchLogs(params);
 
-      // 更新时间戳
+      // 更新时间���
       if (data['latest-timestamp']) {
         latestTimestampRef.current = data['latest-timestamp'];
       }
@@ -158,7 +158,7 @@ export function LogsPage() {
           const buffer = dropCount > 0 ? combined.slice(dropCount) : combined;
           let visibleFrom = Math.max(prev.visibleFrom - dropCount, 0);
 
-          // 若用户停留在底部（跟随最新日志），则保持“渲染窗口”大小不变，避免无限增长
+          // 若用户停留在底部（跟随最新日志），则保持”渲染窗口”大小不变，避免无限增长
           if (stickToBottom) {
             visibleFrom = Math.max(buffer.length - prevRenderedCount, 0);
           }
@@ -186,7 +186,7 @@ export function LogsPage() {
         void loadLogs(false);
       }
     }
-  };
+  }, [connectionStatus, t]);
 
   useHeaderRefresh(() => loadLogs(false));
 
@@ -280,8 +280,7 @@ export function LogsPage() {
       loadLogs(true);
     }, 8000);
     return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, connectionStatus]);
+  }, [autoRefresh, connectionStatus, loadLogs]);
 
   const visibleLines = useMemo(
     () => logState.buffer.slice(logState.visibleFrom),

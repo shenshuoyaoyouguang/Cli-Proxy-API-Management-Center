@@ -853,7 +853,14 @@ export function useVisualConfig() {
       dispatch({ type: 'load_success', values: newValues });
       return { ok: true as const };
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Invalid YAML';
+      let message = 'Invalid YAML';
+      if (error instanceof Error) {
+        message = error.message;
+      } else if (typeof error === 'string') {
+        message = error;
+      } else if (error && typeof error === 'object') {
+        message = String(error);
+      }
       dispatch({ type: 'load_error', error: message });
       return { ok: false as const, error: message };
     }

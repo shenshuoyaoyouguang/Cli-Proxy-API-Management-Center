@@ -148,13 +148,15 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
         connectionError: null,
       });
 
-      // 根据 rememberPassword 选择存储方式
+      // 始终设置登录状态，允许刷新后自动登录
+      localStorage.setItem('isLoggedIn', 'true');
+
+      // 根据 rememberPassword 选择 key 持久化方式
       if (rememberPassword) {
-        localStorage.setItem('isLoggedIn', 'true');
+        // 持久化到 localStorage
         sessionStorage.removeItem('sessionManagementKey');
       } else {
-        localStorage.removeItem('isLoggedIn');
-        // 将 key 存储在 sessionStorage (tab 关闭后自动清除)
+        // 仅在当前 tab 有效，tab 关闭后自动清除
         sessionStorage.setItem('sessionManagementKey', managementKey);
       }
     } catch (error: unknown) {

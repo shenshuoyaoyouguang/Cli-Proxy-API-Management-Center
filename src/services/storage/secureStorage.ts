@@ -23,19 +23,27 @@ class SecureStorageService {
 
   private decodeStoredValue(
     raw: string,
-    encrypt: boolean
+    encrypt: boolean,
+    key: string
   ): { serialized: string; legacyEncrypted: boolean } | null {
     if (!encrypt) {
       return { serialized: raw, legacyEncrypted: false };
     }
 
     // 注意：decryptData 是异步的，但 Zustand persist 需要同步接口。
-    // 这里直接调用但不 await，结果会是 Promise 对象。
-    // 对于 v1 数据，可以同步解密；对于 v2，需要接受这个限制。
+    // 对于 v2 数据，尝试从明文副本恢复。
     if (raw.startsWith('enc::v2::')) {
-      // v2 无法同步解密，返回 null 表示解密失败
-      console.warn('V2 encrypted data cannot be decoded synchronously');
+      const plaintext = localStorage.getItem(`__plain__::${key}`);
+      if (plaintext) {
+        return { serialized: plaintext, legacyEncrypted: false };
+      }
+      console.warn('V2 encrypted data cannot be decoded synchronously, no plaintext fallback');
       return null;
+    }
+
+    // 回退到 plain:: 前缀的明文（异步加密前的原始值）
+    if (raw.startsWith('plain::')) {
+      return { serialized: raw.slice('plain::'.length), legacyEncrypted: false };
     }
 
     if (raw.startsWith('enc::v1::')) {
@@ -79,7 +87,7 @@ class SecureStorageService {
   /**
    * 存储数据
    * 注意：由于 Zustand persist 需要同步接口，加密过程异步执行。
-   * 首次写入存明文，加密完成后自动覆盖为密文。
+   * 加密后明文以 plain:: 前缀保留，确保 v2 异步加密场景下可回退。
    */
   setItem(key: string, value: unknown, options: StorageOptions = {}): void {
     const { encrypt = true } = options;
@@ -92,8 +100,8 @@ class SecureStorageService {
     const stringValue = JSON.stringify(value);
 
     if (encrypt) {
-      // 先存明文（确保数据不丢失），然后异步加密覆盖
-      localStorage.setItem(key, stringValue);
+      // 先存明文带前缀（异步加密完成后会被覆盖，但解密失败时可回退）
+      localStorage.setItem(key, `plain::${stringValue}`);
       void encryptData(stringValue)
         .then((encrypted) => {
           localStorage.setItem(key, encrypted);
@@ -115,7 +123,7 @@ class SecureStorageService {
     const raw = localStorage.getItem(key);
     if (raw === null) return null;
 
-    const decoded = this.decodeStoredValue(raw, encrypt);
+    const decoded = this.decodeStoredValue(raw, encrypt, key);
     if (!decoded) {
       return null;
     }

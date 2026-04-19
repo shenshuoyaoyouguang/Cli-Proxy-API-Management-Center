@@ -153,7 +153,8 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
 
       // 根据 rememberPassword 选择 key 持久化方式
       if (rememberPassword) {
-        // 持久化到 localStorage
+        // 持久化到 localStorage（加密存储，跨 tab 有效）
+        secureStorage.setItem('managementKey', managementKey);
         sessionStorage.removeItem('sessionManagementKey');
       } else {
         // 仅在当前 tab 有效，tab 关闭后自动清除

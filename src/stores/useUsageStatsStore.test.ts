@@ -7,6 +7,14 @@ vi.mock('@/services/api', () => ({
   },
 }));
 
+vi.mock('@/services/autoPersist', () => ({
+  autoPersistService: {
+    readBootstrapSnapshot: vi.fn(() => null),
+    onUsageRefreshed: vi.fn(),
+    clearRuntimeState: vi.fn(),
+  },
+}));
+
 vi.mock('./useAuthStore', () => ({
   useAuthStore: {
     getState: vi.fn(() => ({
@@ -46,6 +54,7 @@ vi.mock('@/i18n', () => ({
 
 import { useUsageStatsStore } from './useUsageStatsStore';
 import { usageApi } from '@/services/api';
+import { autoPersistService } from '@/services/autoPersist';
 
 const hashScopeSegment = (value: string) => {
   let hash = 2166136261;
@@ -123,6 +132,7 @@ describe('useUsageStatsStore', () => {
       await useUsageStatsStore.getState().loadUsageStats();
 
       expect(usageApi.getUsage).toHaveBeenCalledTimes(1);
+      expect(autoPersistService.onUsageRefreshed).toHaveBeenCalledTimes(1);
       expect(useUsageStatsStore.getState().usage).toEqual(mockUsage);
       expect(useUsageStatsStore.getState().loading).toBe(false);
       expect(useUsageStatsStore.getState().error).toBeNull();
@@ -195,6 +205,110 @@ describe('useUsageStatsStore', () => {
 
       expect(useUsageStatsStore.getState().scopeKey).toBe(createScopeKey('http://localhost:3000', 'test-key'));
     });
+
+    it('accepts an empty fresh usage response instead of replaying bootstrap data', async () => {
+      vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue({
+        scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
+        usage: {
+          apis: {
+            previous: {
+              models: {
+                'gpt-4': { details: [{ timestamp: '2025-01-01T00:00:00Z' }] },
+              },
+            },
+          },
+        },
+        keyStats: {
+          bySource: { previous: { success: 1, failure: 0 } },
+          byAuthIndex: { '0': { success: 1, failure: 0 } },
+        },
+        usageDetails: [
+          {
+            timestamp: '2025-01-01T00:00:00Z',
+            source: 'previous',
+            auth_index: 0,
+            tokens: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+            failed: false,
+          } as any,
+        ],
+        lastRefreshedAt: Date.now() - 60_000,
+        detailCount: 1,
+      } as any);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: {} } as any);
+
+      await useUsageStatsStore.getState().loadUsageStats({ force: true });
+
+      expect(useUsageStatsStore.getState().usage).toEqual({});
+      expect(useUsageStatsStore.getState().usageDetails).toEqual([]);
+    });
+
+    it('prefers the snapshot with the higher total detail count during bootstrap', async () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+      const persistedDetails = Array.from({ length: 5_100 }, (_, index) => ({
+        timestamp: `2025-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`,
+        source: 'persisted',
+        auth_index: 0,
+        tokens: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        failed: false,
+      })) as any[];
+      const autoPersistDetails = Array.from({ length: 5_000 }, (_, index) => ({
+        timestamp: `2025-01-02T00:${String(index % 60).padStart(2, '0')}:00Z`,
+        source: 'auto',
+        auth_index: 0,
+        tokens: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        failed: false,
+      })) as any[];
+
+      localStorage.setItem(
+        `cli-proxy-usage-stats-cache-v1:${encodeURIComponent(scopeKey)}`,
+        JSON.stringify({
+          scopeKey,
+          usage: { apis: { persisted: {} } },
+          keyStats: {
+            bySource: { persisted: { success: persistedDetails.length, failure: 0 } },
+            byAuthIndex: { '0': { success: persistedDetails.length, failure: 0 } },
+          },
+          usageDetails: persistedDetails,
+          detailCount: persistedDetails.length,
+          lastRefreshedAt: Date.now(),
+        })
+      );
+
+      vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue({
+        scopeKey,
+        usage: { apis: { auto: {} } },
+        keyStats: {
+          bySource: { auto: { success: 6_000, failure: 0 } },
+          byAuthIndex: { '0': { success: 6_000, failure: 0 } },
+        },
+        usageDetails: autoPersistDetails,
+        lastRefreshedAt: Date.now(),
+        detailCount: 6_000,
+      } as any);
+
+      await useUsageStatsStore.getState().loadUsageStats();
+
+      expect(usageApi.getUsage).not.toHaveBeenCalled();
+      expect(useUsageStatsStore.getState().usage).toEqual({ apis: { auto: {} } });
+      expect(useUsageStatsStore.getState().usageDetails).toHaveLength(5_000);
+    });
+
+    it('does not treat lite auto-persist snapshots as fresh bootstrap data', async () => {
+      vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue({
+        scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
+        usage: null,
+        keyStats: { bySource: {}, byAuthIndex: {} },
+        usageDetails: [],
+        lastRefreshedAt: null,
+        detailCount: 0,
+      } as any);
+      vi.mocked(usageApi.getUsage).mockResolvedValue({ usage: { apis: { live: {} } } } as any);
+
+      await useUsageStatsStore.getState().loadUsageStats();
+
+      expect(usageApi.getUsage).toHaveBeenCalledTimes(1);
+      expect(useUsageStatsStore.getState().usage).toEqual({ apis: { live: {} } });
+    });
   });
 
   describe('clearUsageStats', () => {
@@ -226,6 +340,10 @@ describe('useUsageStatsStore', () => {
       useUsageStatsStore.getState().clearUsageStats();
 
       const state = useUsageStatsStore.getState();
+      expect(autoPersistService.clearRuntimeState).toHaveBeenCalledWith(
+        createScopeKey('http://localhost:3000', 'test-key'),
+        { removePersisted: true }
+      );
       expect(state.usage).toBeNull();
       expect(state.keyStats).toEqual({ bySource: {}, byAuthIndex: {} });
       expect(state.usageDetails).toEqual([]);

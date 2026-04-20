@@ -8,6 +8,7 @@ import type { AuthFileItem } from '@/types';
 import { useQuotaStore } from '@/stores';
 import { getStatusFromError } from '@/utils/quota';
 import type { QuotaConfig } from './quotaConfigs';
+import { reportQuotaHealthResults } from './healthReporting';
 
 type QuotaScope = 'page' | 'all';
 
@@ -65,7 +66,6 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
               } catch (err: unknown) {
                 lastError = err;
                 if (attempt < 3) {
-                  // eslint-disable-next-line no-await-in-loop
                   await new Promise<void>((resolve) =>
                     setTimeout(resolve, 1000 * Math.pow(2, attempt))
                   );
@@ -95,6 +95,8 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
           });
           return nextState;
         });
+
+        await reportQuotaHealthResults(results);
       } finally {
         if (requestId === requestIdRef.current) {
           setLoading(false);

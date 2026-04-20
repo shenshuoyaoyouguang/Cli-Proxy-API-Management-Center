@@ -8,9 +8,13 @@ vi.mock('@/services/api/config', () => ({
   },
 }));
 
-vi.mock('@/utils/constants', () => ({
-  CACHE_EXPIRY_MS: 30 * 1000,
-}));
+vi.mock('@/utils/constants', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/utils/constants')>();
+  return {
+    ...actual,
+    CACHE_EXPIRY_MS: 30 * 1000,
+  };
+});
 
 import { useConfigStore } from './useConfigStore';
 import { configApi } from '@/services/api/config';

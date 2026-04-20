@@ -33,6 +33,15 @@ vi.mock('./useUsageStatsStore', () => ({
   },
 }));
 
+vi.mock('./useAccountHealthStore', () => ({
+  useAccountHealthStore: {
+    getState: vi.fn(() => ({
+      loadHealthMap: vi.fn(),
+      clearHealthMap: vi.fn(),
+    })),
+  },
+}));
+
 vi.mock('@/utils/connection', () => ({
   detectApiBaseFromLocation: vi.fn(() => 'http://localhost:3000'),
   normalizeApiBase: vi.fn((base: string) => base.replace(/\/+$/, '')),

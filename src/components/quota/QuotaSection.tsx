@@ -9,10 +9,12 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useNotificationStore, useQuotaStore, useThemeStore } from '@/stores';
+import { useAccountHealthStore } from '@/stores/useAccountHealthStore';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
 import { getStatusFromError } from '@/utils/quota';
 import { QuotaCard } from './QuotaCard';
 import type { QuotaStatusState } from './QuotaCard';
+import { reportQuotaHealthResults } from './healthReporting';
 import { useQuotaLoader } from './useQuotaLoader';
 import type { QuotaConfig } from './quotaConfigs';
 import { useGridColumns } from './useGridColumns';
@@ -107,6 +109,7 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const { t } = useTranslation();
   const resolvedTheme: ResolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const showNotification = useNotificationStore((state) => state.showNotification);
+  const accountHealthRevision = useAccountHealthStore((state) => state.revision);
   const setQuota = useQuotaStore((state) => state[config.storeSetter]) as QuotaSetter<
     Record<string, TState>
   >;
@@ -116,10 +119,10 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
   const [viewMode, setViewMode] = useState<ViewMode>('paged');
   const [showTooManyWarning, setShowTooManyWarning] = useState(false);
 
-  const filteredFiles = useMemo(() => files.filter((file) => config.filterFn(file)), [
-    files,
-    config
-  ]);
+  const filteredFiles = useMemo(() => {
+    void accountHealthRevision;
+    return files.filter((file) => config.filterFn(file));
+  }, [files, config, accountHealthRevision]);
   const showAllAllowed = filteredFiles.length <= MAX_SHOW_ALL_THRESHOLD;
   const effectiveViewMode: ViewMode = viewMode === 'all' && !showAllAllowed ? 'paged' : viewMode;
 
@@ -220,6 +223,9 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
           ...prev,
           [file.name]: config.buildSuccessState(data)
         }));
+        await reportQuotaHealthResults([
+          { name: file.name, status: 'success' },
+        ]);
         showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('common.unknown_error');
@@ -228,6 +234,9 @@ export function QuotaSection<TState extends QuotaStatusState, TData>({
           ...prev,
           [file.name]: config.buildErrorState(message, status)
         }));
+        await reportQuotaHealthResults([
+          { name: file.name, status: 'error', error: message, errorStatus: status },
+        ]);
         showNotification(
           t('auth_files.quota_refresh_failed', { name: file.name, message }),
           'error'

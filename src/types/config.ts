@@ -12,11 +12,19 @@ export interface QuotaExceededConfig {
   antigravityCredits?: boolean;
 }
 
+export interface DegradedConfig {
+  failureThreshold?: number;
+  rateLimitCooldownMs?: number;
+  serverErrorCooldownMs?: number;
+  timeoutCooldownMs?: number;
+}
+
 export interface Config {
   debug?: boolean;
   proxyUrl?: string;
   requestRetry?: number;
   quotaExceeded?: QuotaExceededConfig;
+  accountHealth?: DegradedConfig;
   usageStatisticsEnabled?: boolean;
   requestLog?: boolean;
   loggingToFile?: boolean;

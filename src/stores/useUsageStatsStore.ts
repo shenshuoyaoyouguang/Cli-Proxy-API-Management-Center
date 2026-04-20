@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { usageApi } from '@/services/api';
+import { autoPersistService } from '@/services/autoPersist';
 import { useAuthStore } from '@/stores/useAuthStore';
 import {
   collectUsageDetails,
@@ -49,7 +50,42 @@ type PersistedUsageStatsCache = {
   keyStats: KeyStats;
   usageDetails: UsageDetail[];
   lastRefreshedAt: number | null;
+  detailCount: number;
   scopeKey: string;
+};
+
+const toPersistedUsageStatsCache = (
+  scopeKey: string,
+  snapshot: Partial<PersistedUsageStatsCache> | null | undefined
+): PersistedUsageStatsCache | null => {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    usage:
+      snapshot.usage && typeof snapshot.usage === 'object'
+        ? (snapshot.usage as UsageStatsSnapshot)
+        : null,
+    keyStats:
+      snapshot.keyStats && typeof snapshot.keyStats === 'object'
+        ? snapshot.keyStats
+        : createEmptyKeyStats(),
+    usageDetails: Array.isArray(snapshot.usageDetails)
+      ? (snapshot.usageDetails as UsageDetail[])
+      : [],
+    detailCount:
+      typeof snapshot.detailCount === 'number' && Number.isFinite(snapshot.detailCount)
+        ? Math.max(0, snapshot.detailCount)
+        : Array.isArray(snapshot.usageDetails)
+          ? snapshot.usageDetails.length
+          : 0,
+    lastRefreshedAt:
+      typeof snapshot.lastRefreshedAt === 'number' && Number.isFinite(snapshot.lastRefreshedAt)
+        ? snapshot.lastRefreshedAt
+        : null,
+    scopeKey,
+  };
 };
 
 const hashScopeSegment = (value: string) => {
@@ -68,6 +104,24 @@ const createScopeKey = (apiBase: string, managementKey: string) =>
 
 const createCacheStorageKey = (scopeKey: string) =>
   `${USAGE_STATS_CACHE_PREFIX}:${encodeURIComponent(scopeKey)}`;
+
+const pickRicherUsageSnapshot = (
+  primary: PersistedUsageStatsCache | null,
+  secondary: PersistedUsageStatsCache | null
+): PersistedUsageStatsCache | null => {
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+
+  if (secondary.detailCount !== primary.detailCount) {
+    return secondary.detailCount > primary.detailCount ? secondary : primary;
+  }
+
+  if (secondary.usageDetails.length !== primary.usageDetails.length) {
+    return secondary.usageDetails.length > primary.usageDetails.length ? secondary : primary;
+  }
+
+  return (secondary.lastRefreshedAt ?? 0) > (primary.lastRefreshedAt ?? 0) ? secondary : primary;
+};
 
 const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | null => {
   if (typeof localStorage === 'undefined' || !scopeKey) {
@@ -106,6 +160,12 @@ const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | n
       usageDetails: Array.isArray(parsed.usageDetails)
         ? (parsed.usageDetails as UsageDetail[])
         : [],
+      detailCount:
+        typeof parsed.detailCount === 'number' && Number.isFinite(parsed.detailCount)
+          ? Math.max(0, parsed.detailCount)
+          : Array.isArray(parsed.usageDetails)
+            ? parsed.usageDetails.length
+            : 0,
       lastRefreshedAt:
         typeof parsed.lastRefreshedAt === 'number' && Number.isFinite(parsed.lastRefreshedAt)
           ? parsed.lastRefreshedAt
@@ -183,19 +243,24 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     usageAbortController = new AbortController();
 
     const persistedCache = readPersistedUsageStats(scopeKey);
+    const autoPersistCache = toPersistedUsageStatsCache(
+      scopeKey,
+      autoPersistService.readBootstrapSnapshot(scopeKey)
+    );
+    const bootstrapCache = pickRicherUsageSnapshot(persistedCache, autoPersistCache);
     const cachedLastRefreshedAt = scopeChanged
-      ? (persistedCache?.lastRefreshedAt ?? null)
-      : (state.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null);
+      ? (bootstrapCache?.lastRefreshedAt ?? null)
+      : (state.lastRefreshedAt ?? bootstrapCache?.lastRefreshedAt ?? null);
     const fresh = cachedLastRefreshedAt !== null && now - cachedLastRefreshedAt < staleTimeMs;
 
     if (scopeChanged) {
-      if (persistedCache) {
+      if (bootstrapCache) {
         set({
-          usage: persistedCache.usage,
-          keyStats: persistedCache.keyStats,
-          usageDetails: persistedCache.usageDetails,
+          usage: bootstrapCache.usage,
+          keyStats: bootstrapCache.keyStats,
+          usageDetails: bootstrapCache.usageDetails,
           error: null,
-          lastRefreshedAt: persistedCache.lastRefreshedAt,
+          lastRefreshedAt: bootstrapCache.lastRefreshedAt,
           scopeKey,
           loading: false,
         });
@@ -210,13 +275,13 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           loading: false,
         });
       }
-    } else if (!state.usage && persistedCache) {
+    } else if (!state.usage && bootstrapCache) {
       set({
-        usage: persistedCache.usage,
-        keyStats: persistedCache.keyStats,
-        usageDetails: persistedCache.usageDetails,
+        usage: bootstrapCache.usage,
+        keyStats: bootstrapCache.keyStats,
+        usageDetails: bootstrapCache.usageDetails,
         error: null,
-        lastRefreshedAt: persistedCache.lastRefreshedAt,
+        lastRefreshedAt: bootstrapCache.lastRefreshedAt,
         scopeKey,
         loading: false,
       });
@@ -241,22 +306,32 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         const usageDetails = collectUsageDetails(usage);
         const keyStats = computeKeyStatsFromDetails(usageDetails);
         const lastRefreshedAt = Date.now();
-
-        writePersistedUsageStats({
+        const nextSnapshot = {
           usage,
           keyStats,
           usageDetails,
           lastRefreshedAt,
+          detailCount: usageDetails.length,
           scopeKey,
+        };
+
+        autoPersistService.onUsageRefreshed({
+          scopeKey,
+          usage,
+          keyStats,
+          usageDetails,
+          lastRefreshedAt,
         });
 
+        writePersistedUsageStats(nextSnapshot);
+
         set({
-          usage,
-          keyStats,
-          usageDetails,
+          usage: nextSnapshot.usage,
+          keyStats: nextSnapshot.keyStats,
+          usageDetails: nextSnapshot.usageDetails,
           loading: false,
           error: null,
-          lastRefreshedAt,
+          lastRefreshedAt: nextSnapshot.lastRefreshedAt,
           scopeKey,
         });
       } catch (error: unknown) {
@@ -292,6 +367,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       usageAbortController.abort();
       usageAbortController = null;
     }
+    autoPersistService.clearRuntimeState(scopeKey, { removePersisted: true });
     removePersistedUsageStats(scopeKey);
     set({
       usage: null,

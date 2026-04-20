@@ -30,6 +30,7 @@ import type {
   KimiQuotaState,
 } from '@/types';
 import { apiCallApi, authFilesApi, getApiCallErrorMessage } from '@/services/api';
+import { useAccountHealthStore } from '@/stores/useAccountHealthStore';
 import { useQuotaStore } from '@/stores';
 import {
   ANTIGRAVITY_QUOTA_URLS,
@@ -123,6 +124,15 @@ export interface QuotaConfig<TState, TData> {
   gridClassName: string;
   renderQuotaItems: (quota: TState, t: TFunction, helpers: QuotaRenderHelpers) => ReactNode;
 }
+
+export const withHealthFilter = (
+  baseFilter: (file: AuthFileItem) => boolean,
+  getIsDegraded: (fileName: string) => boolean
+) =>
+  (file: AuthFileItem) => baseFilter(file) && !getIsDegraded(file.name);
+
+const isAccountCurrentlyDegraded = (fileName: string) =>
+  useAccountHealthStore.getState().isAccountDegraded(fileName);
 
 const resolveAntigravityProjectId = async (file: AuthFileItem): Promise<string> => {
   try {
@@ -1115,7 +1125,10 @@ export const CLAUDE_CONFIG: QuotaConfig<
   type: 'claude',
   i18nPrefix: 'claude_quota',
   cardIdleMessageKey: 'quota_management.card_idle_hint',
-  filterFn: (file) => isClaudeFile(file) && !isDisabledAuthFile(file),
+  filterFn: withHealthFilter(
+    (file) => isClaudeFile(file) && !isDisabledAuthFile(file),
+    isAccountCurrentlyDegraded
+  ),
   fetchQuota: fetchClaudeQuota,
   storeSelector: (state) => state.claudeQuota,
   storeSetter: 'setClaudeQuota',
@@ -1143,7 +1156,10 @@ export const ANTIGRAVITY_CONFIG: QuotaConfig<AntigravityQuotaState, AntigravityQ
   type: 'antigravity',
   i18nPrefix: 'antigravity_quota',
   cardIdleMessageKey: 'quota_management.card_idle_hint',
-  filterFn: (file) => isAntigravityFile(file) && !isDisabledAuthFile(file),
+  filterFn: withHealthFilter(
+    (file) => isAntigravityFile(file) && !isDisabledAuthFile(file),
+    isAccountCurrentlyDegraded
+  ),
   fetchQuota: fetchAntigravityQuota,
   storeSelector: (state) => state.antigravityQuota,
   storeSetter: 'setAntigravityQuota',
@@ -1169,7 +1185,10 @@ export const CODEX_CONFIG: QuotaConfig<
   type: 'codex',
   i18nPrefix: 'codex_quota',
   cardIdleMessageKey: 'quota_management.card_idle_hint',
-  filterFn: (file) => isCodexFile(file) && !isDisabledAuthFile(file),
+  filterFn: withHealthFilter(
+    (file) => isCodexFile(file) && !isDisabledAuthFile(file),
+    isAccountCurrentlyDegraded
+  ),
   fetchQuota: fetchCodexQuota,
   storeSelector: (state) => state.codexQuota,
   storeSetter: 'setCodexQuota',
@@ -1206,8 +1225,10 @@ export const GEMINI_CLI_CONFIG: QuotaConfig<
   type: 'gemini-cli',
   i18nPrefix: 'gemini_cli_quota',
   cardIdleMessageKey: 'quota_management.card_idle_hint',
-  filterFn: (file) =>
-    isGeminiCliFile(file) && !isRuntimeOnlyAuthFile(file) && !isDisabledAuthFile(file),
+  filterFn: withHealthFilter(
+    (file) => isGeminiCliFile(file) && !isRuntimeOnlyAuthFile(file) && !isDisabledAuthFile(file),
+    isAccountCurrentlyDegraded
+  ),
   fetchQuota: fetchGeminiCliQuota,
   storeSelector: (state) => state.geminiCliQuota,
   storeSetter: 'setGeminiCliQuota',
@@ -1328,7 +1349,10 @@ export const KIMI_CONFIG: QuotaConfig<KimiQuotaState, KimiQuotaRow[]> = {
   type: 'kimi',
   i18nPrefix: 'kimi_quota',
   cardIdleMessageKey: 'quota_management.card_idle_hint',
-  filterFn: (file) => isKimiFile(file) && !isDisabledAuthFile(file),
+  filterFn: withHealthFilter(
+    (file) => isKimiFile(file) && !isDisabledAuthFile(file),
+    isAccountCurrentlyDegraded
+  ),
   fetchQuota: fetchKimiQuota,
   storeSelector: (state) => state.kimiQuota,
   storeSetter: 'setKimiQuota',

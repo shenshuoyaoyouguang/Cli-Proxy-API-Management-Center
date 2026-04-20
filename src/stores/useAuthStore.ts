@@ -11,6 +11,7 @@ import { apiClient } from '@/services/api/client';
 import { useConfigStore } from './useConfigStore';
 import { useUsageStatsStore } from './useUsageStatsStore';
 import { useQuotaStore } from './useQuotaStore';
+import { useAccountHealthStore } from './useAccountHealthStore';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { CacheLayer } from '@/services/cache';
 import { clearModelsCache } from '@/features/authFiles/hooks/useAuthFilesModels';
@@ -160,6 +161,8 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
         // 仅在当前 tab 有效，tab 关闭后自动清除
         sessionStorage.setItem('sessionManagementKey', managementKey);
       }
+
+      void useAccountHealthStore.getState().loadHealthMap({ apiBase, managementKey });
     } catch (error: unknown) {
       const message =
         error instanceof Error
@@ -182,6 +185,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
     useConfigStore.getState().clearCache();
     useUsageStatsStore.getState().clearUsageStats();
     useQuotaStore.getState().clearQuotaCache();
+    useAccountHealthStore.getState().clearHealthMap();
     clearModelsCache();
 
     // Invalidate all localStorage cache entries for this scope (cross-account data泄露)

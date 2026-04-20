@@ -251,7 +251,7 @@ class CacheLayerImpl {
   prune(maxBytes?: number): void {
     const targetBytes = maxBytes ?? DEFAULT_MAX_SIZE_BYTES;
 
-    let entries = collectAllCacheEntries();
+    const entries = collectAllCacheEntries();
     if (entries.length === 0) return;
 
     // 按时间从旧到新排序（LRU）

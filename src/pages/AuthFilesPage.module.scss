@@ -127,6 +127,55 @@
   min-width: 0;
 }
 
+.quickFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quickFilterButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 68%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition:
+    border-color $transition-fast,
+    background-color $transition-fast,
+    color $transition-fast;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+    color: var(--text-primary);
+  }
+}
+
+.quickFilterButtonActive {
+  border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 14%, var(--bg-secondary));
+  color: var(--text-primary);
+}
+
+.quickFilterCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .filterTags {
   display: flex;
   flex-direction: row;
@@ -240,7 +289,10 @@
 
 .filterControls {
   display: grid;
-  grid-template-columns: minmax(240px, 1.4fr) repeat(2, minmax(120px, 0.72fr)) minmax(220px, auto);
+  grid-template-columns:
+    minmax(240px, 1.4fr)
+    repeat(4, minmax(140px, 0.82fr))
+    minmax(220px, 1fr);
   gap: $spacing-md;
   align-items: flex-end;
 
@@ -255,11 +307,17 @@
   }
 
   @include tablet {
-    grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(140px, 0.8fr));
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
   }
 
   @include mobile {
     grid-template-columns: 1fr;
+  }
+}
+
+.filterItemSearch {
+  @include tablet {
+    grid-column: 1 / -1;
   }
 }
 
@@ -896,6 +954,18 @@
   color: var(--warning-text);
   background: var(--warning-bg);
   border: 1px solid var(--warning-border);
+}
+
+.stateBadgeDegraded {
+  color: #9a3412;
+  background: rgba(251, 191, 36, 0.18);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+}
+
+.stateBadgeStale {
+  color: #1d4ed8;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.28);
 }
 
 .stateBadgeDisabled {

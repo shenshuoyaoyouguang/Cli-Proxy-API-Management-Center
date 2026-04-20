@@ -19,23 +19,32 @@ import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer'
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { MultiSelect } from '@/components/ui/MultiSelect';
 import { Select } from '@/components/ui/Select';
 import { IconFilterAll } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { copyToClipboard } from '@/utils/clipboard';
 import {
+  AUTH_FILE_ERROR_STATUS_CODES,
+  AUTH_FILE_HEALTH_STATE_VALUES,
   MAX_CARD_PAGE_SIZE,
   MIN_CARD_PAGE_SIZE,
   QUOTA_PROVIDER_TYPES,
   clampCardPageSize,
   getAuthFileIcon,
+  getAuthFileErrorStatusLabel,
+  getAuthFileHealthStateLabel,
   getTypeColor,
   getTypeLabel,
-  hasAuthFileStatusMessage,
+  hasFailedAccountState,
   isRuntimeOnlyAuthFile,
+  matchesErrorStatus,
+  matchesHealthState,
   normalizeProviderKey,
   parsePriorityValue,
+  resolveAuthFileErrorStatus,
+  type AuthFileHealthStateValue,
   type QuotaProviderType,
   type ResolvedTheme,
 } from '@/features/authFiles/constants';
@@ -58,7 +67,7 @@ import {
   writePersistedAuthFilesCompactMode,
   type AuthFilesSortMode,
 } from '@/features/authFiles/uiState';
-import { useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import { useAccountHealthStore, useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
 import styles from './AuthFilesPage.module.scss';
 
 const easePower3Out = (progress: number) => 1 - (1 - progress) ** 4;
@@ -77,6 +86,55 @@ const buildWildcardSearch = (value: string): RegExp | null => {
   return new RegExp(pattern, 'i');
 };
 
+const normalizeStringArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+
+const buildDeleteAllButtonLabel = (
+  t: ReturnType<typeof useTranslation>['t'],
+  options: {
+    filter: string;
+    problemOnly: boolean;
+    errorStatuses: string[];
+    healthStates: AuthFileHealthStateValue[];
+  }
+) => {
+  const { filter, problemOnly, errorStatuses, healthStates } = options;
+  const hasTypeFilter = filter !== 'all';
+  const hasErrorFilter = errorStatuses.length > 0;
+  const hasHealthFilter = healthStates.length > 0;
+
+  if (!hasTypeFilter && !problemOnly && !hasErrorFilter && !hasHealthFilter) {
+    return t('auth_files.delete_all_button');
+  }
+
+  if (!hasTypeFilter && problemOnly && !hasErrorFilter && !hasHealthFilter) {
+    return t('auth_files.delete_problem_button');
+  }
+
+  if (!hasTypeFilter && !problemOnly && errorStatuses.length === 1 && !hasHealthFilter) {
+    return t('auth_files.delete_error_status_button', {
+      label: getAuthFileErrorStatusLabel(t, errorStatuses[0]),
+    });
+  }
+
+  if (!hasTypeFilter && !problemOnly && !hasErrorFilter && healthStates.length === 1) {
+    return t('auth_files.delete_health_state_button', {
+      label: getAuthFileHealthStateLabel(t, healthStates[0]),
+    });
+  }
+
+  if (hasTypeFilter && !problemOnly && !hasErrorFilter && !hasHealthFilter) {
+    return `${t('common.delete')} ${getTypeLabel(t, filter)}`;
+  }
+
+  return t('auth_files.delete_filtered_button');
+};
+
 export function AuthFilesPage() {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
@@ -88,6 +146,8 @@ export function AuthFilesPage() {
 
   const [filter, setFilter] = useState<'all' | string>('all');
   const [problemOnly, setProblemOnly] = useState(false);
+  const [errorStatuses, setErrorStatuses] = useState<string[]>([]);
+  const [healthStates, setHealthStates] = useState<AuthFileHealthStateValue[]>([]);
   const [compactMode, setCompactMode] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -100,10 +160,13 @@ export function AuthFilesPage() {
   const [sortMode, setSortMode] = useState<AuthFilesSortMode>('default');
   const [batchActionBarVisible, setBatchActionBarVisible] = useState(false);
   const [uiStateHydrated, setUiStateHydrated] = useState(false);
+  const [recoveringAccounts, setRecoveringAccounts] = useState<Record<string, boolean>>({});
   const floatingBatchActionsRef = useRef<HTMLDivElement>(null);
   const batchActionAnimationRef = useRef<AnimationPlaybackControlsWithThen | null>(null);
   const previousSelectionCountRef = useRef(0);
   const selectionCountRef = useRef(0);
+  const healthMap = useAccountHealthStore((state) => state.healthMap);
+  const recoverAccountHealth = useAccountHealthStore((state) => state.recoverAccount);
 
   const { keyStats, usageDetails, loadKeyStats, refreshKeyStats } = useAuthFilesStats();
   const {
@@ -132,6 +195,7 @@ export function AuthFilesPage() {
     batchDownload,
     batchSetStatus,
     batchDelete,
+    clearRecoveredFiles,
   } = useAuthFilesData({ refreshKeyStats });
 
   const statusBarCache = useAuthFilesStatusBarCache(files, usageDetails);
@@ -201,6 +265,19 @@ export function AuthFilesPage() {
       if (typeof persisted.problemOnly === 'boolean') {
         setProblemOnly(persisted.problemOnly);
       }
+      const persistedErrorStatuses = normalizeStringArray(persisted.errorStatuses).filter((status) =>
+        AUTH_FILE_ERROR_STATUS_CODES.includes(status as (typeof AUTH_FILE_ERROR_STATUS_CODES)[number])
+      );
+      if (persistedErrorStatuses.length > 0) {
+        setErrorStatuses(persistedErrorStatuses);
+      }
+      const persistedHealthStates = normalizeStringArray(persisted.healthStates).filter(
+        (state): state is AuthFileHealthStateValue =>
+          AUTH_FILE_HEALTH_STATE_VALUES.includes(state as AuthFileHealthStateValue)
+      );
+      if (persistedHealthStates.length > 0) {
+        setHealthStates(persistedHealthStates);
+      }
       if (
         typeof persistedCompactMode !== 'boolean' &&
         typeof persisted.compactMode === 'boolean'
@@ -243,6 +320,8 @@ export function AuthFilesPage() {
     writeAuthFilesUiState({
       filter,
       problemOnly,
+      errorStatuses,
+      healthStates,
       compactMode,
       search,
       page,
@@ -254,7 +333,9 @@ export function AuthFilesPage() {
     writePersistedAuthFilesCompactMode(compactMode);
   }, [
     compactMode,
+    errorStatuses,
     filter,
+    healthStates,
     page,
     pageSize,
     pageSizeByMode,
@@ -354,11 +435,6 @@ export function AuthFilesPage() {
     return Array.from(types);
   }, [files]);
 
-  const filesMatchingProblemFilter = useMemo(
-    () => (problemOnly ? files.filter(hasAuthFileStatusMessage) : files),
-    [files, problemOnly]
-  );
-
   const sortOptions = useMemo(
     () => [
       { value: 'default', label: t('auth_files.sort_default') },
@@ -368,34 +444,65 @@ export function AuthFilesPage() {
     [t]
   );
 
-  const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: filesMatchingProblemFilter.length };
-    filesMatchingProblemFilter.forEach((file) => {
-      if (!file.type) return;
-      counts[file.type] = (counts[file.type] || 0) + 1;
-    });
-    return counts;
-  }, [filesMatchingProblemFilter]);
+  const errorStatusOptions = useMemo(
+    () =>
+      AUTH_FILE_ERROR_STATUS_CODES.map((status) => ({
+        value: status,
+        label: getAuthFileErrorStatusLabel(t, status),
+      })),
+    [t]
+  );
+
+  const healthStateOptions = useMemo(
+    () =>
+      AUTH_FILE_HEALTH_STATE_VALUES.map((state) => ({
+        value: state,
+        label: getAuthFileHealthStateLabel(t, state),
+      })),
+    [t]
+  );
 
   const normalizedSearch = search.trim();
   const wildcardSearch = useMemo(() => buildWildcardSearch(normalizedSearch), [normalizedSearch]);
 
-  const filtered = useMemo(() => {
+  const filesMatchingAdvancedFilters = useMemo(() => {
     const normalizedTerm = normalizedSearch.toLowerCase();
 
-    return filesMatchingProblemFilter.filter((item) => {
-      const matchType = filter === 'all' || item.type === filter;
-      const matchSearch =
-        !normalizedSearch ||
-        [item.name, item.type, item.provider].some((value) => {
-          const content = (value || '').toString();
-          return wildcardSearch
-            ? wildcardSearch.test(content)
-            : content.toLowerCase().includes(normalizedTerm);
-        });
-      return matchType && matchSearch;
+    return files.filter((item) => {
+      if (problemOnly && !hasFailedAccountState(item, healthMap)) {
+        return false;
+      }
+      if (!matchesErrorStatus(item, errorStatuses, healthMap)) {
+        return false;
+      }
+      if (!matchesHealthState(item, healthStates, healthMap)) {
+        return false;
+      }
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [item.name, item.type, item.provider].some((value) => {
+        const content = (value || '').toString();
+        return wildcardSearch
+          ? wildcardSearch.test(content)
+          : content.toLowerCase().includes(normalizedTerm);
+      });
     });
-  }, [filesMatchingProblemFilter, filter, normalizedSearch, wildcardSearch]);
+  }, [errorStatuses, files, healthMap, healthStates, normalizedSearch, problemOnly, wildcardSearch]);
+
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: filesMatchingAdvancedFilters.length };
+    filesMatchingAdvancedFilters.forEach((file) => {
+      if (!file.type) return;
+      counts[file.type] = (counts[file.type] || 0) + 1;
+    });
+    return counts;
+  }, [filesMatchingAdvancedFilters]);
+
+  const filtered = useMemo(() => {
+    return filesMatchingAdvancedFilters.filter((item) => filter === 'all' || item.type === filter);
+  }, [filesMatchingAdvancedFilters, filter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -441,6 +548,51 @@ export function AuthFilesPage() {
     selectedNames.length === 0 ||
     batchStatusUpdating ||
     selectedHasStatusUpdating;
+  const failedAccountsCount = useMemo(
+    () => files.filter((file) => hasFailedAccountState(file, healthMap)).length,
+    [files, healthMap]
+  );
+  const unauthorizedCount = useMemo(
+    () => files.filter((file) => resolveAuthFileErrorStatus(file, healthMap) === 401).length,
+    [files, healthMap]
+  );
+  const rateLimitedCount = useMemo(
+    () => files.filter((file) => resolveAuthFileErrorStatus(file, healthMap) === 429).length,
+    [files, healthMap]
+  );
+  const disabledCount = useMemo(
+    () => files.filter((file) => file.disabled === true).length,
+    [files]
+  );
+
+  const handleRecoverAccount = useCallback(
+    async (name: string) => {
+      if (recoveringAccounts[name]) {
+        return;
+      }
+
+      setRecoveringAccounts((prev) => ({ ...prev, [name]: true }));
+      try {
+        await recoverAccountHealth(name);
+        clearRecoveredFiles([name]);
+        void loadFiles().catch(() => {});
+        showNotification(t('auth_files.health_recover_success', { name }), 'success');
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : '';
+        showNotification(`${t('notification.update_failed')}: ${message}`, 'error');
+      } finally {
+        setRecoveringAccounts((prev) => {
+          if (!prev[name]) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
+      }
+    },
+    [clearRecoveredFiles, loadFiles, recoverAccountHealth, recoveringAccounts, showNotification, t]
+  );
 
   const copyTextWithNotification = useCallback(
     async (text: string) => {
@@ -634,13 +786,12 @@ export function AuthFilesPage() {
     </div>
   );
 
-  const deleteAllButtonLabel = problemOnly
-    ? filter === 'all'
-      ? t('auth_files.delete_problem_button')
-      : t('auth_files.delete_problem_button_with_type', { type: getTypeLabel(t, filter) })
-    : filter === 'all'
-      ? t('auth_files.delete_all_button')
-      : `${t('common.delete')} ${getTypeLabel(t, filter)}`;
+  const deleteAllButtonLabel = buildDeleteAllButtonLabel(t, {
+    filter,
+    problemOnly,
+    errorStatuses,
+    healthStates,
+  });
 
   return (
     <div className={styles.container}>
@@ -671,8 +822,12 @@ export function AuthFilesPage() {
                 handleDeleteAll({
                   filter,
                   problemOnly,
+                  errorStatuses,
+                  healthStates,
                   onResetFilterToAll: () => setFilter('all'),
                   onResetProblemOnly: () => setProblemOnly(false),
+                  onResetErrorStatuses: () => setErrorStatuses([]),
+                  onResetHealthStates: () => setHealthStates([]),
                 })
               }
               disabled={disableControls || loading || deletingAll}
@@ -697,9 +852,64 @@ export function AuthFilesPage() {
           {renderFilterTags()}
 
           <div className={styles.filterContent}>
+            <div className={styles.quickFilterRow}>
+              <button
+                type="button"
+                className={`${styles.quickFilterButton} ${problemOnly && errorStatuses.length === 0 && healthStates.length === 0 ? styles.quickFilterButtonActive : ''}`}
+                onClick={() => {
+                  setProblemOnly(true);
+                  setErrorStatuses([]);
+                  setHealthStates([]);
+                  setPage(1);
+                }}
+              >
+                <span>{t('auth_files.quick_filter_failed')}</span>
+                <span className={styles.quickFilterCount}>{failedAccountsCount}</span>
+              </button>
+              <button
+                type="button"
+                className={`${styles.quickFilterButton} ${errorStatuses.length === 1 && errorStatuses[0] === '401' && !problemOnly && healthStates.length === 0 ? styles.quickFilterButtonActive : ''}`}
+                onClick={() => {
+                  setProblemOnly(false);
+                  setErrorStatuses(['401']);
+                  setHealthStates([]);
+                  setPage(1);
+                }}
+              >
+                <span>{t('auth_files.quick_filter_401')}</span>
+                <span className={styles.quickFilterCount}>{unauthorizedCount}</span>
+              </button>
+              <button
+                type="button"
+                className={`${styles.quickFilterButton} ${errorStatuses.length === 1 && errorStatuses[0] === '429' && !problemOnly && healthStates.length === 0 ? styles.quickFilterButtonActive : ''}`}
+                onClick={() => {
+                  setProblemOnly(false);
+                  setErrorStatuses(['429']);
+                  setHealthStates([]);
+                  setPage(1);
+                }}
+              >
+                <span>{t('auth_files.quick_filter_429')}</span>
+                <span className={styles.quickFilterCount}>{rateLimitedCount}</span>
+              </button>
+              <button
+                type="button"
+                className={`${styles.quickFilterButton} ${healthStates.length === 1 && healthStates[0] === 'disabled' && !problemOnly && errorStatuses.length === 0 ? styles.quickFilterButtonActive : ''}`}
+                onClick={() => {
+                  setProblemOnly(false);
+                  setErrorStatuses([]);
+                  setHealthStates(['disabled']);
+                  setPage(1);
+                }}
+              >
+                <span>{t('auth_files.quick_filter_disabled')}</span>
+                <span className={styles.quickFilterCount}>{disabledCount}</span>
+              </button>
+            </div>
+
             <div className={styles.filterControlsPanel}>
               <div className={styles.filterControls}>
-                <div className={styles.filterItem}>
+                <div className={`${styles.filterItem} ${styles.filterItemSearch}`}>
                   <label>{t('auth_files.search_label')}</label>
                   <Input
                     value={search}
@@ -737,6 +947,36 @@ export function AuthFilesPage() {
                     onChange={handleSortModeChange}
                     ariaLabel={t('auth_files.sort_label')}
                     fullWidth
+                  />
+                </div>
+                <div className={styles.filterItem}>
+                  <label>{t('auth_files.error_status_filter_label')}</label>
+                  <MultiSelect
+                    value={errorStatuses}
+                    options={errorStatusOptions}
+                    onChange={(value) => {
+                      setErrorStatuses(value);
+                      setPage(1);
+                    }}
+                    placeholder={t('auth_files.error_status_filter_placeholder')}
+                    selectAllLabel={t('common.select_all', { defaultValue: 'Select all' })}
+                    clearLabel={t('common.clear', { defaultValue: 'Clear' })}
+                    ariaLabel={t('auth_files.error_status_filter_label')}
+                  />
+                </div>
+                <div className={styles.filterItem}>
+                  <label>{t('auth_files.health_state_filter_label')}</label>
+                  <MultiSelect
+                    value={healthStates}
+                    options={healthStateOptions}
+                    onChange={(value) => {
+                      setHealthStates(value as AuthFileHealthStateValue[]);
+                      setPage(1);
+                    }}
+                    placeholder={t('auth_files.health_state_filter_placeholder')}
+                    selectAllLabel={t('common.select_all', { defaultValue: 'Select all' })}
+                    clearLabel={t('common.clear', { defaultValue: 'Clear' })}
+                    ariaLabel={t('auth_files.health_state_filter_label')}
                   />
                 </div>
                 <div className={`${styles.filterItem} ${styles.filterToggleItem}`}>
@@ -798,12 +1038,15 @@ export function AuthFilesPage() {
                     quotaFilterType={quotaFilterType}
                     keyStats={keyStats}
                     statusBarCache={statusBarCache}
+                    accountHealth={healthMap[file.name]}
+                    healthRecovering={recoveringAccounts[file.name] === true}
                     onShowModels={showModels}
                     onDownload={handleDownload}
                     onOpenPrefixProxyEditor={openPrefixProxyEditor}
                     onDelete={handleDelete}
                     onToggleStatus={handleStatusToggle}
                     onToggleSelect={toggleSelect}
+                    onRecoverHealth={handleRecoverAccount}
                   />
                 ))}
               </div>

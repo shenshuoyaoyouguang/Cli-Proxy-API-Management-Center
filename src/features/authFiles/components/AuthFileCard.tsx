@@ -11,7 +11,7 @@ import {
   IconTrash2,
 } from '@/components/ui/icons';
 import { ProviderStatusBar } from '@/components/providers/ProviderStatusBar';
-import type { AuthFileItem } from '@/types';
+import type { AccountHealthState, AuthFileItem } from '@/types';
 import { resolveAuthProvider } from '@/utils/quota';
 import { calculateStatusBarData, normalizeAuthIndex, type KeyStats } from '@/utils/usage';
 import { formatFileSize } from '@/utils/format';
@@ -22,6 +22,8 @@ import {
   getAuthFileStatusMessage,
   getTypeColor,
   getTypeLabel,
+  isAccountHealthActive,
+  isAccountHealthStale,
   isRuntimeOnlyAuthFile,
   parsePriorityValue,
   resolveAuthFileStats,
@@ -45,12 +47,15 @@ export type AuthFileCardProps = {
   quotaFilterType: QuotaProviderType | null;
   keyStats: KeyStats;
   statusBarCache: Map<string, AuthFileStatusBarData>;
+  accountHealth?: AccountHealthState;
+  healthRecovering?: boolean;
   onShowModels: (file: AuthFileItem) => void;
   onDownload: (name: string) => void;
   onOpenPrefixProxyEditor: (file: AuthFileItem) => void;
   onDelete: (name: string) => void;
   onToggleStatus: (file: AuthFileItem, enabled: boolean) => void;
   onToggleSelect: (name: string) => void;
+  onRecoverHealth?: (name: string) => void;
 };
 
 const resolveQuotaType = (file: AuthFileItem): QuotaProviderType | null => {
@@ -72,12 +77,15 @@ export function AuthFileCard(props: AuthFileCardProps) {
     quotaFilterType,
     keyStats,
     statusBarCache,
+    accountHealth,
+    healthRecovering = false,
     onShowModels,
     onDownload,
     onOpenPrefixProxyEditor,
     onDelete,
     onToggleStatus,
     onToggleSelect,
+    onRecoverHealth,
   } = props;
 
   const fileStats = resolveAuthFileStats(file, keyStats);
@@ -113,6 +121,38 @@ export function AuthFileCard(props: AuthFileCardProps) {
   const rawStatusMessage = getAuthFileStatusMessage(file);
   const hasStatusWarning =
     Boolean(rawStatusMessage) && !HEALTHY_STATUS_MESSAGES.has(rawStatusMessage.toLowerCase());
+  const healthActive = isAccountHealthActive(accountHealth);
+  const healthStale = isAccountHealthStale(accountHealth);
+  const healthHasCooldown =
+    accountHealth?.cooldownUntil !== null && accountHealth?.cooldownUntil !== undefined;
+
+  const degradedReasonLabel =
+    accountHealth?.degradedReason &&
+    t(`auth_files.degraded_reason_${accountHealth.degradedReason}`, {
+      defaultValue: accountHealth.degradedReason,
+    });
+  const cooldownLabel =
+    healthActive && healthHasCooldown
+      ? t('auth_files.health_cooldown_until', {
+          time: new Date(accountHealth!.cooldownUntil as number).toLocaleString(),
+        })
+      : healthStale
+        ? t('auth_files.health_needs_retry')
+        : '';
+  const healthMessage = accountHealth
+    ? [accountHealth.degradedMessage || degradedReasonLabel, cooldownLabel]
+        .filter((value): value is string => Boolean(value))
+        .join(' · ')
+    : '';
+  const showHealthBadge = healthActive || healthStale;
+  const healthBadgeLabel = healthStale
+    ? t('auth_files.health_status_stale')
+    : healthActive && healthHasCooldown
+      ? t('auth_files.health_status_cooldown')
+      : healthActive
+        ? t('auth_files.health_status_degraded')
+        : '';
+  const healthBadgeClass = healthStale ? styles.stateBadgeStale : styles.stateBadgeDegraded;
 
   const priorityValue = parsePriorityValue(file.priority ?? file['priority']);
   const noteValue = typeof file.note === 'string' ? file.note.trim() : '';
@@ -120,6 +160,8 @@ export function AuthFileCard(props: AuthFileCardProps) {
     ? t('auth_files.type_virtual') || '虚拟认证文件'
     : file.disabled
       ? t('auth_files.health_status_disabled')
+      : showHealthBadge
+        ? t('auth_files.health_status_warning')
       : hasStatusWarning
         ? t('auth_files.health_status_warning')
         : rawStatusMessage
@@ -129,6 +171,8 @@ export function AuthFileCard(props: AuthFileCardProps) {
     ? styles.stateBadgeVirtual
     : file.disabled
       ? styles.stateBadgeDisabled
+      : showHealthBadge
+        ? styles.stateBadgeWarning
       : hasStatusWarning
         ? styles.stateBadgeWarning
         : styles.stateBadgeActive;
@@ -180,6 +224,9 @@ export function AuthFileCard(props: AuthFileCardProps) {
                   {typeLabel}
                 </span>
                 <span className={`${styles.stateBadge} ${stateBadgeClass}`}>{stateLabel}</span>
+                {showHealthBadge && (
+                  <span className={`${styles.stateBadge} ${healthBadgeClass}`}>{healthBadgeLabel}</span>
+                )}
               </div>
               <span className={styles.fileName} title={file.name}>
                 {file.name}
@@ -214,10 +261,10 @@ export function AuthFileCard(props: AuthFileCardProps) {
             )}
           </div>
 
-          {rawStatusMessage && hasStatusWarning && (
-            <div className={styles.healthStatusMessage} title={rawStatusMessage}>
+          {(healthMessage || (rawStatusMessage && hasStatusWarning)) && (
+            <div className={styles.healthStatusMessage} title={healthMessage || rawStatusMessage}>
               <IconInfo className={styles.messageIcon} size={14} />
-              <span>{rawStatusMessage}</span>
+              <span>{healthMessage || rawStatusMessage}</span>
             </div>
           )}
 
@@ -268,6 +315,18 @@ export function AuthFileCard(props: AuthFileCardProps) {
                       {t('auth_files.models_button', { defaultValue: '模型' })}
                     </span>
                   </>
+                </Button>
+              )}
+              {!isRuntimeOnly && showHealthBadge && onRecoverHealth && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onRecoverHealth(file.name)}
+                  className={styles.primaryActionButton}
+                  disabled={disableControls || healthRecovering}
+                  loading={healthRecovering}
+                >
+                  {t('auth_files.health_recover')}
                 </Button>
               )}
               {!isRuntimeOnly && (

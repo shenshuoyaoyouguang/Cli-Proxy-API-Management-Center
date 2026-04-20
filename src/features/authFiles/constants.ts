@@ -7,7 +7,7 @@ import iconKimiDark from '@/assets/icons/kimi-dark.svg';
 import iconKimiLight from '@/assets/icons/kimi-light.svg';
 import iconQwen from '@/assets/icons/qwen.svg';
 import iconVertex from '@/assets/icons/vertex.svg';
-import type { AuthFileItem } from '@/types';
+import type { AccountHealthMap, AccountHealthState, AuthFileItem } from '@/types';
 import { parseTimestamp } from '@/utils/timestamp';
 import {
   normalizeAuthIndex,
@@ -28,6 +28,15 @@ export type AuthFileModelItem = {
 export type AuthFileIconAsset = string | { light: string; dark: string };
 
 export type QuotaProviderType = 'antigravity' | 'claude' | 'codex' | 'gemini-cli' | 'kimi';
+export const AUTH_FILE_ERROR_STATUS_CODES = ['401', '403', '429', '500', '502', '503', '504'] as const;
+export type AuthFileErrorStatusCode = (typeof AUTH_FILE_ERROR_STATUS_CODES)[number];
+export const AUTH_FILE_HEALTH_STATE_VALUES = [
+  'disabled',
+  'degraded',
+  'cooldown',
+  'stale',
+] as const;
+export type AuthFileHealthStateValue = (typeof AUTH_FILE_HEALTH_STATE_VALUES)[number];
 
 export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
   'antigravity',
@@ -138,6 +147,169 @@ export const getAuthFileStatusMessage = (file: AuthFileItem): string => {
 
 export const hasAuthFileStatusMessage = (file: AuthFileItem): boolean =>
   getAuthFileStatusMessage(file).length > 0;
+
+export const extractErrorStatusCode = (message: string): number | null => {
+  if (!message) {
+    return null;
+  }
+
+  const match = message.match(/\b(401|403|429|500|502|503|504)\b/);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+export const resolveAuthFileErrorStatus = (
+  file: AuthFileItem,
+  healthMap?: AccountHealthMap
+): number | null => {
+  const fromStatusMessage = extractErrorStatusCode(getAuthFileStatusMessage(file));
+  if (fromStatusMessage !== null) {
+    return fromStatusMessage;
+  }
+
+  const accountHealth = healthMap?.[file.name];
+  if (
+    accountHealth?.degraded === true &&
+    typeof accountHealth.degradedStatus === 'number' &&
+    Number.isFinite(accountHealth.degradedStatus)
+  ) {
+    return accountHealth.degradedStatus;
+  }
+
+  return null;
+};
+
+export const isAuthFileHealthStateValue = (value: unknown): value is AuthFileHealthStateValue =>
+  typeof value === 'string' &&
+  (AUTH_FILE_HEALTH_STATE_VALUES as readonly string[]).includes(value);
+
+export const isAccountHealthActive = (
+  state: AccountHealthState | undefined,
+  now: number = Date.now()
+): boolean => {
+  if (!state?.degraded) {
+    return false;
+  }
+
+  if (state.cooldownUntil === null || state.cooldownUntil === undefined) {
+    return true;
+  }
+
+  return state.cooldownUntil > now;
+};
+
+export const isAccountHealthStale = (
+  state: AccountHealthState | undefined,
+  now: number = Date.now()
+): boolean =>
+  Boolean(
+    state?.stale === true ||
+      (state?.degraded &&
+        state.cooldownUntil !== null &&
+        state.cooldownUntil !== undefined &&
+        state.cooldownUntil <= now)
+  );
+
+export const matchesErrorStatus = (
+  file: AuthFileItem,
+  selectedStatuses: string[] | undefined,
+  healthMap?: AccountHealthMap
+): boolean => {
+  if (!selectedStatuses || selectedStatuses.length === 0) {
+    return true;
+  }
+
+  const errorStatus = resolveAuthFileErrorStatus(file, healthMap);
+  if (errorStatus === null) {
+    return false;
+  }
+
+  return selectedStatuses.includes(String(errorStatus));
+};
+
+export const matchesHealthState = (
+  file: AuthFileItem,
+  selectedStates: AuthFileHealthStateValue[] | string[] | undefined,
+  healthMap: AccountHealthMap,
+  now: number = Date.now()
+): boolean => {
+  if (!selectedStates || selectedStates.length === 0) {
+    return true;
+  }
+
+  const accountHealth = healthMap[file.name];
+  const healthActive = isAccountHealthActive(accountHealth, now);
+  const stale = isAccountHealthStale(accountHealth, now);
+  const cooldownActive =
+    healthActive && accountHealth?.cooldownUntil !== null && accountHealth?.cooldownUntil !== undefined;
+
+  return selectedStates.some((state) => {
+    if (!isAuthFileHealthStateValue(state)) {
+      return false;
+    }
+
+    if (state === 'disabled') {
+      return file.disabled === true;
+    }
+    if (state === 'degraded') {
+      return healthActive || file.unavailable === true;
+    }
+    if (state === 'cooldown') {
+      return cooldownActive;
+    }
+    if (state === 'stale') {
+      return stale;
+    }
+    return false;
+  });
+};
+
+export const hasFailedAccountState = (
+  file: AuthFileItem,
+  healthMap: AccountHealthMap,
+  now: number = Date.now()
+): boolean =>
+  hasAuthFileStatusMessage(file) ||
+  matchesHealthState(file, ['degraded', 'cooldown', 'stale'], healthMap, now);
+
+export const clearRecoveredAuthFileState = (file: AuthFileItem): AuthFileItem => ({
+  ...file,
+  unavailable: false,
+  status_message: '',
+  statusMessage: '',
+});
+
+export const getAuthFileErrorStatusLabel = (
+  t: TFunction,
+  status: AuthFileErrorStatusCode | number | string
+): string => {
+  const normalized = String(status).trim();
+  if (!normalized) {
+    return t('common.unknown_error');
+  }
+
+  const translationKey = `auth_files.error_status_${normalized}`;
+  const translated = t(translationKey);
+  return translated !== translationKey ? translated : normalized;
+};
+
+export const getAuthFileHealthStateLabel = (
+  t: TFunction,
+  state: AuthFileHealthStateValue | string
+): string => {
+  const normalized = String(state).trim();
+  if (!normalized) {
+    return t('common.status');
+  }
+
+  const translationKey = `auth_files.health_state_${normalized}`;
+  const translated = t(translationKey);
+  return translated !== translationKey ? translated : normalized;
+};
 
 export const getTypeLabel = (t: TFunction, type: string): string => {
   const key = `auth_files.filter_${type}`;

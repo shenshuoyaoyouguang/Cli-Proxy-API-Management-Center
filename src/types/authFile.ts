@@ -16,6 +16,29 @@ export type AuthFileType =
   | 'empty'
   | 'unknown';
 
+export type DegradedReason =
+  | '401_unauthorized'
+  | '403_forbidden'
+  | '429_rate_limited'
+  | 'server_error'
+  | 'timeout'
+  | 'manual';
+
+export interface AccountHealthState {
+  degraded: boolean;
+  degradedReason?: DegradedReason;
+  degradedStatus?: number;
+  degradedMessage?: string;
+  consecutiveFailures: number;
+  failureStatuses: number[];
+  degradedAt?: number;
+  cooldownUntil?: number | null;
+  manualDegraded?: boolean;
+  stale?: boolean;
+}
+
+export type AccountHealthMap = Record<string, AccountHealthState>;
+
 export interface AuthFileItem {
   name: string;
   type?: AuthFileType | string;

@@ -14,6 +14,11 @@ export interface UsageExportPayload {
   [key: string]: unknown;
 }
 
+export interface AutoPersistUsagePayload extends UsageExportPayload {
+  origin: 'cli-proxy-auto-persist';
+  session_id: string;
+}
+
 export interface UsageImportResponse {
   added?: number;
   skipped?: number;
@@ -37,6 +42,12 @@ export const usageApi = {
    * 导入使用统计快照
    */
   importUsage: (payload: unknown) =>
+    apiClient.post<UsageImportResponse>('/usage/import', payload, { timeout: USAGE_TIMEOUT_MS }),
+
+  /**
+   * 自动持久化使用统计快照
+   */
+  autoPersistUsage: (payload: AutoPersistUsagePayload) =>
     apiClient.post<UsageImportResponse>('/usage/import', payload, { timeout: USAGE_TIMEOUT_MS }),
 
   /**

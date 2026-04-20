@@ -3,12 +3,23 @@
  */
 
 import { apiClient } from './client';
-import type { AuthFilesResponse } from '@/types/authFile';
+import type {
+  AccountHealthMap,
+  AccountHealthState,
+  AuthFilesResponse,
+  DegradedReason,
+} from '@/types/authFile';
 import type { OAuthModelAliasEntry } from '@/types';
 import { parseTimestampMs } from '@/utils/timestamp';
 
 type StatusError = { status?: number };
 type AuthFileStatusResponse = { status: string; disabled: boolean };
+type AuthFileStatusOptions = {
+  disabled?: boolean;
+  degraded?: boolean;
+  degradedReason?: DegradedReason;
+  cooldownUntil?: number | null;
+};
 type AuthFileEntry = AuthFilesResponse['files'][number];
 type AuthFileBatchFailure = { name: string; error: string };
 type AuthFileBatchUploadResponse = {
@@ -393,13 +404,102 @@ const normalizeOauthModelAlias = (payload: unknown): Record<string, OAuthModelAl
   return result;
 };
 
+const normalizeNumberArray = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return [];
+
+  return value.reduce<number[]>((result, item) => {
+    const parsed = Number(item);
+    if (Number.isFinite(parsed)) {
+      result.push(parsed);
+    }
+    return result;
+  }, []);
+};
+
+const normalizeAccountHealthState = (value: unknown): AccountHealthState | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const input = value as Record<string, unknown>;
+  const consecutiveFailures = Number(input.consecutiveFailures ?? input.consecutive_failures);
+  const degradedStatus = Number(input.degradedStatus ?? input.degraded_status);
+  const degradedAt = Number(input.degradedAt ?? input.degraded_at);
+  const cooldownUntil = input.cooldownUntil ?? input.cooldown_until;
+  const degradedReason = input.degradedReason ?? input.degraded_reason;
+  const degradedMessage = input.degradedMessage ?? input.degraded_message;
+
+  return {
+    degraded: input.degraded === true,
+    degradedReason:
+      typeof degradedReason === 'string' ? (degradedReason as DegradedReason) : undefined,
+    degradedStatus: Number.isFinite(degradedStatus) ? degradedStatus : undefined,
+    degradedMessage: typeof degradedMessage === 'string' ? degradedMessage : undefined,
+    consecutiveFailures: Number.isFinite(consecutiveFailures) ? Math.max(0, consecutiveFailures) : 0,
+    failureStatuses: normalizeNumberArray(input.failureStatuses ?? input.failure_statuses),
+    degradedAt: Number.isFinite(degradedAt) ? degradedAt : undefined,
+    cooldownUntil:
+      cooldownUntil === null
+        ? null
+        : Number.isFinite(Number(cooldownUntil))
+          ? Number(cooldownUntil)
+          : undefined,
+    manualDegraded: input.manualDegraded === true || input.manual_degraded === true,
+    stale: input.stale === true,
+  };
+};
+
+const normalizeAccountHealthMap = (payload: unknown): AccountHealthMap => {
+  if (!payload || typeof payload !== 'object') {
+    return {};
+  }
+
+  const root = payload as Record<string, unknown>;
+  const source = root.health ?? root.items ?? root.data ?? payload;
+  if (!source || typeof source !== 'object') {
+    return {};
+  }
+
+  return Object.entries(source as Record<string, unknown>).reduce<AccountHealthMap>(
+    (result, [name, value]) => {
+      const normalizedName = String(name ?? '').trim();
+      if (!normalizedName) {
+        return result;
+      }
+
+      const state = normalizeAccountHealthState(value);
+      if (!state) {
+        return result;
+      }
+
+      result[normalizedName] = state;
+      return result;
+    },
+    {}
+  );
+};
+
 const OAUTH_MODEL_ALIAS_ENDPOINT = '/oauth-model-alias';
 
 export const authFilesApi = {
   list: async () => dedupeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/auth-files')),
 
-  setStatus: (name: string, disabled: boolean) =>
-    apiClient.patch<AuthFileStatusResponse>('/auth-files/status', { name, disabled }),
+  setStatus: (name: string, options: boolean | AuthFileStatusOptions) =>
+    apiClient.patch<AuthFileStatusResponse>('/auth-files/status', {
+      name,
+      ...(typeof options === 'boolean' ? { disabled: options } : options),
+    }),
+
+  async getAccountHealth(): Promise<AccountHealthMap> {
+    const data = await apiClient.get('/auth-files/health');
+    return normalizeAccountHealthMap(data);
+  },
+
+  updateAccountHealth: (updates: Record<string, AccountHealthState | null>) =>
+    apiClient.put('/auth-files/health', updates),
+
+  recoverAccount: (name: string) =>
+    apiClient.post(`/auth-files/health/${encodeURIComponent(name)}/recover`, {}),
 
   uploadFiles: async (files: File[]): Promise<AuthFileBatchUploadResult> => {
     const requestedNames = files.map((file) => file.name);

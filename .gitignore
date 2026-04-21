@@ -17,6 +17,7 @@ style.md
 .trae/
 .omx/
 .omc/
+.claude/
 
 node_modules
 dist

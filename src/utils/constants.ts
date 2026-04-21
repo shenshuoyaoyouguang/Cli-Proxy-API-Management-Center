@@ -10,7 +10,8 @@ const defineLanguageOrder = <T extends readonly Language[]>(
 ) => languages;
 
 // 缓存过期时间（毫秒）
-export const CACHE_EXPIRY_MS = 30 * 1000; // 与基线保持一致，减少管理端压力
+// 与页面轮询周期(60s)对齐，避免缓存过早失效导致额外请求
+export const CACHE_EXPIRY_MS = 60 * 1000;
 
 // 网络与版本信息
 export const DEFAULT_API_PORT = 8317;

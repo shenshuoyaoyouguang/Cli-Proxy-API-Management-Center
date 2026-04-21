@@ -10,7 +10,7 @@ import {
 } from '@/utils/usage';
 import i18n from '@/i18n';
 
-export const USAGE_STATS_STALE_TIME_MS = 240_000;
+export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
 
 export type LoadUsageStatsOptions = {
@@ -247,11 +247,16 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       scopeKey,
       autoPersistService.readBootstrapSnapshot(scopeKey)
     );
-    const bootstrapCache = pickRicherUsageSnapshot(persistedCache, autoPersistCache);
+
     const cachedLastRefreshedAt = scopeChanged
-      ? (bootstrapCache?.lastRefreshedAt ?? null)
-      : (state.lastRefreshedAt ?? bootstrapCache?.lastRefreshedAt ?? null);
+      ? (autoPersistCache?.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null)
+      : (state.lastRefreshedAt ?? autoPersistCache?.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null);
     const fresh = cachedLastRefreshedAt !== null && now - cachedLastRefreshedAt < staleTimeMs;
+
+    // 只有在需要显示历史数据时才选择更丰富的缓存源，避免不必要的状态抖动
+    const bootstrapCache = scopeChanged || !fresh
+      ? pickRicherUsageSnapshot(persistedCache, autoPersistCache)
+      : autoPersistCache ?? pickRicherUsageSnapshot(persistedCache, autoPersistCache);
 
     if (scopeChanged) {
       if (bootstrapCache) {

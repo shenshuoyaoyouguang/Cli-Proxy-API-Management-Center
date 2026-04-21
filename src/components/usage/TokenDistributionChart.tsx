@@ -142,7 +142,9 @@ export function TokenDistributionChart({
           </div>
         </div>
       ) : (
-        <div className={styles.noData}>{t('usage_stats.no_data')}</div>
+        <div className={styles.noData}>
+          {t('usage_stats.no_data')}
+        </div>
       )}
     </Card>
   );

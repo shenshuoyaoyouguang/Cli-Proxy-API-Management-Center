@@ -989,6 +989,7 @@
     "chart_line_delete": "删除曲线",
     "chart_line_hint": "最多同时显示 9 条模型曲线",
     "no_data": "暂无数据",
+    "token_data_incompatible": "Token 数据格式不兼容，请检查 API 版本或后端配置",
     "loading_error": "加载失败",
     "api_endpoint": "API端点",
     "requests_count": "请求次数",

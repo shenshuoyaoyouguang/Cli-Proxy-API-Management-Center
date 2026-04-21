@@ -49,7 +49,7 @@ const hasAny = (segments: string[], words: readonly string[]) =>
   words.some((word) => segments.includes(word));
 
 const isCountLikePath = (segments: string[]) =>
-  hasAny(segments, ['token', 'tokens', 'count', 'counts']);
+  hasAny(segments, ['token', 'tokens', 'count', 'counts', 'prompt', 'completion']);
 
 const flattenNumericLeaves = (
   value: unknown,
@@ -160,6 +160,8 @@ const classifyPath = (path: string[], value: number): TokenCandidate[] => {
     push('input', 'aggregate', 125);
   } else if (leaf === 'input_tokens') {
     push('input', 'aggregate', 110);
+  } else if (leaf === 'prompt') {
+    push('input', 'aggregate', 105);
   } else if (
     hasPromptSignal &&
     !hasAny(segments, NEGATIVE_INPUT_SEGMENTS) &&
@@ -171,6 +173,8 @@ const classifyPath = (path: string[], value: number): TokenCandidate[] => {
 
   if (leaf === 'completion_tokens' || leaf === 'output_tokens') {
     push('output', 'aggregate', 125);
+  } else if (leaf === 'completion') {
+    push('output', 'aggregate', 105);
   } else if (
     hasCompletionSignal &&
     !hasAny(segments, NEGATIVE_OUTPUT_SEGMENTS) &&
@@ -233,6 +237,9 @@ const sumUniqueComponentValues = (candidates: TokenCandidate[]): number => {
 export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
   const entries = flattenNumericLeaves(raw);
   if (!entries.length) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[TokenNormalizer] No numeric token fields found in:', raw);
+    }
     return {
       input_tokens: 0,
       output_tokens: 0,

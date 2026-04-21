@@ -31,7 +31,16 @@ export const usageApi = {
   /**
    * 获取使用统计原始数据
    */
-  getUsage: () => apiClient.get<Record<string, unknown>>('/usage', { timeout: USAGE_TIMEOUT_MS }),
+  getUsage: () =>
+    apiClient.get<Record<string, unknown>>('/usage', { timeout: USAGE_TIMEOUT_MS }).then((response) => {
+      const isValidResponse = response && typeof response === 'object' && !Array.isArray(response);
+      const hasApis = isValidResponse && 'apis' in response && typeof response.apis === 'object';
+      const hasUsage = isValidResponse && 'usage' in response && typeof response.usage === 'object';
+      if (!hasApis && !hasUsage) {
+        throw new Error('[UsageAPI] Unexpected response structure: missing "apis" or "usage" field');
+      }
+      return response;
+    }),
 
   /**
    * 导出使用统计快照
@@ -57,6 +66,11 @@ export const usageApi = {
     let payload = usageData;
     if (!payload) {
       const response = await apiClient.get<Record<string, unknown>>('/usage', { timeout: USAGE_TIMEOUT_MS });
+      const isValidResponse = response && typeof response === 'object';
+      if (!isValidResponse) {
+        console.warn('[UsageAPI] Invalid response from /usage:', response);
+        return computeKeyStats({});
+      }
       payload = response?.usage ?? response;
     }
     return computeKeyStats(payload);

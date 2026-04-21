@@ -55,6 +55,10 @@ function parseFullKey(fullKey: string): { scopeKey: string; dataKey: string } | 
   };
 }
 
+function formatDebugKey(scopeKey: string, key: string): string {
+  return scopeKey ? `${key} [scope redacted]` : `${key} [global]`;
+}
+
 /** 获取所有属于某个 scopeKey 的缓存 key */
 function collectScopeKeys(scopeKey: string): string[] {
   const prefix = buildKey(scopeKey, '');
@@ -160,10 +164,16 @@ class CacheLayerImpl {
   get<T>(key: string, scopeKey?: string): CacheEntry<T> | null {
     const resolvedScope = scopeKey ?? '';
     const fullKey = buildKey(resolvedScope, key);
+    const debugKey = formatDebugKey(resolvedScope, key);
 
     try {
       const raw = localStorage.getItem(fullKey);
-      if (!raw) return null;
+      if (!raw) {
+        if (import.meta.env.DEV) {
+          console.debug(`[CacheLayer] MISS: ${debugKey}`);
+        }
+        return null;
+      }
 
       const entry = JSON.parse(raw) as CacheEntry<T>;
       const now = Date.now();
@@ -171,9 +181,15 @@ class CacheLayerImpl {
       // TTL 过期检查
       if (entry.maxAgeMs > 0 && now - entry.timestamp > entry.maxAgeMs) {
         localStorage.removeItem(fullKey);
+        if (import.meta.env.DEV) {
+          console.debug(`[CacheLayer] EXPIRED: ${debugKey}`);
+        }
         return null;
       }
 
+      if (import.meta.env.DEV) {
+        console.debug(`[CacheLayer] HIT: ${debugKey}`);
+      }
       return entry;
     } catch {
       return null;
@@ -187,6 +203,7 @@ class CacheLayerImpl {
   set<T>(key: string, data: T, options?: CacheOptions): void {
     const resolvedScope = options?.scopeKey ?? '';
     const fullKey = buildKey(resolvedScope, key);
+    const debugKey = formatDebugKey(resolvedScope, key);
     const maxAgeMs = options?.maxAgeMs ?? CACHE_EXPIRY_MS;
     const maxSizeBytes = options?.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES;
 
@@ -203,6 +220,9 @@ class CacheLayerImpl {
 
     try {
       localStorage.setItem(fullKey, JSON.stringify(entry));
+      if (import.meta.env.DEV) {
+        console.debug(`[CacheLayer] SET: ${debugKey}`);
+      }
       this.notifyUpdated(key, resolvedScope);
     } catch {
       // 体积写入失败，尝试清理后重试

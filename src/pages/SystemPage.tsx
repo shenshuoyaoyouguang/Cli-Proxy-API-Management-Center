@@ -12,8 +12,8 @@ import {
   useModelsStore,
   useThemeStore,
 } from '@/stores';
+import { useVisualConfig } from '@/hooks/useVisualConfig';
 import { useUpdateRequestLog } from '@/hooks/useConfigApi';
-import { versionApi } from '@/services/api';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import { classifyModels } from '@/utils/models';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
@@ -75,6 +75,7 @@ export function SystemPage() {
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const auth = useAuthStore();
   const config = useConfigStore((state) => state.config);
+  const visualConfig = useVisualConfig();
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
   const updateConfigValue = useConfigStore((state) => state.updateConfigValue);
@@ -280,10 +281,24 @@ export function SystemPage() {
   const handleVersionCheck = useCallback(async () => {
     setCheckingVersion(true);
     try {
-      const data = await versionApi.checkLatest();
-      const latestRaw = data?.['latest-version'] ?? data?.latest_version ?? data?.latest ?? '';
+      const panelRepo = visualConfig.visualValues.rmPanelRepo.trim();
+      if (!panelRepo) {
+        showNotification(t('system_info.version_check_error'), 'error');
+        return;
+      }
+      const repoPath = panelRepo.replace(/^https?:\/\/github\.com\//, '');
+      const response = await fetch(
+        `https://api.github.com/repos/${repoPath}/releases/latest`,
+        { headers: { Accept: 'application/vnd.github+json' } }
+      );
+      if (!response.ok) {
+        showNotification(t('system_info.version_check_error'), 'error');
+        return;
+      }
+      const data = (await response.json()) as { tag_name?: string };
+      const latestRaw = data?.tag_name ?? '';
       const latest = typeof latestRaw === 'string' ? latestRaw : String(latestRaw ?? '');
-      const comparison = compareVersions(latest, auth.serverVersion);
+      const comparison = compareVersions(latest, appVersion);
 
       if (!latest) {
         showNotification(t('system_info.version_check_error'), 'error');
@@ -308,7 +323,7 @@ export function SystemPage() {
     } finally {
       setCheckingVersion(false);
     }
-  }, [auth.serverVersion, showNotification, t]);
+  }, [appVersion, showNotification, t, visualConfig.visualValues.rmPanelRepo]);
 
   useEffect(() => {
     fetchConfig().catch(() => {

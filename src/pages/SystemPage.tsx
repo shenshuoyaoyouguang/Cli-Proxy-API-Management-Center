@@ -281,11 +281,9 @@ export function SystemPage() {
   const handleVersionCheck = useCallback(async () => {
     setCheckingVersion(true);
     try {
-      const panelRepo = visualConfig.visualValues.rmPanelRepo.trim();
-      if (!panelRepo) {
-        showNotification(t('system_info.version_check_error'), 'error');
-        return;
-      }
+      const panelRepo =
+        visualConfig.visualValues.rmPanelRepo.trim() ||
+        'router-for-me/Cli-Proxy-API-Management-Center';
       const repoPath = panelRepo.replace(/^https?:\/\/github\.com\//, '');
       const response = await fetch(
         `https://api.github.com/repos/${repoPath}/releases/latest`,

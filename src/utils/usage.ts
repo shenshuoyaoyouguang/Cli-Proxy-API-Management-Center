@@ -535,6 +535,118 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
 }
 
 /**
+ * 将 usage details 中的别名模型名解析为原始模型名
+ * @deprecated 请使用 usageAliasResolver.ts 中的 normalizeDetailsModelNames
+ *
+ * @param details - usage details 数组
+ * @param aliasReverseMap - 别名到原始模型名的反向映射表
+ * @returns 新的 details 数组，其中 __modelName 已被解析
+ */
+export function resolveModelNameInDetails(
+  details: UsageDetail[],
+  aliasReverseMap: Map<string, string>
+): UsageDetail[] {
+  if (!aliasReverseMap.size) {
+    return details;
+  }
+
+  return details.map((detail) => {
+    const resolvedModelName = aliasReverseMap.get(detail.__modelName ?? '');
+    if (resolvedModelName && resolvedModelName !== detail.__modelName) {
+      return { ...detail, __modelName: resolvedModelName };
+    }
+    return detail;
+  });
+}
+
+/**
+ * 对 usage 数据应用模型名标准化，生成 canonical 视图
+ * 这是模型名统一的唯一入口，所有下游消费都应基于此标准化后的数据
+ *
+ * @param usageData - 原始 usage 数据
+ * @param aliasReverseMap - 别名到原始模型名的反向映射表
+ * @returns 标准化后的 usage 数据，所有模型名已统一为 canonical 名称
+ */
+export function normalizeUsageModelNames<T>(
+  usageData: T,
+  aliasReverseMap: Map<string, string>
+): T {
+  if (!aliasReverseMap.size) {
+    return usageData;
+  }
+
+  const usageRecord = isRecord(usageData) ? usageData : null;
+  const apis = getApisRecord(usageData);
+  if (!usageRecord || !apis) {
+    return usageData;
+  }
+
+  const normalizedApis: Record<string, unknown> = {};
+
+  Object.entries(apis).forEach(([apiName, apiEntry]) => {
+    if (!isRecord(apiEntry)) {
+      normalizedApis[apiName] = apiEntry;
+      return;
+    }
+
+    const models = isRecord(apiEntry.models) ? apiEntry.models : null;
+    if (!models) {
+      normalizedApis[apiName] = apiEntry;
+      return;
+    }
+
+    // 按 canonical 模型名聚合统计
+    const normalizedModels: Record<string, {
+      total_requests: number;
+      success_count: number;
+      failure_count: number;
+      total_tokens: number;
+      details: unknown[];
+      [key: string]: unknown;
+    }> = {};
+
+    Object.entries(models).forEach(([modelName, modelEntry]) => {
+      if (!isRecord(modelEntry)) return;
+
+      // 解析模型名
+      const canonicalName = aliasReverseMap.get(modelName) ?? modelName;
+
+      // 合并到 canonical 条目
+      if (!normalizedModels[canonicalName]) {
+        normalizedModels[canonicalName] = {
+          total_requests: 0,
+          success_count: 0,
+          failure_count: 0,
+          total_tokens: 0,
+          details: [],
+          ...modelEntry,
+        };
+      }
+
+      // 累加统计值
+      normalizedModels[canonicalName].total_requests += Number(modelEntry.total_requests) || 0;
+      normalizedModels[canonicalName].success_count += Number(modelEntry.success_count) || 0;
+      normalizedModels[canonicalName].failure_count += Number(modelEntry.failure_count) || 0;
+      normalizedModels[canonicalName].total_tokens += Number(modelEntry.total_tokens) || 0;
+
+      // 合并详情
+      const details = Array.isArray(modelEntry.details) ? modelEntry.details : [];
+      normalizedModels[canonicalName].details.push(...details);
+    });
+
+    normalizedApis[apiName] = {
+      ...apiEntry,
+      models: normalizedModels,
+    };
+  });
+
+  return {
+    ...usageRecord,
+    apis: normalizedApis,
+  } as T;
+}
+
+/**
  * 从使用数据中收集包含 endpoint/method/path 的请求明细
  */
 export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetailWithEndpoint[] {

@@ -6,6 +6,8 @@ import {
   getApiStats,
   getModelNamesFromUsage,
   getModelStats,
+  resolveModelNameInDetails,
+  normalizeUsageModelNames,
   type ModelPrice,
   type UsageDetail,
   type UsageTimeRange
@@ -47,10 +49,12 @@ export interface UseUsageAnalyticsSnapshotOptions {
   vertexConfigs: ProviderKeyConfig[];
   openaiProviders: OpenAIProviderConfig[];
   includeHealthRequestEventRows?: boolean;
+  aliasReverseMap?: Map<string, string>;
 }
 
 export interface UseUsageAnalyticsSnapshotReturn {
   filteredUsage: UsagePayload | null;
+  canonicalUsage: UsagePayload | null;
   filteredDetails: UsageDetail[];
   modelNames: string[];
   apiStats: ReturnType<typeof getApiStats>;
@@ -79,11 +83,19 @@ export function useUsageAnalyticsSnapshot({
   codexConfigs,
   vertexConfigs,
   openaiProviders,
-  includeHealthRequestEventRows = false
+  includeHealthRequestEventRows = false,
+  aliasReverseMap
 }: UseUsageAnalyticsSnapshotOptions): UseUsageAnalyticsSnapshotReturn {
+  // 第一步：时间范围过滤
   const filteredUsage = useMemo(
     () => (usage ? filterUsageByTimeRange(usage, timeRange, nowMs) : null),
     [usage, timeRange, nowMs]
+  );
+
+  // 第二步：模型名标准化 - 统一入口，所有下游消费都基于 canonicalUsage
+  const canonicalUsage = useMemo(
+    () => filteredUsage ? normalizeUsageModelNames(filteredUsage, aliasReverseMap ?? new Map()) : null,
+    [filteredUsage, aliasReverseMap]
   );
 
   const filteredDetails = useMemo(
@@ -91,16 +103,23 @@ export function useUsageAnalyticsSnapshot({
     [usageDetails, timeRange, nowMs]
   );
 
-  const modelNames = useMemo(() => getModelNamesFromUsage(usage), [usage]);
+  // 应用别名反向映射，将别名模型名解析为原始模型名
+  const resolvedDetails = useMemo(
+    () => resolveModelNameInDetails(filteredDetails, aliasReverseMap ?? new Map()),
+    [filteredDetails, aliasReverseMap]
+  );
+
+  // 所有聚合函数现在全部基于 canonicalUsage，确保口径100%统一
+  const modelNames = useMemo(() => getModelNamesFromUsage(canonicalUsage), [canonicalUsage]);
 
   const apiStats = useMemo(
-    () => getApiStats(filteredUsage, modelPrices),
-    [filteredUsage, modelPrices]
+    () => getApiStats(canonicalUsage, modelPrices),
+    [canonicalUsage, modelPrices]
   );
 
   const modelStats = useMemo(
-    () => getModelStats(filteredUsage, modelPrices),
-    [filteredUsage, modelPrices]
+    () => getModelStats(canonicalUsage, modelPrices),
+    [canonicalUsage, modelPrices]
   );
 
   const sourceInfoMap = useMemo(
@@ -116,18 +135,18 @@ export function useUsageAnalyticsSnapshot({
   );
 
   const tokenDistribution = useMemo(
-    () => createTokenDistribution(filteredDetails),
-    [filteredDetails]
+    () => createTokenDistribution(resolvedDetails),
+    [resolvedDetails]
   );
 
   const usageSummary = useMemo(
-    () => createUsageSummaryMetrics(filteredDetails, modelPrices, nowMs),
-    [filteredDetails, modelPrices, nowMs]
+    () => createUsageSummaryMetrics(resolvedDetails, modelPrices, nowMs),
+    [resolvedDetails, modelPrices, nowMs]
   );
 
   const requestEventRows = useMemo(
-    () => createRequestEventRows(filteredDetails, sourceInfoMap, authFileMap, locale),
-    [authFileMap, filteredDetails, locale, sourceInfoMap]
+    () => createRequestEventRows(resolvedDetails, sourceInfoMap, authFileMap, locale),
+    [authFileMap, resolvedDetails, locale, sourceInfoMap]
   );
 
   const healthRequestEventRows = useMemo(
@@ -141,7 +160,7 @@ export function useUsageAnalyticsSnapshot({
   const credentialRows = useMemo(
     () =>
       createCredentialRows(
-        filteredDetails,
+        resolvedDetails,
         {
           geminiApiKeys: geminiKeys,
           claudeApiKeys: claudeConfigs,
@@ -151,39 +170,40 @@ export function useUsageAnalyticsSnapshot({
         },
         authFileMap
       ),
-    [authFileMap, claudeConfigs, codexConfigs, filteredDetails, geminiKeys, openaiProviders, vertexConfigs]
+    [authFileMap, claudeConfigs, codexConfigs, resolvedDetails, geminiKeys, openaiProviders, vertexConfigs]
   );
 
   const efficiencyOverview = useMemo(
-    () => createEfficiencyOverview(filteredDetails, modelPrices),
-    [filteredDetails, modelPrices]
+    () => createEfficiencyOverview(resolvedDetails, modelPrices),
+    [resolvedDetails, modelPrices]
   );
 
   const modelEfficiencyRows = useMemo(
-    () => createModelEfficiencyRows(filteredDetails, modelPrices),
-    [filteredDetails, modelPrices]
+    () => createModelEfficiencyRows(resolvedDetails, modelPrices),
+    [resolvedDetails, modelPrices]
   );
 
   const credentialEfficiencyRows = useMemo(
-    () => createCredentialEfficiencyRows(filteredDetails, sourceInfoMap, authFileMap, modelPrices),
-    [authFileMap, filteredDetails, modelPrices, sourceInfoMap]
+    () => createCredentialEfficiencyRows(resolvedDetails, sourceInfoMap, authFileMap, modelPrices),
+    [authFileMap, resolvedDetails, modelPrices, sourceInfoMap]
   );
 
   const runtimeQualitySummary = useMemo(
     () =>
       createRuntimeQualitySummary({
         usage: filteredUsage,
-        details: filteredDetails,
+        details: resolvedDetails,
         credentialRows,
         apiStats,
         modelStats
       }),
-    [apiStats, credentialRows, filteredDetails, filteredUsage, modelStats]
+    [apiStats, credentialRows, filteredUsage, modelStats, resolvedDetails]
   );
 
   return {
     filteredUsage,
-    filteredDetails,
+    canonicalUsage,
+    filteredDetails: resolvedDetails,
     modelNames,
     apiStats,
     modelStats,

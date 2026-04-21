@@ -5,6 +5,8 @@ export type { UsagePayload, UseUsageDataReturn } from './hooks/useUsageData';
 export { useAuthFilesMap } from './hooks/useAuthFilesMap';
 export type { UseAuthFilesMapReturn } from './hooks/useAuthFilesMap';
 
+export { useModelAliasReverseMap } from './hooks/useModelAliasReverseMap';
+
 export { useSparklines } from './hooks/useSparklines';
 export type {
   SparklineData,

@@ -41,6 +41,7 @@ import {
   useUsageAnalyticsSnapshot,
   useUsageReliabilitySnapshot,
   useUsageSubscriptionTier,
+  useModelAliasReverseMap,
   type EfficiencyDrilldown,
 } from '@/components/usage';
 import { type UsageTimeRange } from '@/utils/usage';
@@ -149,6 +150,9 @@ export function UsagePage() {
 
   const { authFileMap, authFiles } = useAuthFilesMap();
 
+  // 获取 OAuth 模型别名反向映射，用于将 usage 中的别名解析为原始模型名
+  const { aliasReverseMap } = useModelAliasReverseMap();
+
   useHeaderRefresh(loadUsage);
 
   // Background polling every 60s (does not show loading overlay)
@@ -208,6 +212,7 @@ export function UsagePage() {
 
   const {
     filteredUsage,
+    canonicalUsage,
     modelNames,
     apiStats,
     modelStats,
@@ -234,6 +239,7 @@ export function UsagePage() {
     vertexConfigs: config?.vertexApiKeys || [],
     openaiProviders: config?.openaiCompatibility || [],
     includeHealthRequestEventRows,
+    aliasReverseMap,
   });
 
   const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
@@ -257,7 +263,7 @@ export function UsagePage() {
     tokensChartData,
     requestsChartOptions,
     tokensChartOptions,
-  } = useChartData({ usage: filteredUsage, chartLines, isDark, isMobile, hourWindowHours });
+  } = useChartData({ usage: canonicalUsage, chartLines, isDark, isMobile, hourWindowHours });
 
   const hasPrices = Object.keys(modelPrices).length > 0;
   const externalModelFilter =

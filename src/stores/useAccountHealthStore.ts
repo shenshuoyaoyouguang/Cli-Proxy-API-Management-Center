@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authFilesApi } from '@/services/api';
+import { buildScopeKey } from '@/utils/helpers';
 import type { AccountHealthMap, AccountHealthState, DegradedReason } from '@/types';
 
 type HealthScopeInput = {
@@ -21,6 +22,7 @@ type AccountHealthStoreState = {
   loadHealthMap: (scope?: HealthScopeInput | null) => Promise<AccountHealthMap>;
   clearHealthMap: () => void;
   removeAccounts: (names: string[]) => void;
+  removeAccountsByStatus: (reasons: DegradedReason[]) => Promise<void>;
   reportFailure: (name: string, status?: number, message?: string) => Promise<void>;
   reportBatchResults: (results: AccountHealthBatchResult[]) => Promise<void>;
   isAccountDegraded: (name: string) => boolean;
@@ -36,6 +38,7 @@ const ACCOUNT_FAILURE_STATUS_LIMIT = 6;
 const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 const SERVER_ERROR_COOLDOWN_MS = 15 * 60 * 1000;
 const TIMEOUT_COOLDOWN_MS = 10 * 60 * 1000;
+const PERMANENT_FAILURE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const SERVER_ERROR_STATUSES = new Set([500, 502, 503, 504]);
 const TIMEOUT_MESSAGE_PATTERN = /\b(timeout|timed out|abort(?:ed)?|network error)\b/i;
 
@@ -47,20 +50,6 @@ const shouldIgnoreFailureForHealth = (status: number | undefined, message: strin
   const normalizedMessage = typeof message === 'string' ? message.trim().toLowerCase() : '';
   return normalizedMessage.includes('quota_update_required');
 };
-
-const hashScopeSegment = (value: string) => {
-  let hash = 2166136261;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return (hash >>> 0).toString(16).padStart(8, '0');
-};
-
-const buildScopeKey = (apiBase: string, managementKey: string) =>
-  `${apiBase}::${hashScopeSegment(managementKey)}`;
 
 const createStorageKey = (scopeKey: string) =>
   `${ACCOUNT_HEALTH_STORAGE_PREFIX}:${encodeURIComponent(scopeKey)}`;
@@ -162,7 +151,7 @@ const resolveFailureOutcome = (
       degradedReason: '401_unauthorized',
       degradedStatus: 401,
       degradedMessage: normalizedMessage || '401 unauthorized',
-      cooldownUntil: null,
+      cooldownUntil: now + PERMANENT_FAILURE_COOLDOWN_MS,
     };
   }
 
@@ -171,7 +160,7 @@ const resolveFailureOutcome = (
       degradedReason: '403_forbidden',
       degradedStatus: 403,
       degradedMessage: normalizedMessage || '403 forbidden',
-      cooldownUntil: null,
+      cooldownUntil: now + PERMANENT_FAILURE_COOLDOWN_MS,
     };
   }
 
@@ -349,6 +338,36 @@ export const useAccountHealthStore = create<AccountHealthStoreState>((set, get) 
     updateState(set, scopeKey, nextMap);
   },
 
+  removeAccountsByStatus: async (reasons) => {
+    const { scopeKey, healthMap } = get();
+    if (!scopeKey || reasons.length === 0) {
+      return;
+    }
+
+    const reasonSet = new Set(reasons);
+    const nextMap: AccountHealthMap = { ...healthMap };
+    const removalUpdates: Record<string, null> = {};
+
+    Object.entries(nextMap).forEach(([name, state]) => {
+      if (state.degradedReason && reasonSet.has(state.degradedReason)) {
+        delete nextMap[name];
+        removalUpdates[name] = null;
+      }
+    });
+
+    if (Object.keys(removalUpdates).length === 0) {
+      return;
+    }
+
+    try {
+      await persistHealthUpdates(removalUpdates);
+    } catch {
+      // 忽略后端同步失败，继续清理本地状态
+    }
+
+    updateState(set, scopeKey, nextMap);
+  },
+
   reportFailure: async (name, status, message) => {
     const normalizedName = String(name ?? '').trim();
     const { scopeKey, healthMap } = get();
@@ -485,6 +504,7 @@ export {
   RATE_LIMIT_COOLDOWN_MS,
   SERVER_ERROR_COOLDOWN_MS,
   TIMEOUT_COOLDOWN_MS,
+  PERMANENT_FAILURE_COOLDOWN_MS,
   buildScopeKey as buildAccountHealthScopeKey,
   isHealthCooldownActive as isAccountHealthCooldownActive,
   isHealthBlockedOrStale as isAccountHealthBlockedOrStale,

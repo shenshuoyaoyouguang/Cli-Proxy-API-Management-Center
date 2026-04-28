@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { CacheLayer } from '@/services/cache';
 import {
   collectUsageDetails,
   computeKeyStatsFromDetails,
@@ -9,6 +10,7 @@ import {
   type UsageDetail,
 } from '@/utils/usage';
 import i18n from '@/i18n';
+import { buildScopeKey } from '@/utils/helpers';
 
 export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
@@ -88,20 +90,6 @@ const toPersistedUsageStatsCache = (
   };
 };
 
-const hashScopeSegment = (value: string) => {
-  let hash = 2166136261;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return (hash >>> 0).toString(16).padStart(8, '0');
-};
-
-const createScopeKey = (apiBase: string, managementKey: string) =>
-  `${apiBase}::${hashScopeSegment(managementKey)}`;
-
 const createCacheStorageKey = (scopeKey: string) =>
   `${USAGE_STATS_CACHE_PREFIX}:${encodeURIComponent(scopeKey)}`;
 
@@ -111,10 +99,6 @@ const pickRicherUsageSnapshot = (
 ): PersistedUsageStatsCache | null => {
   if (!primary) return secondary;
   if (!secondary) return primary;
-
-  if (secondary.detailCount !== primary.detailCount) {
-    return secondary.detailCount > primary.detailCount ? secondary : primary;
-  }
 
   if (secondary.usageDetails.length !== primary.usageDetails.length) {
     return secondary.usageDetails.length > primary.usageDetails.length ? secondary : primary;
@@ -185,7 +169,23 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
   try {
     localStorage.setItem(createCacheStorageKey(cache.scopeKey), JSON.stringify(cache));
   } catch {
-    // Ignore persistence failures and fall back to in-memory cache only.
+    CacheLayer.prune();
+  }
+
+  try {
+    localStorage.setItem(createCacheStorageKey(cache.scopeKey), JSON.stringify(cache));
+  } catch {
+    const liteCache: PersistedUsageStatsCache = {
+      ...cache,
+      usage: null,
+      usageDetails: [],
+      detailCount: 0,
+    };
+    try {
+      localStorage.setItem(createCacheStorageKey(cache.scopeKey), JSON.stringify(liteCache));
+    } catch {
+      // Ignore final persistence failures.
+    }
   }
 };
 
@@ -214,7 +214,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     const force = options.force === true;
     const staleTimeMs = options.staleTimeMs ?? USAGE_STATS_STALE_TIME_MS;
     const { apiBase = '', managementKey = '' } = useAuthStore.getState();
-    const scopeKey = createScopeKey(apiBase, managementKey);
+    const scopeKey = buildScopeKey(apiBase, managementKey);
     const state = get();
     const scopeChanged = state.scopeKey !== scopeKey;
     const now = Date.now();

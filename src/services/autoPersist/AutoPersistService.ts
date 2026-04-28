@@ -22,6 +22,7 @@ type AutoPersistCache = AutoPersistBootstrapSnapshot & {
   updatedAt: number;
   lastPersistedAt: number | null;
   lastPersistedDetailCount: number;
+  rawDetailCount: number;
 };
 
 const AUTO_PERSIST_CACHE_PREFIX = 'cli-proxy-usage-auto-persist-v1';
@@ -30,6 +31,7 @@ const AUTO_PERSIST_INTERVAL_MS = 60_000;
 const AUTO_PERSIST_START_DELAY_MS = 30_000;
 const AUTO_PERSIST_MAX_DETAILS = 5_000;
 const AUTO_PERSIST_TRIM_RATIO = 0.2;
+const AUTO_PERSIST_MAX_DELAY_MS = 5 * 60 * 1000;
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
@@ -129,6 +131,10 @@ const readCache = (scopeKey: string): AutoPersistCache | null => {
         Number.isFinite(parsed.lastPersistedDetailCount)
           ? Math.max(0, parsed.lastPersistedDetailCount)
           : 0,
+      rawDetailCount:
+        typeof parsed.rawDetailCount === 'number' && Number.isFinite(parsed.rawDetailCount)
+          ? Math.max(0, parsed.rawDetailCount)
+          : usageDetails.length,
     };
   } catch {
     return null;
@@ -158,6 +164,7 @@ const writeCache = (cache: AutoPersistCache) => {
       usage: null,
       usageDetails: [],
       detailCount: 0,
+      rawDetailCount: 0,
       payload: null,
       keyStats: createEmptyKeyStats(),
       lastRefreshedAt: null,
@@ -258,7 +265,8 @@ export class AutoPersistService {
     const usage = input.usage;
     const keyStats = input.keyStats;
     const usageDetails = trimUsageDetails(input.usageDetails);
-    const detailCount = incomingDetailCount;
+    const detailCount = usageDetails.length;
+    const rawDetailCount = incomingDetailCount;
     const lastRefreshedAt = input.lastRefreshedAt;
     const payload =
       usage && detailCount > 0
@@ -278,6 +286,7 @@ export class AutoPersistService {
       usageDetails,
       lastRefreshedAt,
       detailCount,
+      rawDetailCount,
       sessionId: this.sessionId,
       payload,
       updatedAt: Date.now(),
@@ -330,9 +339,14 @@ export class AutoPersistService {
       return false;
     }
 
-    const delta = cache.detailCount - cache.lastPersistedDetailCount;
+    const delta = cache.rawDetailCount - cache.lastPersistedDetailCount;
     if (delta < AUTO_PERSIST_TRIGGER_DELTA) {
-      return false;
+      if (
+        cache.lastPersistedAt === null ||
+        Date.now() - cache.lastPersistedAt < AUTO_PERSIST_MAX_DELAY_MS
+      ) {
+        return false;
+      }
     }
 
     if (cache.lastPersistedAt !== null && Date.now() - cache.lastPersistedAt < AUTO_PERSIST_INTERVAL_MS) {
@@ -372,7 +386,7 @@ export class AutoPersistService {
         const nextCache: AutoPersistCache = {
           ...current,
           lastPersistedAt: Date.now(),
-          lastPersistedDetailCount: Math.min(current.detailCount, cacheToPersist.detailCount),
+          lastPersistedDetailCount: Math.min(current.rawDetailCount, cacheToPersist.rawDetailCount),
         };
 
         writeCache(nextCache);

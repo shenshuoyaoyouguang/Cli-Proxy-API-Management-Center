@@ -15,6 +15,7 @@ import { useAccountHealthStore } from './useAccountHealthStore';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { CacheLayer } from '@/services/cache';
 import { clearModelsCache } from '@/features/authFiles/hooks/useAuthFilesModels';
+import { buildScopeKey } from '@/utils/helpers';
 
 interface AuthStoreState extends AuthState {
   connectionStatus: ConnectionStatus;
@@ -30,18 +31,6 @@ interface AuthStoreState extends AuthState {
 }
 
 let restoreSessionPromise: Promise<boolean> | null = null;
-
-// Scope key helpers (mirrors the logic in useUsageStatsStore to avoid circular imports)
-const hashScopeSegment = (value: string) => {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
-};
-const buildScopeKey = (apiBase: string, managementKey: string) =>
-  `${apiBase}::${hashScopeSegment(managementKey)}`;
 
 export const useAuthStore = create<AuthStoreState>()((set, get) => ({
   // 初始状态
@@ -178,7 +167,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
     }
   },
 
-  // 登出
+// 登出
   logout: () => {
     const { apiBase, managementKey } = get();
     restoreSessionPromise = null;
@@ -203,9 +192,30 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       connectionStatus: 'disconnected',
       connectionError: null,
     });
+
     // 清除所有存储的认证信息
     localStorage.removeItem('isLoggedIn');
     sessionStorage.removeItem('sessionManagementKey');
+
+    // 清理页面级别的 localStorage 状态 (UsagePage, ConfigPage 等)
+    const pageLevelKeys = [
+      'cli-proxy-usage-chart-lines-v1',
+      'cli-proxy-usage-time-range-v1',
+      'cli-proxy-model-prices-v2',
+      'authFilesPage.uiState',
+      'authFilesPage.compactMode',
+      'config-management:tab',
+    ];
+    pageLevelKeys.forEach((key) => localStorage.removeItem(key));
+
+    // 清理当前 scope 相关的 secureStorage 键
+    if (scopeKey) {
+      const secureKeys = ['apiBase', 'apiUrl', 'managementKey'];
+      secureKeys.forEach((key) => {
+        localStorage.removeItem(key);
+        localStorage.removeItem(`__plain__::${key}`);
+      });
+    }
   },
 
   // 检查认证状态

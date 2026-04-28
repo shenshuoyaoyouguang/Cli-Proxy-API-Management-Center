@@ -87,7 +87,8 @@ class SecureStorageService {
   /**
    * 存储数据
    * 注意：由于 Zustand persist 需要同步接口，加密过程异步执行。
-   * 加密后明文以 plain:: 前缀保留，确保 v2 异步加密场景下可回退。
+   * 加密后明文以 plain:: 前缀保留确保 v2 异步加密场景下可回退。
+   * 同时在 __plain__::key 存储明文副本以支持 v2 解密失败时回退。
    */
   setItem(key: string, value: unknown, options: StorageOptions = {}): void {
     const { encrypt = true } = options;
@@ -100,8 +101,8 @@ class SecureStorageService {
     const stringValue = JSON.stringify(value);
 
     if (encrypt) {
-      // 先存明文带前缀（异步加密完成后会被覆盖，但解密失败时可回退）
       localStorage.setItem(key, `plain::${stringValue}`);
+      localStorage.setItem(`__plain__::${key}`, stringValue);
       void encryptData(stringValue)
         .then((encrypted) => {
           localStorage.setItem(key, encrypted);

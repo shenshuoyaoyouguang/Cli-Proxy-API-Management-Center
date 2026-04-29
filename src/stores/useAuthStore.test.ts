@@ -49,6 +49,7 @@ vi.mock('@/utils/connection', () => ({
 
 import { useAuthStore } from './useAuthStore';
 import { apiClient } from '@/services/api/client';
+import { secureStorage } from '@/services/storage/secureStorage';
 
 describe('useAuthStore', () => {
   let localStorageMock: Record<string, string>;
@@ -67,6 +68,9 @@ describe('useAuthStore', () => {
       removeItem: vi.fn((key: string) => {
         delete localStorageMock[key];
       }),
+      clear: vi.fn(() => {
+        localStorageMock = {};
+      }),
     });
 
     vi.stubGlobal('sessionStorage', {
@@ -76,6 +80,9 @@ describe('useAuthStore', () => {
       }),
       removeItem: vi.fn((key: string) => {
         delete sessionStorageMock[key];
+      }),
+      clear: vi.fn(() => {
+        sessionStorageMock = {};
       }),
     });
 
@@ -175,11 +182,30 @@ describe('useAuthStore', () => {
 
     it('clears stored auth data', () => {
       useAuthStore.getState().logout();
-      // Check that the mocked functions were called
       const localStorageRemove = vi.mocked(localStorage.removeItem);
       const sessionStorageRemove = vi.mocked(sessionStorage.removeItem);
       expect(localStorageRemove).toHaveBeenCalledWith('isLoggedIn');
       expect(sessionStorageRemove).toHaveBeenCalledWith('sessionManagementKey');
+      expect(vi.mocked(secureStorage.removeItem)).toHaveBeenCalledWith('managementKey');
+    });
+
+    it('keeps remembered connection info but removes sensitive data', () => {
+      useAuthStore.setState({
+        isAuthenticated: true,
+        apiBase: 'http://localhost:3000',
+        managementKey: 'test-key',
+        rememberPassword: true,
+        connectionStatus: 'connected',
+      });
+
+      useAuthStore.getState().logout();
+
+      expect(vi.mocked(secureStorage.setItem)).toHaveBeenCalledWith(
+        'apiBase',
+        'http://localhost:3000',
+        { encrypt: false }
+      );
+      expect(vi.mocked(secureStorage.removeItem)).toHaveBeenCalledWith('managementKey');
     });
   });
 
@@ -235,6 +261,34 @@ describe('useAuthStore', () => {
         managementKey: 'test-key',
       });
     });
+
+    it('persists only connection info when remember option is enabled', async () => {
+      const { useConfigStore } = await import('./useConfigStore');
+      (useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+        fetchConfig: vi.fn().mockResolvedValue(undefined),
+      });
+
+      await useAuthStore.getState().login({
+        apiBase: 'http://localhost:3000',
+        managementKey: 'test-key',
+        rememberPassword: true,
+      });
+
+      expect(vi.mocked(secureStorage.setItem)).toHaveBeenCalledWith(
+        'apiBase',
+        'http://localhost:3000',
+        { encrypt: false }
+      );
+      expect(vi.mocked(secureStorage.setItem)).not.toHaveBeenCalledWith(
+        'managementKey',
+        expect.anything(),
+        expect.anything()
+      );
+      expect(vi.mocked(sessionStorage.setItem)).not.toHaveBeenCalledWith(
+        'sessionManagementKey',
+        expect.any(String)
+      );
+    });
   });
 
   describe('checkAuth', () => {
@@ -273,6 +327,28 @@ describe('useAuthStore', () => {
       const result = await useAuthStore.getState().checkAuth();
       expect(result).toBe(false);
       expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    });
+  });
+
+  describe('restoreSession', () => {
+    it('restores remembered apiBase without restoring managementKey', async () => {
+      localStorageMock.rememberConnection = 'true';
+      vi.mocked(secureStorage.getItem).mockImplementation((key: string) => {
+        if (key === 'apiBase') return 'http://custom-server:3000';
+        return null;
+      });
+
+      const restored = await useAuthStore.getState().restoreSession();
+
+      expect(restored).toBe(false);
+      expect(useAuthStore.getState().apiBase).toBe('http://custom-server:3000');
+      expect(useAuthStore.getState().managementKey).toBe('');
+      expect(useAuthStore.getState().rememberPassword).toBe(true);
+      expect(apiClient.setConfig).toHaveBeenCalledWith({
+        apiBase: 'http://custom-server:3000',
+        managementKey: '',
+      });
+      expect(vi.mocked(secureStorage.removeItem)).toHaveBeenCalledWith('managementKey');
     });
   });
 });

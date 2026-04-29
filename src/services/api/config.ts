@@ -2,6 +2,7 @@
  * 配置相关 API
  */
 
+import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
 import type { Config } from '@/types';
 import { normalizeConfigResponse } from './transformers';
@@ -10,15 +11,15 @@ export const configApi = {
   /**
    * 获取配置（会进行字段规范化）
    */
-  async getConfig(): Promise<Config> {
-    const raw = await apiClient.get('/config');
+  async getConfig(config?: AxiosRequestConfig): Promise<Config> {
+    const raw = await apiClient.get('/config', config);
     return normalizeConfigResponse(raw);
   },
 
   /**
    * 获取原始配置（不做转换）
    */
-  getRawConfig: () => apiClient.get('/config'),
+  getRawConfig: (config?: AxiosRequestConfig) => apiClient.get('/config', config),
 
   /**
    * 更新 Debug 模式

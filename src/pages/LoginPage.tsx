@@ -77,7 +77,6 @@ export function LoginPage() {
   const login = useAuthStore((state) => state.login);
   const restoreSession = useAuthStore((state) => state.restoreSession);
   const storedBase = useAuthStore((state) => state.apiBase);
-  const storedKey = useAuthStore((state) => state.managementKey);
   const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
 
   const [apiBase, setApiBase] = useState('');
@@ -131,8 +130,8 @@ export function LoginPage() {
           }, 1500);
         } else {
           setApiBase(storedBase || detectedBase);
-          setManagementKey(storedKey || '');
-          setRememberPassword(storedRememberPassword || Boolean(storedKey));
+          setManagementKey('');
+          setRememberPassword(storedRememberPassword);
         }
       } finally {
         if (!shouldKeepSplash) {

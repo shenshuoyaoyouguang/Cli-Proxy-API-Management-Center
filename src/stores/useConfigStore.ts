@@ -57,6 +57,10 @@ let configRequestToken = 0;
 let inFlightConfigRequest: { id: number; promise: Promise<Config> } | null = null;
 let configAbortController: AbortController | null = null;
 
+const isCanceledRequestError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.name === 'AbortError' || (error as { code?: unknown }).code === 'ERR_CANCELED');
+
 const SECTION_KEYS: RawConfigSection[] = [
   'debug',
   'proxy-url',
@@ -163,14 +167,15 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       configAbortController.abort();
       configAbortController = null;
     }
-    configAbortController = new AbortController();
+    const activeAbortController = new AbortController();
+    configAbortController = activeAbortController;
 
     // 获取新数据
     set({ loading: true, error: null });
 
     const requestId = (configRequestToken += 1);
     try {
-      const requestPromise = configApi.getConfig();
+      const requestPromise = configApi.getConfig({ signal: activeAbortController.signal });
       inFlightConfigRequest = { id: requestId, promise: requestPromise };
       const data = await requestPromise;
       const now = Date.now();
@@ -206,7 +211,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       return section ? extractSectionValue(data, section) : data;
     } catch (error: unknown) {
       // Ignore AbortError — it means the request was intentionally cancelled (e.g., StrictMode double-invoke or logout)
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (isCanceledRequestError(error)) {
         return section
           ? get().config
             ? extractSectionValue(get().config, section)
@@ -230,7 +235,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (inFlightConfigRequest?.id === requestId) {
         inFlightConfigRequest = null;
       }
-      if (configAbortController && !configAbortController.signal.aborted) {
+      if (configAbortController === activeAbortController) {
         configAbortController = null;
       }
     }
@@ -324,6 +329,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       // full fetch so stale responses can't overwrite newer local changes.
       configRequestToken += 1;
       inFlightConfigRequest = null;
+      if (configAbortController) {
+        configAbortController.abort();
+        configAbortController = null;
+      }
 
       set({ cache: newCache, loading: false, error: null });
       return;

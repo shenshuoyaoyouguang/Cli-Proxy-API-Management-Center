@@ -80,7 +80,7 @@
     "custom_connection_placeholder": "例如: https://example.com:8317",
     "custom_connection_hint": "預設使用目前存取位址，若需要可手動輸入其他位址。",
     "use_current_address": "使用目前位址",
-    "remember_password_label": "記住密碼",
+    "remember_password_label": "記住連線資訊",
     "management_key_label": "管理金鑰:",
     "management_key_placeholder": "請輸入管理金鑰",
     "connect_button": "連線",

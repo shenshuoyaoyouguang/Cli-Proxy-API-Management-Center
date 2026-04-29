@@ -18,7 +18,7 @@ interface ErrorFallbackProps {
 
 function ErrorFallback({ error, onReload }: ErrorFallbackProps) {
   const { t } = useTranslation();
-  const isDevelopment = process.env.NODE_ENV === 'development';
+  const isDevelopment = import.meta.env.DEV;
 
   return (
     <div className={styles.container}>

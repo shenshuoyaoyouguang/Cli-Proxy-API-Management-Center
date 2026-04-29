@@ -20,6 +20,34 @@ export interface ApiCallResult<T = unknown> {
   body: T | null;
 }
 
+const sanitizeHeaders = (input?: Record<string, string>): Record<string, string> | undefined => {
+  if (!input) return undefined;
+
+  const entries = Object.entries(input)
+    .map(([key, value]) => [
+      String(key ?? '').replace(/[\r\n]+/g, '').trim(),
+      String(value ?? '').replace(/[\r\n]+/g, '').trim(),
+    ] as const)
+    .filter(([key, value]) => key && value);
+
+  return entries.length ? Object.fromEntries(entries) : undefined;
+};
+
+const normalizeRequestUrl = (url: string): string => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('Invalid upstream URL');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Unsupported upstream URL protocol');
+  }
+
+  return parsed.toString();
+};
+
 const normalizeBody = (input: unknown): { bodyText: string; body: unknown | null } => {
   if (input === undefined || input === null) {
     return { bodyText: '', body: null };
@@ -82,7 +110,12 @@ export const apiCallApi = {
     payload: ApiCallRequest,
     config?: AxiosRequestConfig
   ): Promise<ApiCallResult> => {
-    const response = await apiClient.post<Record<string, unknown>>('/api-call', payload, config);
+    const safePayload: ApiCallRequest = {
+      ...payload,
+      url: normalizeRequestUrl(payload.url),
+      header: sanitizeHeaders(payload.header),
+    };
+    const response = await apiClient.post<Record<string, unknown>>('/api-call', safePayload, config);
     const statusCode = Number(response?.status_code ?? response?.statusCode ?? 0);
     const header = (response?.header ?? response?.headers ?? {}) as Record<string, string[]>;
     const { bodyText, body } = normalizeBody(response?.body);

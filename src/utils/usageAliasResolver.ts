@@ -44,7 +44,7 @@ export function buildModelAliasReverseMap(
     });
   });
 
-  if (conflicts.length > 0 && process.env.NODE_ENV !== 'production') {
+  if (conflicts.length > 0 && import.meta.env.DEV) {
     console.warn('[ModelAlias] Found alias conflicts:', conflicts);
   }
 

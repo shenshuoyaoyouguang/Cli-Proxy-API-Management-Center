@@ -237,7 +237,7 @@ const sumUniqueComponentValues = (candidates: TokenCandidate[]): number => {
 export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
   const entries = flattenNumericLeaves(raw);
   if (!entries.length) {
-    if (process.env.NODE_ENV !== 'production') {
+    if (import.meta.env.DEV) {
       console.warn('[TokenNormalizer] No numeric token fields found in:', raw);
     }
     return {

@@ -2,6 +2,7 @@
  * 使用统计相关 API
  */
 
+import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
 import { computeKeyStats, KeyStats } from '@/utils/usage';
 
@@ -31,16 +32,24 @@ export const usageApi = {
   /**
    * 获取使用统计原始数据
    */
-  getUsage: () =>
-    apiClient.get<Record<string, unknown>>('/usage', { timeout: USAGE_TIMEOUT_MS }).then((response) => {
-      const isValidResponse = response && typeof response === 'object' && !Array.isArray(response);
-      const hasApis = isValidResponse && 'apis' in response && typeof response.apis === 'object';
-      const hasUsage = isValidResponse && 'usage' in response && typeof response.usage === 'object';
-      if (!hasApis && !hasUsage) {
-        throw new Error('[UsageAPI] Unexpected response structure: missing "apis" or "usage" field');
-      }
-      return response;
-    }),
+  getUsage: (config?: AxiosRequestConfig) =>
+    apiClient
+      .get<Record<string, unknown>>('/usage', {
+        timeout: USAGE_TIMEOUT_MS,
+        ...config,
+      })
+      .then((response) => {
+        const isValidResponse = response && typeof response === 'object' && !Array.isArray(response);
+        const hasApis = isValidResponse && 'apis' in response && typeof response.apis === 'object';
+        const hasUsage =
+          isValidResponse && 'usage' in response && typeof response.usage === 'object';
+        if (!hasApis && !hasUsage) {
+          throw new Error(
+            '[UsageAPI] Unexpected response structure: missing "apis" or "usage" field'
+          );
+        }
+        return response;
+      }),
 
   /**
    * 导出使用统计快照

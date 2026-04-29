@@ -3,10 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { authFilesApi } from '@/services/api';
 import { apiClient } from '@/services/api/client';
 import { useAccountHealthStore, useNotificationStore } from '@/stores';
+import { useAuthStore } from '@/stores/useAuthStore';
 import type { AuthFileItem } from '@/types';
 import { formatFileSize } from '@/utils/format';
 import { MAX_AUTH_FILE_SIZE } from '@/utils/constants';
 import { downloadBlob } from '@/utils/download';
+import { buildScopeKey } from '@/utils/helpers';
 import {
   clearRecoveredAuthFileState,
   getAuthFileErrorStatusLabel,
@@ -19,6 +21,7 @@ import {
   type AuthFileHealthStateValue,
 } from '@/features/authFiles/constants';
 import { invalidateModelsCacheForFile } from './useAuthFilesModels';
+import { invalidateAuthFilesMapCache } from '@/components/usage/hooks/useAuthFilesMap';
 
 type DeleteAllOptions = {
   filter: string;
@@ -102,6 +105,9 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
   const { showNotification, showConfirmation } = useNotificationStore();
   const healthMap = useAccountHealthStore((state) => state.healthMap);
   const removeHealthAccounts = useAccountHealthStore((state) => state.removeAccounts);
+  const apiBase = useAuthStore((state) => state.apiBase);
+  const managementKey = useAuthStore((state) => state.managementKey);
+  const authFilesScopeKey = apiBase && managementKey ? buildScopeKey(apiBase, managementKey) : '';
 
   const [files, setFiles] = useState<AuthFileItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,6 +277,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
           `${t('auth_files.upload_success')}${suffix}`,
           failed.length ? 'warning' : 'success'
         );
+        invalidateAuthFilesMapCache(authFilesScopeKey);
         removeHealthAccounts(uploadedNames);
         await loadFiles();
         await refreshKeyStats();
@@ -286,7 +293,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
       setUploading(false);
       event.target.value = '';
     },
-    [loadFiles, refreshKeyStats, removeHealthAccounts, showNotification, t]
+    [authFilesScopeKey, loadFiles, refreshKeyStats, removeHealthAccounts, showNotification, t]
   );
 
   const handleDelete = useCallback(
@@ -301,6 +308,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
           try {
             await authFilesApi.deleteFile(name);
             showNotification(t('auth_files.delete_success'), 'success');
+            invalidateAuthFilesMapCache(authFilesScopeKey);
             setFiles((prev) => prev.filter((item) => item.name !== name));
             removeHealthAccounts([name]);
             setSelectedFiles((prev) => {
@@ -320,7 +328,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         },
       });
     },
-    [removeHealthAccounts, showConfirmation, showNotification, t]
+    [authFilesScopeKey, removeHealthAccounts, showConfirmation, showNotification, t]
   );
 
   const handleDeleteAll = useCallback(
@@ -364,6 +372,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
                 .map((file) => file.name);
               await authFilesApi.deleteAll();
               showNotification(t('auth_files.delete_all_success'), 'success');
+              invalidateAuthFilesMapCache(authFilesScopeKey);
               setFiles((prev) => prev.filter((file) => isRuntimeOnlyAuthFile(file)));
               removeHealthAccounts(deletedNames);
               deselectAll();
@@ -401,6 +410,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
               }
 
               setFiles((prev) => prev.filter((f) => !deletedNames.includes(f.name)));
+              invalidateAuthFilesMapCache(authFilesScopeKey);
               removeHealthAccounts(deletedNames);
               setSelectedFiles((prev) => {
                 if (prev.size === 0) return prev;
@@ -458,7 +468,16 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         },
       });
     },
-    [deselectAll, files, healthMap, removeHealthAccounts, showConfirmation, showNotification, t]
+    [
+      authFilesScopeKey,
+      deselectAll,
+      files,
+      healthMap,
+      removeHealthAccounts,
+      showConfirmation,
+      showNotification,
+      t,
+    ]
   );
 
   const handleDownload = useCallback(
@@ -545,11 +564,11 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         });
         return next;
       });
-      setFiles((prev) =>
-        prev.map((file) =>
-          targetNames.has(file.name) ? { ...file, disabled: nextDisabled } : file
-        )
-      );
+        setFiles((prev) =>
+          prev.map((file) =>
+            targetNames.has(file.name) ? { ...file, disabled: nextDisabled } : file
+          )
+        );
 
       try {
         const results = await Promise.allSettled(
@@ -583,6 +602,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
             return file;
           })
         );
+        invalidateAuthFilesMapCache(authFilesScopeKey);
 
         if (failCount === 0) {
           showNotification(t('auth_files.batch_status_success', { count: successCount }), 'success');
@@ -606,7 +626,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         });
       }
     },
-    [deselectAll, files, showNotification, statusUpdating, t]
+    [authFilesScopeKey, deselectAll, files, showNotification, statusUpdating, t]
   );
 
   const batchDownload = useCallback(
@@ -674,6 +694,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
           if (deleted.length > 0) {
             const deletedSet = new Set(deleted);
             setFiles((prev) => prev.filter((file) => !deletedSet.has(file.name)));
+            invalidateAuthFilesMapCache(authFilesScopeKey);
             removeHealthAccounts(deleted);
           }
 
@@ -710,7 +731,7 @@ export function useAuthFilesData(options: UseAuthFilesDataOptions): UseAuthFiles
         },
       });
     },
-    [removeHealthAccounts, showConfirmation, showNotification, t]
+    [authFilesScopeKey, removeHealthAccounts, showConfirmation, showNotification, t]
   );
 
   return {

@@ -81,7 +81,7 @@
     "custom_connection_placeholder": "例如: https://example.com:8317",
     "custom_connection_hint": "默认使用自动检测结果；开发/预览环境会回退到 8317，若后端不在该端口可手动输入。",
     "use_current_address": "使用当前地址",
-    "remember_password_label": "记住密码",
+    "remember_password_label": "记住连接信息",
     "management_key_label": "管理密钥:",
     "management_key_placeholder": "请输入管理密钥",
     "connect_button": "连接",

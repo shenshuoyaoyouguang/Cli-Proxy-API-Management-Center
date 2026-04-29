@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
   const showNotificationSpy = vi.fn();
   const showConfirmationSpy = vi.fn();
   const invalidateModelsCacheForFileSpy = vi.fn();
+  const invalidateAuthFilesMapCacheSpy = vi.fn();
   const accountHealthStoreState = {
     healthMap: {},
     removeAccounts: removeAccountsSpy,
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => {
     showNotificationSpy,
     showConfirmationSpy,
     invalidateModelsCacheForFileSpy,
+    invalidateAuthFilesMapCacheSpy,
     accountHealthStoreState,
     notificationStoreState,
   };
@@ -47,6 +49,7 @@ const {
   showNotificationSpy: ReturnType<typeof vi.fn>;
   showConfirmationSpy: ReturnType<typeof vi.fn>;
   invalidateModelsCacheForFileSpy: ReturnType<typeof vi.fn>;
+  invalidateAuthFilesMapCacheSpy: ReturnType<typeof vi.fn>;
   accountHealthStoreState: {
     healthMap: AccountHealthMap;
     removeAccounts: ReturnType<typeof vi.fn>;
@@ -54,6 +57,10 @@ const {
 };
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: {
+    type: '3rdParty',
+    init: () => undefined,
+  },
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key,
   }),
@@ -72,8 +79,20 @@ vi.mock('@/stores', () => ({
   ) => (typeof selector === 'function' ? selector(mocks.notificationStoreState) : mocks.notificationStoreState),
 }));
 
+vi.mock('@/stores/useAuthStore', () => ({
+  useAuthStore: <T,>(selector: (state: { apiBase: string; managementKey: string }) => T) =>
+    selector({
+      apiBase: 'http://localhost:3000',
+      managementKey: 'test-key',
+    }),
+}));
+
 vi.mock('./useAuthFilesModels', () => ({
   invalidateModelsCacheForFile: mocks.invalidateModelsCacheForFileSpy,
+}));
+
+vi.mock('@/components/usage/hooks/useAuthFilesMap', () => ({
+  invalidateAuthFilesMapCache: mocks.invalidateAuthFilesMapCacheSpy,
 }));
 
 import { useAuthFilesData, type UseAuthFilesDataResult } from './useAuthFilesData';

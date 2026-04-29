@@ -33,6 +33,11 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
 
   const loadingRef = useRef(false);
   const requestIdRef = useRef(0);
+  const queuedRequestRef = useRef<{
+    targets: AuthFileItem[];
+    scope: QuotaScope;
+    setLoading: (loading: boolean, scope?: QuotaScope | null) => void;
+  } | null>(null);
 
   const loadQuota = useCallback(
     async (
@@ -40,7 +45,22 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
       scope: QuotaScope,
       setLoading: (loading: boolean, scope?: QuotaScope | null) => void
     ) => {
-      if (loadingRef.current) return;
+      let queuedRequest:
+        | {
+            targets: AuthFileItem[];
+            scope: QuotaScope;
+            setLoading: (loading: boolean, scope?: QuotaScope | null) => void;
+          }
+        | null = null;
+
+      if (loadingRef.current) {
+        queuedRequestRef.current = {
+          targets: [...targets],
+          scope,
+          setLoading,
+        };
+        return;
+      }
       loadingRef.current = true;
       const requestId = ++requestIdRef.current;
       setLoading(true, scope);
@@ -98,10 +118,17 @@ export function useQuotaLoader<TState, TData>(config: QuotaConfig<TState, TData>
 
         await reportQuotaHealthResults(results);
       } finally {
-        if (requestId === requestIdRef.current) {
+        loadingRef.current = false;
+        queuedRequest = queuedRequestRef.current;
+        if (queuedRequest) {
+          queuedRequestRef.current = null;
+        } else if (requestId === requestIdRef.current) {
           setLoading(false);
-          loadingRef.current = false;
         }
+      }
+
+      if (queuedRequest) {
+        void loadQuota(queuedRequest.targets, queuedRequest.scope, queuedRequest.setLoading);
       }
     },
     [config, setQuota, t]

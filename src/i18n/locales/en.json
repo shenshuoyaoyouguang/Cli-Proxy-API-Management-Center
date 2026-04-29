@@ -81,7 +81,7 @@
     "custom_connection_placeholder": "Eg: https://example.com:8317",
     "custom_connection_hint": "By default the current URL is used. Override it here if needed.",
     "use_current_address": "Use Current URL",
-    "remember_password_label": "Remember password",
+    "remember_password_label": "Remember connection info",
     "management_key_label": "Management Key:",
     "management_key_placeholder": "Enter the management key",
     "connect_button": "Connect",

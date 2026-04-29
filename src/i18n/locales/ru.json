@@ -78,7 +78,7 @@
     "custom_connection_placeholder": "Напр.: https://example.com:8317",
     "custom_connection_hint": "По умолчанию используется текущий URL. При необходимости замените его.",
     "use_current_address": "Использовать текущий URL",
-    "remember_password_label": "Запомнить пароль",
+    "remember_password_label": "Запомнить параметры подключения",
     "management_key_label": "Ключ управления:",
     "management_key_placeholder": "Введите ключ управления",
     "connect_button": "Подключиться",

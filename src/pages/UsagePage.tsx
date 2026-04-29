@@ -243,7 +243,7 @@ export function UsagePage() {
   });
 
   const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
-    useSparklines({ usage: filteredUsage, loading, nowMs });
+    useSparklines({ usage: filteredUsage, loading, modelPrices, nowMs });
 
   const { subscriptionTier, loading: subscriptionTierLoading } =
     useUsageSubscriptionTier(authFiles);

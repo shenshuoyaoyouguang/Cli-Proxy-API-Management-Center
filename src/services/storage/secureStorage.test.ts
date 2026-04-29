@@ -1,7 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock encryption module - encryptData is async but secureStorage calls it without await
-// This means secureStorage stores Promise objects, not encrypted strings
 vi.mock('@/utils/encryption', () => ({
   encryptData: vi.fn((value: string) => Promise.resolve(`enc::v2::${btoa(value)}`)),
   decryptData: vi.fn((payload: string) => {
@@ -48,6 +46,12 @@ describe('SecureStorageService', () => {
     it('stores data to localStorage', async () => {
       await secureStorage.setItem('key', 'value');
       expect(localStorage.setItem).toHaveBeenCalled();
+    });
+
+    it('does not persist any plaintext mirror for encrypted values', async () => {
+      await secureStorage.setItem('key', 'value');
+      expect(storage['__plain__::key']).toBeUndefined();
+      expect(storage['key']).toBe(`enc::v2::${btoa('"value"')}`);
     });
 
     it('stores plaintext when encrypt is false', async () => {
@@ -129,8 +133,10 @@ describe('SecureStorageService', () => {
   describe('removeItem', () => {
     it('removes item from storage', () => {
       storage['key'] = 'value';
+      storage['__plain__::key'] = '"value"';
       secureStorage.removeItem('key');
       expect(localStorage.removeItem).toHaveBeenCalledWith('key');
+      expect(localStorage.removeItem).toHaveBeenCalledWith('__plain__::key');
     });
   });
 

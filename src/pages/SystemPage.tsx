@@ -218,7 +218,14 @@ export function SystemPage() {
       onConfirm: () => {
         auth.logout();
         if (typeof localStorage === 'undefined') return;
-        const keysToRemove = [STORAGE_KEY_AUTH, 'isLoggedIn', 'apiBase', 'apiUrl', 'managementKey'];
+        const keysToRemove = [
+          STORAGE_KEY_AUTH,
+          'isLoggedIn',
+          'apiBase',
+          'apiUrl',
+          'managementKey',
+          'rememberConnection',
+        ];
         keysToRemove.forEach((key) => localStorage.removeItem(key));
         showNotification(t('notification.login_storage_cleared'), 'success');
       },

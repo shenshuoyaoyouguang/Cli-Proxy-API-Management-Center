@@ -1,9 +1,8 @@
 /**
  * 安全存储服务
  * 基于原项目 src/utils/secure-storage.js
- * 注意：由于 Zustand persist middleware 要求同步存储接口，
- * setItem 保持同步但加密过程异步执行（fire-and-forget）。
- * 首次写入可能是明文，加密完成后会自动覆盖。
+ * 注意：由于部分调用方仍依赖同步读取，v2 AES-GCM 数据无法同步解密。
+ * 因此该服务不再保留任何明文镜像，敏感值不应再放入 Web Storage。
  */
 
 import { encryptData, isEncrypted } from '@/utils/encryption';
@@ -23,21 +22,16 @@ class SecureStorageService {
 
   private decodeStoredValue(
     raw: string,
-    encrypt: boolean,
-    key: string
+    encrypt: boolean
   ): { serialized: string; legacyEncrypted: boolean } | null {
     if (!encrypt) {
       return { serialized: raw, legacyEncrypted: false };
     }
 
     // 注意：decryptData 是异步的，但 Zustand persist 需要同步接口。
-    // 对于 v2 数据，尝试从明文副本恢复。
+    // 对于 v2 数据，无法同步解密，因此直接返回 null。
     if (raw.startsWith('enc::v2::')) {
-      const plaintext = localStorage.getItem(`__plain__::${key}`);
-      if (plaintext) {
-        return { serialized: plaintext, legacyEncrypted: false };
-      }
-      console.warn('V2 encrypted data cannot be decoded synchronously, no plaintext fallback');
+      console.warn('V2 encrypted data cannot be decoded synchronously');
       return null;
     }
 
@@ -87,8 +81,7 @@ class SecureStorageService {
   /**
    * 存储数据
    * 注意：由于 Zustand persist 需要同步接口，加密过程异步执行。
-   * 加密后明文以 plain:: 前缀保留确保 v2 异步加密场景下可回退。
-   * 同时在 __plain__::key 存储明文副本以支持 v2 解密失败时回退。
+   * 该方法不会保留任何明文镜像，敏感值不应依赖同步恢复。
    */
   setItem(key: string, value: unknown, options: StorageOptions = {}): void {
     const { encrypt = true } = options;
@@ -101,14 +94,13 @@ class SecureStorageService {
     const stringValue = JSON.stringify(value);
 
     if (encrypt) {
-      localStorage.setItem(key, `plain::${stringValue}`);
-      localStorage.setItem(`__plain__::${key}`, stringValue);
+      localStorage.removeItem(key);
       void encryptData(stringValue)
         .then((encrypted) => {
           localStorage.setItem(key, encrypted);
         })
         .catch((error) => {
-          console.error('Encryption failed, data stored as plaintext:', error);
+          console.error('Encryption failed, encrypted data was not persisted:', error);
         });
     } else {
       localStorage.setItem(key, stringValue);
@@ -124,7 +116,7 @@ class SecureStorageService {
     const raw = localStorage.getItem(key);
     if (raw === null) return null;
 
-    const decoded = this.decodeStoredValue(raw, encrypt, key);
+    const decoded = this.decodeStoredValue(raw, encrypt);
     if (!decoded) {
       return null;
     }
@@ -151,6 +143,7 @@ class SecureStorageService {
    */
   removeItem(key: string): void {
     localStorage.removeItem(key);
+    localStorage.removeItem(`__plain__::${key}`);
   }
 
   /**

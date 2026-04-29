@@ -40,6 +40,10 @@ let usageRequestToken = 0;
 let inFlightUsageRequest: { id: number; scopeKey: string; promise: Promise<void> } | null = null;
 let usageAbortController: AbortController | null = null;
 
+const isCanceledRequestError = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.name === 'AbortError' || (error as { code?: unknown }).code === 'ERR_CANCELED');
+
 const getErrorMessage = (error: unknown) =>
   error instanceof Error
     ? error.message
@@ -100,12 +104,17 @@ const pickRicherUsageSnapshot = (
   if (!primary) return secondary;
   if (!secondary) return primary;
 
-  if (secondary.usageDetails.length !== primary.usageDetails.length) {
-    return secondary.usageDetails.length > primary.usageDetails.length ? secondary : primary;
+  if (secondary.detailCount !== primary.detailCount) {
+    return secondary.detailCount > primary.detailCount ? secondary : primary;
   }
 
   return (secondary.lastRefreshedAt ?? 0) > (primary.lastRefreshedAt ?? 0) ? secondary : primary;
 };
+
+const hasMeaningfulUsageSnapshot = (
+  snapshot: PersistedUsageStatsCache | null
+): snapshot is PersistedUsageStatsCache =>
+  Boolean(snapshot && (snapshot.usage !== null || snapshot.detailCount > 0));
 
 const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | null => {
   if (typeof localStorage === 'undefined' || !scopeKey) {
@@ -240,13 +249,17 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       usageAbortController.abort();
       usageAbortController = null;
     }
-    usageAbortController = new AbortController();
+    const activeAbortController = new AbortController();
+    usageAbortController = activeAbortController;
 
     const persistedCache = readPersistedUsageStats(scopeKey);
-    const autoPersistCache = toPersistedUsageStatsCache(
+    const rawAutoPersistCache = toPersistedUsageStatsCache(
       scopeKey,
       autoPersistService.readBootstrapSnapshot(scopeKey)
     );
+    const autoPersistCache = hasMeaningfulUsageSnapshot(rawAutoPersistCache)
+      ? rawAutoPersistCache
+      : null;
 
     const cachedLastRefreshedAt = scopeChanged
       ? (autoPersistCache?.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null)
@@ -301,7 +314,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
     const requestPromise = (async () => {
       try {
-        const usageResponse = await usageApi.getUsage();
+        const usageResponse = await usageApi.getUsage({ signal: activeAbortController.signal });
         const rawUsage = usageResponse?.usage ?? usageResponse;
         const usage =
           rawUsage && typeof rawUsage === 'object' ? (rawUsage as UsageStatsSnapshot) : null;
@@ -341,7 +354,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         });
       } catch (error: unknown) {
         // Ignore AbortError — it means the request was intentionally cancelled (StrictMode or logout)
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (isCanceledRequestError(error)) {
           return;
         }
         if (requestId !== usageRequestToken) return;
@@ -356,7 +369,9 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         if (inFlightUsageRequest?.id === requestId) {
           inFlightUsageRequest = null;
         }
-        usageAbortController = null;
+        if (usageAbortController === activeAbortController) {
+          usageAbortController = null;
+        }
       }
     })();
 

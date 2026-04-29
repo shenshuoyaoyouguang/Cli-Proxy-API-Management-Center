@@ -20,6 +20,17 @@ const emptyEntry = (): AuthFilesCacheEntry => ({
   authFileMap: new Map<string, CredentialInfo>()
 });
 
+export const invalidateAuthFilesMapCache = (scopeKey?: string) => {
+  if (!scopeKey) {
+    authFilesCache.clear();
+    authFilesInFlight.clear();
+    return;
+  }
+
+  authFilesCache.delete(scopeKey);
+  authFilesInFlight.delete(scopeKey);
+};
+
 const getScopeEntry = async (scopeKey: string): Promise<AuthFilesCacheEntry> => {
   const cached = authFilesCache.get(scopeKey);
   const now = Date.now();

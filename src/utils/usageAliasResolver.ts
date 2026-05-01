@@ -35,10 +35,10 @@ export function buildModelAliasReverseMap(
       const name = entry.name?.trim();
       const alias = entry.alias?.trim();
 
-      // 只有当 name 和 alias 都存在且不同时，才建立映射
       if (name && alias && name !== alias) {
         if (reverseMap.has(alias) && reverseMap.get(alias) !== name) {
           conflicts.push(`Alias conflict: ${alias} maps to both ${reverseMap.get(alias)} and ${name}`);
+          return;
         }
         reverseMap.set(alias, name);
       }
@@ -46,7 +46,7 @@ export function buildModelAliasReverseMap(
   });
 
   if (conflicts.length > 0 && import.meta.env.DEV) {
-    console.warn('[ModelAlias] Found alias conflicts:', conflicts);
+    console.warn('[ModelAlias] Found alias conflicts (skipped):', conflicts);
   }
 
   return reverseMap;
@@ -143,6 +143,7 @@ export function buildProviderAliasReverseMap(providers: ProviderAliasSource[]): 
       if (name && alias && alias !== name) {
         if (reverseMap.has(alias) && reverseMap.get(alias) !== name) {
           conflicts.push(`Provider alias conflict: ${alias} maps to both ${reverseMap.get(alias)} and ${name}`);
+          return;
         }
         reverseMap.set(alias, name);
       }
@@ -150,7 +151,7 @@ export function buildProviderAliasReverseMap(providers: ProviderAliasSource[]): 
   });
 
   if (conflicts.length > 0 && import.meta.env.DEV) {
-    console.warn('[ModelAlias] Found provider alias conflicts:', conflicts);
+    console.warn('[ModelAlias] Found provider alias conflicts (skipped):', conflicts);
   }
 
   return reverseMap;

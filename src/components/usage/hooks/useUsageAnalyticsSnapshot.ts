@@ -13,6 +13,10 @@ import {
   type UsageTimeRange
 } from '@/utils/usage';
 import { buildSourceInfoMap } from '@/utils/sourceResolver';
+import {
+  buildProviderAliasReverseMap,
+  mergeAliasReverseMaps
+} from '@/utils/usageAliasResolver';
 import type { UsagePayload } from './useUsageData';
 import {
   createCredentialEfficiencyRows,
@@ -86,16 +90,28 @@ export function useUsageAnalyticsSnapshot({
   includeHealthRequestEventRows = false,
   aliasReverseMap
 }: UseUsageAnalyticsSnapshotOptions): UseUsageAnalyticsSnapshotReturn {
-  // 第一步：时间范围过滤
+  const mergedAliasReverseMap = useMemo(() => {
+    const providerMap = buildProviderAliasReverseMap([
+      ...geminiKeys,
+      ...claudeConfigs,
+      ...codexConfigs,
+      ...vertexConfigs,
+      ...openaiProviders,
+    ]);
+    if (!providerMap.size && (!aliasReverseMap || !aliasReverseMap.size)) {
+      return new Map<string, string>();
+    }
+    return mergeAliasReverseMaps(providerMap, aliasReverseMap ?? new Map());
+  }, [geminiKeys, claudeConfigs, codexConfigs, vertexConfigs, openaiProviders, aliasReverseMap]);
+
   const filteredUsage = useMemo(
     () => (usage ? filterUsageByTimeRange(usage, timeRange, nowMs) : null),
     [usage, timeRange, nowMs]
   );
 
-  // 第二步：模型名标准化 - 统一入口，所有下游消费都基于 canonicalUsage
   const canonicalUsage = useMemo(
-    () => filteredUsage ? normalizeUsageModelNames(filteredUsage, aliasReverseMap ?? new Map()) : null,
-    [filteredUsage, aliasReverseMap]
+    () => filteredUsage ? normalizeUsageModelNames(filteredUsage, mergedAliasReverseMap) : null,
+    [filteredUsage, mergedAliasReverseMap]
   );
 
   const filteredDetails = useMemo(
@@ -103,10 +119,9 @@ export function useUsageAnalyticsSnapshot({
     [usageDetails, timeRange, nowMs]
   );
 
-  // 应用别名反向映射，将别名模型名解析为原始模型名
   const resolvedDetails = useMemo(
-    () => resolveModelNameInDetails(filteredDetails, aliasReverseMap ?? new Map()),
-    [filteredDetails, aliasReverseMap]
+    () => resolveModelNameInDetails(filteredDetails, mergedAliasReverseMap),
+    [filteredDetails, mergedAliasReverseMap]
   );
 
   // 所有聚合函数现在全部基于 canonicalUsage，确保口径100%统一

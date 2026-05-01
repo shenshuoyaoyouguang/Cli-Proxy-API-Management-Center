@@ -1,8 +1,9 @@
 /**
  * Usage 别名解析工具
- * 将 OAuth 别名映射反向转换为 alias -> originalName 的查找表
+ * 将 OAuth 别名映射和 Provider Config 别名映射反向转换为 alias -> originalName 的查找表
  */
 
+import type { ModelAlias } from '@/types/provider';
 import type { OAuthModelAliasEntry } from '@/types/oauth';
 import type { UsageDetail } from './usage';
 
@@ -114,4 +115,59 @@ export function createNormalizationDiagnostics(): NormalizationDiagnostics {
     hitCount: 0,
     missCount: 0,
   };
+}
+
+export interface ProviderAliasSource {
+  models?: ModelAlias[];
+}
+
+/**
+ * 从 Provider Config 中的 models[].alias 构建反向映射表
+ * 将 alias 映射回 name（原始模型名）
+ *
+ * @param providers - 包含 models 字段的 Provider 配置数组
+ * @returns alias -> originalName 的映射表
+ */
+export function buildProviderAliasReverseMap(providers: ProviderAliasSource[]): Map<string, string> {
+  const reverseMap = new Map<string, string>();
+  const conflicts: string[] = [];
+
+  providers.forEach((provider) => {
+    const models = provider.models;
+    if (!Array.isArray(models)) return;
+
+    models.forEach((model) => {
+      const name = model.name?.trim();
+      const alias = model.alias?.trim();
+
+      if (name && alias && alias !== name) {
+        if (reverseMap.has(alias) && reverseMap.get(alias) !== name) {
+          conflicts.push(`Provider alias conflict: ${alias} maps to both ${reverseMap.get(alias)} and ${name}`);
+        }
+        reverseMap.set(alias, name);
+      }
+    });
+  });
+
+  if (conflicts.length > 0 && import.meta.env.DEV) {
+    console.warn('[ModelAlias] Found provider alias conflicts:', conflicts);
+  }
+
+  return reverseMap;
+}
+
+/**
+ * 合并多个反向映射表，后面的映射优先级更高（覆盖前面的）
+ *
+ * @param maps - 要合并的反向映射表数组
+ * @returns 合并后的反向映射表
+ */
+export function mergeAliasReverseMaps(...maps: Map<string, string>[]): Map<string, string> {
+  const merged = new Map<string, string>();
+  maps.forEach((map) => {
+    map.forEach((value, key) => {
+      merged.set(key, value);
+    });
+  });
+  return merged;
 }

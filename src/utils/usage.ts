@@ -608,30 +608,26 @@ export function normalizeUsageModelNames<T>(
     Object.entries(models).forEach(([modelName, modelEntry]) => {
       if (!isRecord(modelEntry)) return;
 
-      // 解析模型名
       const canonicalName = aliasReverseMap.get(modelName) ?? modelName;
 
-      // 合并到 canonical 条目
       if (!normalizedModels[canonicalName]) {
         normalizedModels[canonicalName] = {
-          total_requests: 0,
-          success_count: 0,
-          failure_count: 0,
-          total_tokens: 0,
-          details: [],
           ...modelEntry,
+          total_requests: Number(modelEntry.total_requests) || 0,
+          success_count: Number(modelEntry.success_count) || 0,
+          failure_count: Number(modelEntry.failure_count) || 0,
+          total_tokens: Number(modelEntry.total_tokens) || 0,
+          details: Array.isArray(modelEntry.details) ? [...modelEntry.details] : [],
         };
+      } else {
+        normalizedModels[canonicalName].total_requests += Number(modelEntry.total_requests) || 0;
+        normalizedModels[canonicalName].success_count += Number(modelEntry.success_count) || 0;
+        normalizedModels[canonicalName].failure_count += Number(modelEntry.failure_count) || 0;
+        normalizedModels[canonicalName].total_tokens += Number(modelEntry.total_tokens) || 0;
+
+        const details = Array.isArray(modelEntry.details) ? modelEntry.details : [];
+        normalizedModels[canonicalName].details.push(...details);
       }
-
-      // 累加统计值
-      normalizedModels[canonicalName].total_requests += Number(modelEntry.total_requests) || 0;
-      normalizedModels[canonicalName].success_count += Number(modelEntry.success_count) || 0;
-      normalizedModels[canonicalName].failure_count += Number(modelEntry.failure_count) || 0;
-      normalizedModels[canonicalName].total_tokens += Number(modelEntry.total_tokens) || 0;
-
-      // 合并详情
-      const details = Array.isArray(modelEntry.details) ? modelEntry.details : [];
-      normalizedModels[canonicalName].details.push(...details);
     });
 
     normalizedApis[apiName] = {

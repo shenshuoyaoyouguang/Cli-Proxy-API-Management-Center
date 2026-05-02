@@ -1,5 +1,15 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import type { Config } from '@/types';
+import type { Config, RawConfigSection } from '@/types';
+
+type MockConfig = Partial<Config>;
+
+const createMockConfig = (overrides: MockConfig = {}): Config => ({
+  debug: false,
+  proxyUrl: 'http://localhost:8318',
+  requestRetry: 3,
+  raw: {},
+  ...overrides,
+});
 
 // Mock dependencies
 vi.mock('@/services/api/config', () => ({
@@ -47,14 +57,14 @@ describe('useConfigStore', () => {
 
   describe('fetchConfig', () => {
     it('fetches full config successfully', async () => {
-      const mockConfig = {
+      const mockConfig = createMockConfig({
         debug: false,
         proxyUrl: 'http://localhost:8318',
         requestRetry: 3,
         raw: { debug: false },
-      };
+      });
 
-      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig as any);
+      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig);
 
       const result = await useConfigStore.getState().fetchConfig();
 
@@ -65,14 +75,14 @@ describe('useConfigStore', () => {
     });
 
     it('fetches specific section from config', async () => {
-      const mockConfig = {
+      const mockConfig = createMockConfig({
         debug: true,
         proxyUrl: 'http://localhost:8318',
         requestRetry: 3,
         raw: { debug: true },
-      };
+      });
 
-      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig as any);
+      vi.mocked(configApi.getConfig).mockResolvedValue(mockConfig);
 
       const result = await useConfigStore.getState().fetchConfig('debug');
 
@@ -109,7 +119,7 @@ describe('useConfigStore', () => {
   describe('updateConfigValue', () => {
     it('updates boolean config value (debug)', () => {
       useConfigStore.setState({
-        config: { debug: false, raw: { debug: false } } as any,
+        config: createMockConfig({ debug: false, raw: { debug: false } }),
       });
 
       useConfigStore.getState().updateConfigValue('debug', true);
@@ -119,7 +129,7 @@ describe('useConfigStore', () => {
 
     it('updates string config value (proxy-url)', () => {
       useConfigStore.setState({
-        config: { proxyUrl: '', raw: { 'proxy-url': '' } } as any,
+        config: createMockConfig({ proxyUrl: '', raw: { 'proxy-url': '' } }),
       });
 
       useConfigStore.getState().updateConfigValue('proxy-url', 'http://proxy:8080');
@@ -129,7 +139,7 @@ describe('useConfigStore', () => {
 
     it('updates number config value (request-retry)', () => {
       useConfigStore.setState({
-        config: { requestRetry: 3, raw: { 'request-retry': 3 } } as any,
+        config: createMockConfig({ requestRetry: 3, raw: { 'request-retry': 3 } }),
       });
 
       useConfigStore.getState().updateConfigValue('request-retry', 5);
@@ -139,10 +149,10 @@ describe('useConfigStore', () => {
 
     it('updates raw config section', () => {
       useConfigStore.setState({
-        config: { raw: {} } as any,
+        config: createMockConfig({ raw: {} }),
       });
 
-      useConfigStore.getState().updateConfigValue('custom-section' as any, { foo: 'bar' });
+      useConfigStore.getState().updateConfigValue('custom-section' as RawConfigSection, { foo: 'bar' });
 
       const config = useConfigStore.getState().config;
       expect(config?.raw).toHaveProperty('custom-section', { foo: 'bar' });
@@ -152,7 +162,7 @@ describe('useConfigStore', () => {
       const cache = new Map();
       cache.set('debug', { data: false, timestamp: Date.now() });
       useConfigStore.setState({
-        config: { debug: false, raw: { debug: false } } as any,
+        config: createMockConfig({ debug: false, raw: { debug: false } }),
         cache,
       });
 

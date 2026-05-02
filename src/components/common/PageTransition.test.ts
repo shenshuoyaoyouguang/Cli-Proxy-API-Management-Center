@@ -6,7 +6,7 @@ import {
   buildIosTransform,
   clearLayerStyles,
   TRANSITION_CONSTANTS,
-} from './PageTransition';
+} from './transitionUtils';
 
 describe('PageTransition Utilities', () => {
   describe('TRANSITION_CONSTANTS', () => {

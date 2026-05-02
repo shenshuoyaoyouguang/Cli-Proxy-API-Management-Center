@@ -13,28 +13,17 @@ import { useAuthStore, useNotificationStore } from '@/stores';
 import { authFilesApi } from '@/services/api';
 import type { AuthFileItem, OAuthModelAliasEntry } from '@/types';
 import { generateId } from '@/utils/helpers';
+import {
+  buildProviderOptions,
+  extractErrorStatus,
+  getTypeLabel,
+  normalizeProviderKey,
+} from '@/features/authFiles/constants';
 import styles from './AuthFilesOAuthModelAliasEditPage.module.scss';
 
 type AuthFileModelItem = { id: string; display_name?: string; type?: string; owned_by?: string };
-
 type LocationState = { fromAuthFiles?: boolean } | null;
-
 type OAuthModelMappingFormEntry = OAuthModelAliasEntry & { id: string };
-
-const OAUTH_PROVIDER_PRESETS = [
-  'gemini-cli',
-  'vertex',
-  'aistudio',
-  'antigravity',
-  'claude',
-  'codex',
-  'qwen',
-  'kimi',
-];
-
-const OAUTH_PROVIDER_EXCLUDES = new Set(['all', 'unknown', 'empty']);
-
-const normalizeProviderKey = (value: string) => value.trim().toLowerCase();
 
 const buildEmptyMappingEntry = (): OAuthModelMappingFormEntry => ({
   id: generateId(),
@@ -85,38 +74,13 @@ export function AuthFilesOAuthModelAliasEditPage() {
     setProvider(providerFromParams);
   }, [providerFromParams]);
 
-  const providerOptions = useMemo(() => {
-    const extraProviders = new Set<string>();
-    Object.keys(excluded).forEach((value) => extraProviders.add(value));
-    Object.keys(modelAlias).forEach((value) => extraProviders.add(value));
-    files.forEach((file) => {
-      if (typeof file.type === 'string') {
-        extraProviders.add(file.type);
-      }
-      if (typeof file.provider === 'string') {
-        extraProviders.add(file.provider);
-      }
-    });
+  const providerOptions = useMemo(
+    () => buildProviderOptions({ excluded, modelAlias, files }),
+    [excluded, files, modelAlias]
+  );
 
-    const normalizedExtras = Array.from(extraProviders)
-      .map((value) => value.trim())
-      .filter((value) => value && !OAUTH_PROVIDER_EXCLUDES.has(value.toLowerCase()));
-
-    const baseSet = new Set(OAUTH_PROVIDER_PRESETS.map((value) => value.toLowerCase()));
-    const extraList = normalizedExtras
-      .filter((value) => !baseSet.has(value.toLowerCase()))
-      .sort((a, b) => a.localeCompare(b));
-
-    return [...OAUTH_PROVIDER_PRESETS, ...extraList];
-  }, [excluded, files, modelAlias]);
-
-  const getTypeLabel = useCallback(
-    (type: string): string => {
-      const key = `auth_files.filter_${type}`;
-      const translated = t(key);
-      if (translated !== key) return translated;
-      return type.charAt(0).toUpperCase() + type.slice(1);
-    },
+  const getTypeLabelCallback = useCallback(
+    (type: string): string => getTypeLabel(t, type),
     [t]
   );
 
@@ -185,10 +149,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
         }
 
         const err = aliasResult.status === 'rejected' ? aliasResult.reason : null;
-        const status =
-          typeof err === 'object' && err !== null && 'status' in err
-            ? (err as { status?: unknown }).status
-            : undefined;
+        const status = extractErrorStatus(err);
 
         if (status === 404) {
           setModelAliasUnsupported(true);
@@ -241,10 +202,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const status =
-          typeof err === 'object' && err !== null && 'status' in err
-            ? (err as { status?: unknown }).status
-            : undefined;
+        const status = extractErrorStatus(err);
 
         if (status === 404) {
           setModelsList([]);
@@ -404,7 +362,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
                         onClick={() => updateProvider(option)}
                         disabled={disableControls || saving}
                       >
-                        {getTypeLabel(option)}
+                        {getTypeLabelCallback(option)}
                       </button>
                     );
                   })}

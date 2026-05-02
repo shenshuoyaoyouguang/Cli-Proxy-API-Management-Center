@@ -46,6 +46,19 @@ export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
   'kimi',
 ]);
 
+export const OAUTH_PROVIDER_PRESETS = [
+  'gemini-cli',
+  'vertex',
+  'aistudio',
+  'antigravity',
+  'claude',
+  'codex',
+  'qwen',
+  'kimi',
+] as const;
+
+export const OAUTH_PROVIDER_EXCLUDES = new Set(['all', 'unknown', 'empty']);
+
 export const MIN_CARD_PAGE_SIZE = 3;
 export const MAX_CARD_PAGE_SIZE = 30;
 export const AUTH_FILE_REFRESH_WARNING_MS = 24 * 60 * 60 * 1000;
@@ -137,6 +150,49 @@ export const resolveQuotaErrorMessage = (
 };
 
 export const normalizeProviderKey = (value: string) => value.trim().toLowerCase();
+
+/**
+ * 从错误对象中提取 HTTP 状态码
+ * 用于判断是否为 404 (不支持) 错误
+ */
+export const extractErrorStatus = (err: unknown): number | undefined => {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === 'number' ? status : undefined;
+};
+
+type ProviderOptionsParams = {
+  excluded: Record<string, string[]>;
+  modelAlias: Record<string, unknown[]>;
+  files?: { type?: string; provider?: string }[];
+};
+
+/**
+ * 构建 Provider 下拉选项列表
+ * 合并预设 Provider、已排除的 Provider 和文件中发现的 Provider
+ */
+export const buildProviderOptions = (params: ProviderOptionsParams): string[] => {
+  const { excluded, modelAlias, files = [] } = params;
+  const extraProviders = new Set<string>();
+
+  Object.keys(excluded).forEach((value) => extraProviders.add(value));
+  Object.keys(modelAlias).forEach((value) => extraProviders.add(value));
+  files.forEach((file) => {
+    if (typeof file.type === 'string') extraProviders.add(file.type);
+    if (typeof file.provider === 'string') extraProviders.add(file.provider);
+  });
+
+  const normalizedExtras = Array.from(extraProviders)
+    .map((value) => value.trim())
+    .filter((value) => value && !OAUTH_PROVIDER_EXCLUDES.has(value.toLowerCase()));
+
+  const baseSet = new Set(OAUTH_PROVIDER_PRESETS.map((p) => p.toLowerCase()));
+  const extraList = normalizedExtras
+    .filter((value) => !baseSet.has(value.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b));
+
+  return [...OAUTH_PROVIDER_PRESETS, ...extraList];
+};
 
 export const getAuthFileStatusMessage = (file: AuthFileItem): string => {
   const raw = file['status_message'] ?? file.statusMessage;

@@ -13,26 +13,16 @@ import { useEdgeSwipeBack } from '@/hooks/useEdgeSwipeBack';
 import { useAuthStore, useNotificationStore } from '@/stores';
 import { authFilesApi } from '@/services/api';
 import type { AuthFileItem, OAuthModelAliasEntry } from '@/types';
+import {
+  buildProviderOptions,
+  extractErrorStatus,
+  getTypeLabel,
+  normalizeProviderKey,
+} from '@/features/authFiles/constants';
 import styles from './AuthFilesOAuthExcludedEditPage.module.scss';
 
 type AuthFileModelItem = { id: string; display_name?: string; type?: string; owned_by?: string };
-
 type LocationState = { fromAuthFiles?: boolean } | null;
-
-const OAUTH_PROVIDER_PRESETS = [
-  'gemini-cli',
-  'vertex',
-  'aistudio',
-  'antigravity',
-  'claude',
-  'codex',
-  'qwen',
-  'kimi',
-];
-
-const OAUTH_PROVIDER_EXCLUDES = new Set(['all', 'unknown', 'empty']);
-
-const normalizeProviderKey = (value: string) => value.trim().toLowerCase();
 
 export function AuthFilesOAuthExcludedEditPage() {
   const { t } = useTranslation();
@@ -62,39 +52,9 @@ export function AuthFilesOAuthExcludedEditPage() {
     setProvider(providerFromParams);
   }, [providerFromParams]);
 
-  const providerOptions = useMemo(() => {
-    const extraProviders = new Set<string>();
-    Object.keys(excluded).forEach((value) => extraProviders.add(value));
-    Object.keys(modelAlias).forEach((value) => extraProviders.add(value));
-    files.forEach((file) => {
-      if (typeof file.type === 'string') {
-        extraProviders.add(file.type);
-      }
-      if (typeof file.provider === 'string') {
-        extraProviders.add(file.provider);
-      }
-    });
-
-    const normalizedExtras = Array.from(extraProviders)
-      .map((value) => value.trim())
-      .filter((value) => value && !OAUTH_PROVIDER_EXCLUDES.has(value.toLowerCase()));
-
-    const baseSet = new Set(OAUTH_PROVIDER_PRESETS.map((value) => value.toLowerCase()));
-    const extraList = normalizedExtras
-      .filter((value) => !baseSet.has(value.toLowerCase()))
-      .sort((a, b) => a.localeCompare(b));
-
-    return [...OAUTH_PROVIDER_PRESETS, ...extraList];
-  }, [excluded, files, modelAlias]);
-
-  const getTypeLabel = useCallback(
-    (type: string): string => {
-      const key = `auth_files.filter_${type}`;
-      const translated = t(key);
-      if (translated !== key) return translated;
-      return type.charAt(0).toUpperCase() + type.slice(1);
-    },
-    [t]
+  const providerOptions = useMemo(
+    () => buildProviderOptions({ excluded, modelAlias, files }),
+    [excluded, files, modelAlias]
   );
 
   const resolvedProviderKey = useMemo(() => normalizeProviderKey(provider), [provider]);
@@ -109,6 +69,11 @@ export function AuthFilesOAuthExcludedEditPage() {
     }
     return t('oauth_excluded.add_title');
   }, [isEditing, provider, resolvedProviderKey, t]);
+
+  const getTypeLabelCallback = useCallback(
+    (type: string): string => getTypeLabel(t, type),
+    [t]
+  );
 
   const handleBack = useCallback(() => {
     const state = location.state as LocationState;
@@ -160,10 +125,7 @@ export function AuthFilesOAuthExcludedEditPage() {
         }
 
         const err = excludedResult.status === 'rejected' ? excludedResult.reason : null;
-        const status =
-          typeof err === 'object' && err !== null && 'status' in err
-            ? (err as { status?: unknown }).status
-            : undefined;
+        const status = extractErrorStatus(err);
 
         if (status === 404) {
           setExcludedUnsupported(true);
@@ -216,10 +178,7 @@ export function AuthFilesOAuthExcludedEditPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const status =
-          typeof err === 'object' && err !== null && 'status' in err
-            ? (err as { status?: unknown }).status
-            : undefined;
+        const status = extractErrorStatus(err);
 
         if (status === 404) {
           setModelsList([]);
@@ -359,7 +318,7 @@ export function AuthFilesOAuthExcludedEditPage() {
                         onClick={() => updateProvider(option)}
                         disabled={disableControls || saving}
                       >
-                        {getTypeLabel(option)}
+                        {getTypeLabelCallback(option)}
                       </button>
                     );
                   })}

@@ -62,24 +62,24 @@ ChartJS.register(
 const CHART_LINES_STORAGE_KEY = 'cli-proxy-usage-chart-lines-v1';
 const TIME_RANGE_STORAGE_KEY = 'cli-proxy-usage-time-range-v1';
 const DEFAULT_CHART_LINES = ['all'];
-const DEFAULT_TIME_RANGE: UsageTimeRange = '24h';
+const DEFAULT_TIME_RANGE: UsageTimeRange = '7d';
 const MAX_CHART_LINES = 9;
 const TIME_RANGE_OPTIONS: ReadonlyArray<{ value: UsageTimeRange; labelKey: string }> = [
   { value: 'all', labelKey: 'usage_stats.range_all' },
-  { value: '7h', labelKey: 'usage_stats.range_7h' },
-  { value: '24h', labelKey: 'usage_stats.range_24h' },
+  { value: '1d', labelKey: 'usage_stats.range_1d' },
   { value: '7d', labelKey: 'usage_stats.range_7d' },
+  { value: '30d', labelKey: 'usage_stats.range_30d' },
 ];
 const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> = {
-  '7h': 7,
-  '24h': 24,
+  '1d': 24,
   '7d': 7 * 24,
+  '30d': 30 * 24,
 };
 const SERVICE_HEALTH_SECTION_ID = 'usage-service-health-card';
 const REQUEST_EVENTS_SECTION_ID = 'usage-request-events-card';
 
 const isUsageTimeRange = (value: unknown): value is UsageTimeRange =>
-  value === '7h' || value === '24h' || value === '7d' || value === 'all';
+  value === '1d' || value === '7d' || value === '30d' || value === 'all';
 
 const normalizeChartLines = (value: unknown, maxLines = MAX_CHART_LINES): string[] => {
   if (!Array.isArray(value)) {

@@ -14,9 +14,9 @@ import {
 import { resolveSourceDisplay, type SourceInfoMap, type SourceInfoMapInput } from '@/utils/sourceResolver';
 
 const USAGE_TIME_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
-  '7h': 7 * 60 * 60 * 1000,
-  '24h': 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000
+  '1d': 1 * 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '30d': 30 * 24 * 60 * 60 * 1000
 };
 
 const RUNTIME_QUALITY_HEALTHY_SUCCESS_RATE = 0.99;

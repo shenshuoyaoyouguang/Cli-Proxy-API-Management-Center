@@ -167,7 +167,7 @@ export function useUsageAnalyticsSnapshot({
   const healthRequestEventRows = useMemo(
     () =>
       includeHealthRequestEventRows
-        ? createRequestEventRowsForRange(usageDetails, '24h', nowMs, sourceInfoMap, authFileMap, locale)
+        ? createRequestEventRowsForRange(usageDetails, '1d', nowMs, sourceInfoMap, authFileMap, locale)
         : [],
     [authFileMap, includeHealthRequestEventRows, locale, nowMs, sourceInfoMap, usageDetails]
   );

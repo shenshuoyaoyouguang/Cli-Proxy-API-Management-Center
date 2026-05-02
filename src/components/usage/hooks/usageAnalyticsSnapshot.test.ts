@@ -44,11 +44,12 @@ describe('usageAnalyticsSnapshot helpers', () => {
     const details = [
       createDetail({ minutesAgo: 30 }),
       createDetail({ minutesAgo: 90 }),
-      createDetail({ minutesAgo: 8 * 60 })
+      createDetail({ minutesAgo: 8 * 60 }),
+      createDetail({ minutesAgo: 25 * 60 })
     ];
 
-    const filtered = filterUsageDetailsByTimeRange(details, '7h', baseNow);
-    expect(filtered).toHaveLength(2);
+    const filtered = filterUsageDetailsByTimeRange(details, '1d', baseNow);
+    expect(filtered).toHaveLength(3);
     expect(filtered[0].__timestampMs).toBeGreaterThan(filtered[1].__timestampMs!);
   });
 
@@ -82,7 +83,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
         createDetail({ minutesAgo: 23 * 60, __modelName: 'model-b', failed: false }),
         createDetail({ minutesAgo: 26 * 60, __modelName: 'model-c', failed: true })
       ],
-      '24h',
+      '1d',
       baseNow,
       buildSourceInfoMap({}),
       new Map(),

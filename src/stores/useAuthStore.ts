@@ -244,13 +244,45 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
 }));
 
 // 监听全局未授权事件
-if (typeof window !== 'undefined') {
-  window.addEventListener('unauthorized', () => {
-    useAuthStore.getState().logout();
-  });
+// 使用单例模式确保只注册一次，并提供清理引用防止泄漏
+let onUnauthorizedRef: (() => void) | null = null;
+let onVersionUpdateRef: ((e: CustomEvent) => void) | null = null;
 
-  window.addEventListener('server-version-update', ((e: CustomEvent) => {
+const singletonWindow = window as unknown as { __authStoreListenersAttached?: boolean };
+
+if (typeof window !== 'undefined' && !singletonWindow.__authStoreListenersAttached) {
+  singletonWindow.__authStoreListenersAttached = true;
+
+  onUnauthorizedRef = () => {
+    useAuthStore.getState().logout();
+  };
+  onVersionUpdateRef = (e: CustomEvent) => {
     const detail = e.detail || {};
     useAuthStore.getState().updateServerVersion(detail.version || null, detail.buildDate || null);
-  }) as EventListener);
+  };
+
+  window.addEventListener('unauthorized', onUnauthorizedRef);
+  window.addEventListener('server-version-update', onVersionUpdateRef as EventListener);
 }
+
+export const cleanupAuthStoreListeners: () => void = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const win = window as unknown as { __authStoreListenersAttached?: boolean };
+  if (!win.__authStoreListenersAttached) {
+    return;
+  }
+
+  win.__authStoreListenersAttached = false;
+
+  if (onUnauthorizedRef) {
+    window.removeEventListener('unauthorized', onUnauthorizedRef);
+    onUnauthorizedRef = null;
+  }
+  if (onVersionUpdateRef) {
+    window.removeEventListener('server-version-update', onVersionUpdateRef as EventListener);
+    onVersionUpdateRef = null;
+  }
+};

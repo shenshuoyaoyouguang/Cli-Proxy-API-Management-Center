@@ -18,7 +18,7 @@ const createDetail = (params: {
     total_tokens: number;
   };
   source: string;
-  auth_index: number;
+  auth_index: string | null;
   __modelName: string;
   __timestampMs: number;
 } => {
@@ -34,7 +34,7 @@ const createDetail = (params: {
       total_tokens: 0
     },
     source: 'test',
-    auth_index: 0,
+    auth_index: '0',
     __modelName: params.modelName,
     __timestampMs: timestampMs
   };

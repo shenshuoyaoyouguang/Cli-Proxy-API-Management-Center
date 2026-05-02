@@ -18,13 +18,13 @@ import {
 const baseNow = Date.parse('2026-01-08T12:00:00.000Z');
 
 const createDetail = (
-  overrides: Partial<UsageDetail> & { minutesAgo: number; source?: string; auth_index?: number }
+  overrides: Partial<UsageDetail> & { minutesAgo: number; source?: string; auth_index?: string }
 ): UsageDetail => {
   const timestampMs = baseNow - overrides.minutesAgo * 60 * 1000;
   return {
     timestamp: new Date(timestampMs).toISOString(),
     source: overrides.source ?? 't:tenant-a',
-    auth_index: overrides.auth_index ?? 1,
+    auth_index: overrides.auth_index ?? '1',
     failed: overrides.failed ?? false,
     tokens: {
       input_tokens: 10,
@@ -62,8 +62,8 @@ describe('usageAnalyticsSnapshot helpers', () => {
     });
     const rows = createRequestEventRows(
       [
-        createDetail({ minutesAgo: 10, source: 'unknown-source', auth_index: 7, __modelName: 'model-b' }),
-        createDetail({ minutesAgo: 5, source: 't:tenant-a', auth_index: 1, __modelName: 'model-a' })
+        createDetail({ minutesAgo: 10, source: 'unknown-source', auth_index: '7', __modelName: 'model-b' }),
+        createDetail({ minutesAgo: 5, source: 't:tenant-a', auth_index: '1', __modelName: 'model-a' })
       ],
       sourceInfoMap,
       authFileMap,
@@ -100,9 +100,9 @@ describe('usageAnalyticsSnapshot helpers', () => {
     ]);
     const rows = createCredentialRows(
       [
-        createDetail({ minutesAgo: 5, source: 't:tenant-a', auth_index: 1, failed: false }),
-        createDetail({ minutesAgo: 4, source: 't:tenant-a', auth_index: 1, failed: true }),
-        createDetail({ minutesAgo: 3, source: '', auth_index: 9, failed: false })
+        createDetail({ minutesAgo: 5, source: 't:tenant-a', auth_index: '1', failed: false }),
+        createDetail({ minutesAgo: 4, source: 't:tenant-a', auth_index: '1', failed: true }),
+        createDetail({ minutesAgo: 3, source: '', auth_index: '9', failed: false })
       ],
       {
         geminiApiKeys: [{ apiKey: 'gem-key', prefix: 'tenant-a' }],
@@ -239,9 +239,9 @@ describe('usageAnalyticsSnapshot helpers', () => {
 
     const rows = createCredentialEfficiencyRows(
       [
-        createDetail({ minutesAgo: 5, source: 't:tenant-a', auth_index: 1, failed: true, __modelName: 'model-a', tokens: { input_tokens: 20, output_tokens: 0, cached_tokens: 0, reasoning_tokens: 0, total_tokens: 20 } }),
-        createDetail({ minutesAgo: 4, source: 't:tenant-a', auth_index: 1, __modelName: 'model-a', tokens: { input_tokens: 20, output_tokens: 10, cached_tokens: 5, reasoning_tokens: 0, total_tokens: 35 } }),
-        createDetail({ minutesAgo: 3, source: '', auth_index: 7, __modelName: 'model-b', tokens: { input_tokens: 10, output_tokens: 12, cached_tokens: 2, reasoning_tokens: 1, total_tokens: 25 } })
+        createDetail({ minutesAgo: 5, source: 't:tenant-a', auth_index: '1', failed: true, __modelName: 'model-a', tokens: { input_tokens: 20, output_tokens: 0, cached_tokens: 0, reasoning_tokens: 0, total_tokens: 20 } }),
+        createDetail({ minutesAgo: 4, source: 't:tenant-a', auth_index: '1', __modelName: 'model-a', tokens: { input_tokens: 20, output_tokens: 10, cached_tokens: 5, reasoning_tokens: 0, total_tokens: 35 } }),
+        createDetail({ minutesAgo: 3, source: '', auth_index: '7', __modelName: 'model-b', tokens: { input_tokens: 10, output_tokens: 12, cached_tokens: 2, reasoning_tokens: 1, total_tokens: 25 } })
       ],
       sourceInfoMap,
       authFileMap,

@@ -17,7 +17,7 @@ const createDetail = ({
   return {
     timestamp: new Date(timestampMs).toISOString(),
     source: 'test',
-    auth_index: 0,
+    auth_index: '0',
     failed,
     tokens: {
       input_tokens: 0,

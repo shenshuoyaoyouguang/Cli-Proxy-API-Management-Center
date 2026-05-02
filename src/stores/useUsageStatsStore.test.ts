@@ -29,7 +29,7 @@ const createScopeKey = (apiBase: string, managementKey: string) =>
 const createMockUsageDetail = (overrides: Partial<UsageDetail> = {}): UsageDetail => ({
   timestamp: new Date().toISOString(),
   source: 'test',
-  auth_index: 0,
+  auth_index: '0',
   tokens: {
     input_tokens: 100,
     output_tokens: 50,
@@ -103,7 +103,7 @@ vi.mock('@/utils/usage', () => ({
       {
         timestamp: new Date().toISOString(),
         source: 'k:test-key',
-        auth_index: 0,
+        auth_index: '0',
         tokens: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
         failed: false,
       },
@@ -171,7 +171,7 @@ describe('useUsageStatsStore', () => {
                   {
                     timestamp: '2025-01-01T00:00:00Z',
                     source: 'test',
-                    auth_index: 0,
+                    auth_index: '0',
                     tokens: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
                     failed: false,
                   },
@@ -300,14 +300,14 @@ describe('useUsageStatsStore', () => {
       const persistedDetails: UsageDetail[] = Array.from({ length: 5_100 }, (_, index) => ({
         timestamp: `2025-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`,
         source: 'persisted',
-        auth_index: 0,
+        auth_index: '0',
         tokens: { input_tokens: 1, output_tokens: 1, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 2 },
         failed: false,
       }));
       const autoPersistDetails: UsageDetail[] = Array.from({ length: 5_000 }, (_, index) => ({
         timestamp: `2025-01-02T00:${String(index % 60).padStart(2, '0')}:00Z`,
         source: 'auto',
-        auth_index: 0,
+        auth_index: '0',
         tokens: { input_tokens: 1, output_tokens: 1, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 2 },
         failed: false,
       }));

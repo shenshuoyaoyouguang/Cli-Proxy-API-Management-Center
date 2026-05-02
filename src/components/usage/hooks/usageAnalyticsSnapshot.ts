@@ -9,15 +9,14 @@ import {
   type ApiStats,
   type ModelPrice,
   type UsageDetail,
-  type UsageTimeRange
+  type UsageTimeRange,
 } from '@/utils/usage';
-import { resolveSourceDisplay, type SourceInfoMap, type SourceInfoMapInput } from '@/utils/sourceResolver';
-
-const USAGE_TIME_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
-  '1d': 1 * 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000,
-  '30d': 30 * 24 * 60 * 60 * 1000
-};
+import {
+  resolveSourceDisplay,
+  type SourceInfoMap,
+  type SourceInfoMapInput,
+} from '@/utils/sourceResolver';
+import { USAGE_TIME_RANGE_MS } from '@/atoms/usage/time';
 
 const RUNTIME_QUALITY_HEALTHY_SUCCESS_RATE = 0.99;
 const RUNTIME_QUALITY_CRITICAL_SUCCESS_RATE = 0.97;

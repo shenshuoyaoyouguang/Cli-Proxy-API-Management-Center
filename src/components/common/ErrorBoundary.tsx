@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { logger } from '@/utils/logger';
 import styles from './ErrorBoundary.module.scss';
 
 interface Props {
@@ -45,8 +46,11 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('ErrorBoundary caught an error:', error);
-    console.error('Error info:', errorInfo.componentStack);
+    logger.error('ErrorBoundary caught an error', {
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+    });
   }
 
   handleReload = (): void => {

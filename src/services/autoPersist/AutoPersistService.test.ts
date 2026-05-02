@@ -14,7 +14,7 @@ const createUsageDetails = (count: number): UsageDetail[] =>
   Array.from({ length: count }, (_, index) => ({
     timestamp: `2025-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`,
     source: 'session',
-    auth_index: 0,
+    auth_index: '0',
     tokens: {
       input_tokens: 1,
       output_tokens: 1,

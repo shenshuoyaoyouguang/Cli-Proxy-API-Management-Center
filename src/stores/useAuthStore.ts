@@ -248,10 +248,21 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
 let onUnauthorizedRef: (() => void) | null = null;
 let onVersionUpdateRef: ((e: CustomEvent) => void) | null = null;
 
-const singletonWindow = window as unknown as { __authStoreListenersAttached?: boolean };
+interface AuthStoreWindow extends Window {
+  __authStoreListenersAttached?: boolean;
+}
 
-if (typeof window !== 'undefined' && !singletonWindow.__authStoreListenersAttached) {
-  singletonWindow.__authStoreListenersAttached = true;
+const getAuthStoreWindow = (): AuthStoreWindow | undefined => {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  return window as AuthStoreWindow;
+};
+
+const authStoreWindow = getAuthStoreWindow();
+
+if (authStoreWindow && !authStoreWindow.__authStoreListenersAttached) {
+  authStoreWindow.__authStoreListenersAttached = true;
 
   onUnauthorizedRef = () => {
     useAuthStore.getState().logout();
@@ -261,16 +272,16 @@ if (typeof window !== 'undefined' && !singletonWindow.__authStoreListenersAttach
     useAuthStore.getState().updateServerVersion(detail.version || null, detail.buildDate || null);
   };
 
-  window.addEventListener('unauthorized', onUnauthorizedRef);
-  window.addEventListener('server-version-update', onVersionUpdateRef as EventListener);
+  authStoreWindow.addEventListener('unauthorized', onUnauthorizedRef);
+  authStoreWindow.addEventListener('server-version-update', onVersionUpdateRef as EventListener);
 }
 
 export const cleanupAuthStoreListeners: () => void = () => {
-  if (typeof window === 'undefined') {
+  const win = getAuthStoreWindow();
+  if (!win) {
     return;
   }
 
-  const win = window as unknown as { __authStoreListenersAttached?: boolean };
   if (!win.__authStoreListenersAttached) {
     return;
   }
@@ -278,11 +289,11 @@ export const cleanupAuthStoreListeners: () => void = () => {
   win.__authStoreListenersAttached = false;
 
   if (onUnauthorizedRef) {
-    window.removeEventListener('unauthorized', onUnauthorizedRef);
+    win.removeEventListener('unauthorized', onUnauthorizedRef);
     onUnauthorizedRef = null;
   }
   if (onVersionUpdateRef) {
-    window.removeEventListener('server-version-update', onVersionUpdateRef as EventListener);
+    win.removeEventListener('server-version-update', onVersionUpdateRef as EventListener);
     onVersionUpdateRef = null;
   }
 };

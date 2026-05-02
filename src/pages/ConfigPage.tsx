@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import type { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { parse as parseYaml, parseDocument } from 'yaml';
+import { getErrorMessage } from '@/utils/error';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -23,7 +24,9 @@ import styles from './ConfigPage.module.scss';
 
 type ConfigEditorTab = 'visual' | 'source';
 
-const LazyConfigSourceEditor = lazy(() => import('@/components/config/ConfigSourceEditor'));
+const LazyConfigSourceEditor = lazy(() =>
+  import('@/components/config/ConfigSourceEditor').then((m) => ({ default: m.ConfigSourceEditor }))
+);
 
 function readCommercialModeFromYaml(yamlContent: string): boolean {
   try {
@@ -101,8 +104,7 @@ export function ConfigPage() {
       setMergedYaml(data);
       loadVisualValuesFromYaml(data);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('notification.refresh_failed');
-      setError(message);
+      setError(getErrorMessage(err, t('notification.refresh_failed')));
     } finally {
       setLoading(false);
     }
@@ -144,12 +146,7 @@ export function ConfigPage() {
         useConfigStore.getState().clearCache();
         await useConfigStore.getState().fetchConfig(undefined, true);
       } catch (refreshError: unknown) {
-        const message =
-          refreshError instanceof Error
-            ? refreshError.message
-            : typeof refreshError === 'string'
-              ? refreshError
-              : '';
+        const message = getErrorMessage(refreshError);
         showNotification(
           `${t('notification.refresh_failed')}${message ? `: ${message}` : ''}`,
           'error'
@@ -161,8 +158,7 @@ export function ConfigPage() {
         showNotification(t('notification.commercial_mode_restart_required'), 'warning');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '';
-      showNotification(`${t('notification.save_failed')}: ${message}`, 'error');
+      showNotification(`${t('notification.save_failed')}: ${getErrorMessage(err)}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -224,8 +220,7 @@ export function ConfigPage() {
       setMergedYaml(nextMergedYaml);
       setDiffModalOpen(true);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '';
-      showNotification(`${t('notification.save_failed')}: ${message}`, 'error');
+      showNotification(`${t('notification.save_failed')}: ${getErrorMessage(err)}`, 'error');
     } finally {
       setSaving(false);
     }

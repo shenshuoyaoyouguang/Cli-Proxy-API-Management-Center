@@ -19,6 +19,7 @@ import {
   getTypeLabel,
   normalizeProviderKey,
 } from '@/features/authFiles/constants';
+import { getErrorMessage } from '@/utils/error';
 import styles from './AuthFilesOAuthExcludedEditPage.module.scss';
 
 type AuthFileModelItem = { id: string; display_name?: string; type?: string; owned_by?: string };
@@ -186,7 +187,7 @@ export function AuthFilesOAuthExcludedEditPage() {
           return;
         }
 
-        const errorMessage = err instanceof Error ? err.message : '';
+        const errorMessage = getErrorMessage(err);
         showNotification(`${t('notification.load_failed')}: ${errorMessage}`, 'error');
       })
       .finally(() => {
@@ -244,7 +245,7 @@ export function AuthFilesOAuthExcludedEditPage() {
       showNotification(t('oauth_excluded.save_success'), 'success');
       handleBack();
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : '';
+      const errorMessage = getErrorMessage(err);
       showNotification(`${t('oauth_excluded.save_failed')}: ${errorMessage}`, 'error');
     } finally {
       setSaving(false);

@@ -18,6 +18,7 @@ import {
   KIMI_CONFIG,
 } from '@/components/quota';
 import type { AuthFileItem } from '@/types';
+import { getErrorMessage } from '@/utils/error';
 import styles from './QuotaPage.module.scss';
 
 export function QuotaPage() {
@@ -35,7 +36,7 @@ export function QuotaPage() {
     try {
       await configFileApi.fetchConfigYaml();
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : t('notification.refresh_failed');
+      const errorMessage = getErrorMessage(err, t('notification.refresh_failed'));
       setError((prev) => prev || errorMessage);
     }
   }, [t]);
@@ -47,7 +48,7 @@ export function QuotaPage() {
       const data = await authFilesApi.list();
       setFiles(data?.files || []);
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : t('notification.refresh_failed');
+      const errorMessage = getErrorMessage(err, t('notification.refresh_failed'));
       setError(errorMessage);
     } finally {
       setLoading(false);

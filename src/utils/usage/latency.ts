@@ -1,4 +1,5 @@
 import i18n from '@/i18n';
+import { isRecord } from '@/atoms/usage/guards';
 
 export const LATENCY_SOURCE_FIELD = 'latency_ms';
 export const LATENCY_SOURCE_UNIT = 'ms';
@@ -20,9 +21,6 @@ export interface LatencyAccumulator {
   totalMs: number;
   sampleCount: number;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const normalizeDurationMaxUnits = (value: number | undefined): number => {
   const parsed = Number(value);

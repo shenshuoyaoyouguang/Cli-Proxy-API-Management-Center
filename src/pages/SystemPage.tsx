@@ -16,6 +16,7 @@ import { useVisualConfig } from '@/hooks/useVisualConfig';
 import { useUpdateRequestLog } from '@/hooks/useConfigApi';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import { classifyModels } from '@/utils/models';
+import { getErrorMessage } from '@/utils/error';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import iconGemini from '@/assets/icons/gemini.svg';
@@ -202,7 +203,7 @@ export function SystemPage() {
           : t('system_info.models_empty'),
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+      const message = getErrorMessage(err);
       const suffix = message ? `: ${message}` : '';
       const text = `${t('system_info.models_error')}${suffix}`;
       setModelStatus({ type: 'error', message: text });
@@ -321,8 +322,7 @@ export function SystemPage() {
         showNotification(t('system_info.version_is_latest'), 'success');
       }
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+      const message = getErrorMessage(error);
       const suffix = message ? `: ${message}` : '';
       showNotification(`${t('system_info.version_check_error')}${suffix}`, 'error');
     } finally {

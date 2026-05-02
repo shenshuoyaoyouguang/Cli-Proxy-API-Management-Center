@@ -7,6 +7,8 @@ import { useNotificationStore, useThemeStore } from '@/stores';
 import { oauthApi, type OAuthProvider } from '@/services/api/oauth';
 import { vertexApi, type VertexImportResponse } from '@/services/api/vertex';
 import { copyToClipboard } from '@/utils/clipboard';
+import { getErrorMessage } from '@/utils/error';
+import { isRecord } from '@/atoms/usage/guards';
 import styles from './OAuthPage.module.scss';
 import iconCodex from '@/assets/icons/codex.svg';
 import iconClaude from '@/assets/icons/claude.svg';
@@ -45,16 +47,6 @@ interface VertexImportState {
   loading: boolean;
   error?: string;
   result?: VertexImportResult;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object';
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (isRecord(error) && typeof error.message === 'string') return error.message;
-  return typeof error === 'string' ? error : '';
 }
 
 function getErrorStatus(error: unknown): number | undefined {

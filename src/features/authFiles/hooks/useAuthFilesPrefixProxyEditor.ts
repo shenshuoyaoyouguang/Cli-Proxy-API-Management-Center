@@ -5,6 +5,7 @@ import type { AuthFileItem } from '@/types';
 import { useNotificationStore } from '@/stores';
 import { formatFileSize } from '@/utils/format';
 import { MAX_AUTH_FILE_SIZE } from '@/utils/constants';
+import { isRecord } from '@/atoms/usage/guards';
 import {
   applyCodexAuthFileWebsockets,
   normalizeExcludedModels,
@@ -74,11 +75,8 @@ export type UseAuthFilesPrefixProxyEditorResult = {
   handlePrefixProxySave: () => Promise<void>;
 };
 
-const isRecordObject = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
 const validateHeadersValue = (value: unknown): AuthFileHeadersErrorKey | null => {
-  if (!isRecordObject(value)) {
+  if (!isRecord(value)) {
     return 'auth_files.headers_invalid_object';
   }
   return Object.values(value).every((item) => typeof item === 'string')

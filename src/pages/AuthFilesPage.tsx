@@ -68,6 +68,7 @@ import {
   type AuthFilesSortMode,
 } from '@/features/authFiles/uiState';
 import { useAccountHealthStore, useAuthStore, useNotificationStore, useThemeStore } from '@/stores';
+import { getErrorMessage } from '@/utils/error';
 import styles from './AuthFilesPage.module.scss';
 
 const easePower3Out = (progress: number) => 1 - (1 - progress) ** 4;
@@ -578,7 +579,7 @@ export function AuthFilesPage() {
         void loadFiles().catch(() => {});
         showNotification(t('auth_files.health_recover_success', { name }), 'success');
       } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : '';
+        const message = getErrorMessage(error);
         showNotification(`${t('notification.update_failed')}: ${message}`, 'error');
       } finally {
         setRecoveringAccounts((prev) => {

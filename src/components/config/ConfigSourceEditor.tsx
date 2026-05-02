@@ -13,7 +13,7 @@ type ConfigSourceEditorProps = {
   placeholder: string;
 };
 
-export default function ConfigSourceEditor({
+export function ConfigSourceEditor({
   value,
   onChange,
   editorRef,

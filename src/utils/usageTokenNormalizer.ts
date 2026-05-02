@@ -7,6 +7,8 @@ export interface CanonicalUsageTokens {
   total_tokens: number;
 }
 
+import { isRecord } from '@/atoms/usage/guards';
+
 type TokenFamily = 'input' | 'output' | 'reasoning' | 'cached' | 'total';
 type CandidateKind = 'aggregate' | 'component';
 
@@ -19,9 +21,6 @@ interface TokenCandidate {
   key: string;
   path: string[];
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const toNonNegativeFiniteNumber = (value: unknown): number | null => {
   if (typeof value === 'number') {

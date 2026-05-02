@@ -555,7 +555,7 @@ export const PayloadRulesEditor = memo(function PayloadRulesEditor({
     const errorCode = getPayloadParamValidationError(
       rawJsonValues ? { ...param, valueType: 'json' } : param
     );
-    return getValidationMessage(t, errorCode);
+    return getValidationMessage(t, errorCode ?? undefined);
   };
 
   const renderParamValueEditor = (

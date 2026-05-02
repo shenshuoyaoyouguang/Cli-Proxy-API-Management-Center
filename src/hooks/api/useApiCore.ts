@@ -1,121 +1,34 @@
-/**
- * useApi hook factory
- * Base hook for API requests with loading state, error handling, retry logic, and deduplication
- */
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from '@/services/api/client';
 import { useNotificationStore } from '@/stores/useNotificationStore';
 import type { ApiError } from '@/types';
+import { pendingRequests, generateDedupKey } from './useApiDedupe';
+import { calculateRetryDelay, sleep } from './useApiRetry';
+import type { HttpMethod } from './types';
 
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+export type { HttpMethod };
 
 export interface UseApiOptions<T> {
-  /** Initial data value before first successful request */
   initialData?: T;
-  /** Whether to execute immediately on mount */
   immediate?: boolean;
-  /** Whether to show error notification on failure */
   showErrorNotification?: boolean;
-  /** Whether to show success notification on completion */
   showSuccessNotification?: boolean;
-  /** Success notification message (if showSuccessNotification is true) */
   successMessage?: string;
-  /** Number of retry attempts on failure (0 = no retries) */
   retryCount?: number;
-  /** Whether to enable request deduplication */
   dedup?: boolean;
-  /** Additional Axios request config */
   axiosConfig?: AxiosRequestConfig;
 }
 
 export interface UseApiReturn<T, P = unknown> {
-  /** Response data */
   data: T | undefined;
-  /** Loading state */
   loading: boolean;
-  /** Error if any */
   error: ApiError | null;
-  /** Execute the API request */
   execute: (params?: P) => Promise<T | undefined>;
-  /** Refresh with same parameters (for GET requests) */
   refresh: () => Promise<T | undefined>;
-  /** Reset state to initial */
   reset: () => void;
 }
 
-interface PendingRequest {
-  promise: Promise<unknown>;
-  abortController: AbortController;
-  timestamp: number;
-}
-
-// Global pending requests map for deduplication
-const pendingRequests = new Map<string, PendingRequest>();
-
-// Default retry delay in ms (exponential backoff)
-const BASE_RETRY_DELAY = 1000;
-const MAX_RETRY_DELAY = 30000;
-
-// Request expiry for cleanup (30 seconds)
-const REQUEST_EXPIRY_MS = 30000;
-const CLEANUP_INTERVAL_MS = 10000;
-
-// Cleanup expired pending requests
-function cleanupExpiredRequests(): void {
-  const now = Date.now();
-  for (const [key, request] of pendingRequests) {
-    if (now - request.timestamp > REQUEST_EXPIRY_MS) {
-      request.abortController.abort();
-      pendingRequests.delete(key);
-    }
-  }
-}
-
-// Set up periodic cleanup interval
-let cleanupTimerId: ReturnType<typeof setInterval> | null = null;
-
-function getCleanupInterval(): ReturnType<typeof setInterval> | null {
-  if (!cleanupTimerId) {
-    cleanupTimerId = setInterval(cleanupExpiredRequests, CLEANUP_INTERVAL_MS);
-  }
-  return cleanupTimerId;
-}
-
-// Start cleanup on module load
-getCleanupInterval();
-
-/**
- * Generate a deduplication key from URL and method
- */
-function generateDedupKey(url: string, method: HttpMethod, params?: unknown): string {
-  const paramsKey = params ? JSON.stringify(params) : '';
-  return `${method}:${url}:${paramsKey}`;
-}
-
-/**
- * Calculate retry delay with exponential backoff
- */
-function calculateRetryDelay(attempt: number): number {
-  const delay = BASE_RETRY_DELAY * Math.pow(2, attempt);
-  return Math.min(delay, MAX_RETRY_DELAY);
-}
-
-/**
- * Sleep for specified milliseconds
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * useApi hook factory
- * @param url - API endpoint URL
- * @param method - HTTP method
- * @param options - Configuration options
- * @returns Hook state and controls
- */
 export function useApi<T, P = unknown>(
   url: string,
   method: HttpMethod,
@@ -142,7 +55,6 @@ export function useApi<T, P = unknown>(
 
   const showNotification = useNotificationStore((state) => state.showNotification);
 
-  // Abort all active controllers
   const abortAll = useCallback(() => {
     abortControllersRef.current.forEach((controller) => {
       controller.abort();
@@ -150,39 +62,30 @@ export function useApi<T, P = unknown>(
     abortControllersRef.current = [];
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
-      // Abort all in-flight requests including retries
       abortAll();
     };
   }, [abortAll]);
 
-  /**
-   * Execute the API request with retry logic
-   */
   const executeWithRetry = useCallback(
     async (params?: P, attempt: number = 0): Promise<T> => {
       const dedupKey = generateDedupKey(url, method, params);
 
-      // Check for deduplication
       if (dedup && pendingRequests.has(dedupKey)) {
         const pending = pendingRequests.get(dedupKey)!;
         return pending.promise as Promise<T>;
       }
 
-      // Create new AbortController for this request
       const abortController = new AbortController();
       abortControllersRef.current.push(abortController);
 
-      // Prepare request config
       const config: AxiosRequestConfig = {
         ...axiosConfig,
         signal: abortController.signal,
       };
 
-      // Build the request promise
       const requestPromise = (async (): Promise<T> => {
         try {
           let result: T;
@@ -209,7 +112,6 @@ export function useApi<T, P = unknown>(
 
           return result;
         } catch (err) {
-          // Handle retry logic
           if (attempt < retryCount && !abortController.signal.aborted) {
             const delay = calculateRetryDelay(attempt);
             await sleep(delay);
@@ -219,7 +121,6 @@ export function useApi<T, P = unknown>(
         }
       })();
 
-      // Store in pending requests for deduplication
       if (dedup) {
         pendingRequests.set(dedupKey, {
           promise: requestPromise,
@@ -232,12 +133,10 @@ export function useApi<T, P = unknown>(
         const result = await requestPromise;
         return result;
       } finally {
-        // Remove this controller from active list
         const index = abortControllersRef.current.indexOf(abortController);
         if (index > -1) {
           abortControllersRef.current.splice(index, 1);
         }
-        // Clean up pending request
         if (dedup) {
           pendingRequests.delete(dedupKey);
         }
@@ -246,12 +145,8 @@ export function useApi<T, P = unknown>(
     [url, method, dedup, retryCount, axiosConfig]
   );
 
-  /**
-   * Execute the API request
-   */
   const execute = useCallback(
     async (params?: P): Promise<T | undefined> => {
-      // Store params for refresh
       lastParamsRef.current = params;
 
       setLoading(true);
@@ -295,27 +190,19 @@ export function useApi<T, P = unknown>(
     ]
   );
 
-  /**
-   * Refresh with same parameters (useful for GET requests)
-   */
   const refresh = useCallback(async (): Promise<T | undefined> => {
     return execute(lastParamsRef.current);
   }, [execute]);
 
-  /**
-   * Reset state to initial
-   */
   const reset = useCallback(() => {
     setData(initialData);
     setLoading(false);
     setError(null);
     lastParamsRef.current = undefined;
 
-    // Abort all in-flight requests
     abortAll();
   }, [initialData, abortAll]);
 
-  // Execute immediately if requested (for GET requests typically)
   useEffect(() => {
     if (immediate && method === 'GET') {
       execute();
@@ -331,10 +218,6 @@ export function useApi<T, P = unknown>(
     reset,
   };
 }
-
-/**
- * Convenience hooks for specific HTTP methods
- */
 
 export function useGet<T, P = unknown>(
   url: string,
@@ -370,5 +253,3 @@ export function useDelete<T, P = unknown>(
 ): UseApiReturn<T, P> {
   return useApi<T, P>(url, 'DELETE', options);
 }
-
-export default useApi;

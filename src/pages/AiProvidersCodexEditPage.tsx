@@ -19,6 +19,7 @@ import { buildHeaderObject, headersToEntries, normalizeHeaderEntries } from '@/u
 import { areKeyValueEntriesEqual, areModelEntriesEqual, areStringArraysEqual } from '@/utils/compare';
 import { entriesToModels, modelsToEntries } from '@/components/ui/modelInputListUtils';
 import { excludedModelsToText, parseExcludedModels } from '@/components/providers/utils';
+import { getErrorMessage } from '@/utils/error';
 import type { ProviderFormState } from '@/components/providers';
 import type { ModelInfo } from '@/utils/models';
 import layoutStyles from './AiProvidersEditLayout.module.scss';
@@ -44,12 +45,6 @@ const parseIndexParam = (value: string | undefined) => {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : null;
-};
-
-const getErrorMessage = (err: unknown) => {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  return '';
 };
 
 const normalizeModelEntries = (entries: Array<{ name: string; alias: string }>) =>
@@ -169,7 +164,7 @@ export function AiProvidersCodexEditPage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : '';
+        const message = getErrorMessage(err);
         setError(message || t('notification.refresh_failed'));
       })
       .finally(() => {
@@ -475,7 +470,7 @@ export function AiProvidersCodexEditPage() {
       setBaseline(buildCodexBaseline(form));
       handleBack();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '';
+      const message = getErrorMessage(err);
       setError(message);
       showNotification(`${t('notification.update_failed')}: ${message}`, 'error');
     } finally {

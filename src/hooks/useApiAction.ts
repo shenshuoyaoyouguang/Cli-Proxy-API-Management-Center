@@ -85,5 +85,3 @@ export function useApiAction<T, Args extends unknown[] = []>(
 
   return { data, loading, error, execute };
 }
-
-export default useApiAction;

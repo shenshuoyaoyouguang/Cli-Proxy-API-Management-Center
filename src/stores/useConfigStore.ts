@@ -9,7 +9,7 @@ import type { RawConfigSection } from '@/types/config';
 import { configApi } from '@/services/api/config';
 import { CACHE_EXPIRY_MS } from '@/utils/constants';
 import { CacheLayer } from '@/services/cache';
-import { useAuthStore } from './useAuthStore';
+import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
 
 // Type guards for config value assignment
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
@@ -44,22 +44,20 @@ interface ConfigState {
 
   // 操作
   fetchConfig: {
-    (section?: undefined, forceRefresh?: boolean): Promise<Config>;
-    (section: RawConfigSection, forceRefresh?: boolean): Promise<unknown>;
+    (section?: undefined, forceRefresh?: boolean, scopeKey?: string): Promise<Config>;
+    (section: RawConfigSection, forceRefresh?: boolean, scopeKey?: string): Promise<unknown>;
   };
   updateConfigValue: (section: RawConfigSection, value: unknown) => void;
   clearCache: (section?: RawConfigSection) => void;
   isCacheValid: (section?: RawConfigSection) => boolean;
-  restoreFromPersistence: () => void;
+  restoreFromPersistence: (scopeKey: string) => void;
 }
 
 let configRequestToken = 0;
 let inFlightConfigRequest: { id: number; promise: Promise<Config> } | null = null;
 let configAbortController: AbortController | null = null;
 
-const isCanceledRequestError = (error: unknown): boolean =>
-  error instanceof Error &&
-  (error.name === 'AbortError' || (error as { code?: unknown }).code === 'ERR_CANCELED');
+
 
 const SECTION_KEYS: RawConfigSection[] = [
   'debug',
@@ -136,7 +134,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   loading: false,
   error: null,
 
-  fetchConfig: (async (section?: RawConfigSection, forceRefresh: boolean = false) => {
+  fetchConfig: (async (section?: RawConfigSection, forceRefresh: boolean = false, scopeKey?: string) => {
     const { cache, isCacheValid } = get();
 
     // 检查缓存
@@ -196,9 +194,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       });
 
       // 持久化到 CacheLayer
-      const { apiBase, managementKey } = useAuthStore.getState();
-      if (apiBase && managementKey) {
-        const scopeKey = `${apiBase}::${managementKey}`;
+      if (scopeKey) {
         CacheLayer.set('config', data, { scopeKey, maxAgeMs: CACHE_EXPIRY_MS });
       }
 
@@ -218,12 +214,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
             : undefined
           : (get().config ?? ({} as Config));
       }
-      const message =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : 'Failed to fetch config';
+      const message = getErrorMessage(error, 'Failed to fetch config');
       if (requestId === configRequestToken) {
         set({
           error: message || 'Failed to fetch config',
@@ -361,11 +352,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     return Date.now() - cached.timestamp < CACHE_EXPIRY_MS;
   },
 
-  restoreFromPersistence: () => {
-    const { apiBase, managementKey } = useAuthStore.getState();
-    if (!apiBase || !managementKey) return;
+  restoreFromPersistence: (scopeKey: string) => {
+    if (!scopeKey) return;
 
-    const scopeKey = `${apiBase}::${managementKey}`;
     const entry = CacheLayer.get<Config>('config', scopeKey);
     if (!entry) return;
 

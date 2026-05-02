@@ -11,6 +11,7 @@ import type { ModelEntry, ProviderFormState } from '@/components/providers/types
 import { buildHeaderObject, headersToEntries, normalizeHeaderEntries } from '@/utils/headers';
 import { areKeyValueEntriesEqual, areModelEntriesEqual, areStringArraysEqual } from '@/utils/compare';
 import { excludedModelsToText, parseExcludedModels } from '@/components/providers/utils';
+import { getErrorMessage } from '@/utils/error';
 import { modelsToEntries } from '@/components/ui/modelInputListUtils';
 import type { ClaudeEditBaseline } from '@/stores/useClaudeEditDraftStore';
 
@@ -57,12 +58,6 @@ const parseIndexParam = (value: string | undefined) => {
   if (!value) return null;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : null;
-};
-
-const getErrorMessage = (err: unknown) => {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  return '';
 };
 
 const normalizeClaudeModelEntries = (entries: Array<{ name: string; alias: string }>) =>

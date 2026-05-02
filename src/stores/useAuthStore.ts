@@ -125,7 +125,8 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       });
 
       // 测试连接 - 获取配置
-      await useConfigStore.getState().fetchConfig(undefined, true);
+      const scopeKey = buildScopeKey(apiBase, managementKey);
+      await useConfigStore.getState().fetchConfig(undefined, true, scopeKey);
 
       // 登录成功
       set({
@@ -212,7 +213,8 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       apiClient.setConfig({ apiBase, managementKey });
 
       // 验证连接
-      await useConfigStore.getState().fetchConfig();
+      const scopeKey = buildScopeKey(apiBase, managementKey);
+      await useConfigStore.getState().fetchConfig(undefined, false, scopeKey);
 
       set({
         isAuthenticated: true,

@@ -10,13 +10,10 @@ import type {
   KimiUsagePayload,
 } from '@/types';
 import { normalizeAuthIndex } from '@/utils/usage';
+import { isRecord } from '@/atoms/usage/guards';
 
 const GEMINI_CLI_MODEL_SUFFIX = '_vertex';
 export { normalizeAuthIndex };
-
-// Type guards
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const safeParseRecord = (value: string): Record<string, unknown> | null => {
   try {

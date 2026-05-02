@@ -1,8 +1,3 @@
-/**
- * 认证文件与 OAuth 排除模型相关 API
- */
-
-import { apiClient } from './client';
 import type {
   AccountHealthMap,
   AccountHealthState,
@@ -13,49 +8,23 @@ import type { OAuthModelAliasEntry } from '@/types';
 import { parseTimestampMs } from '@/utils/timestamp';
 
 type StatusError = { status?: number };
-type AuthFileStatusResponse = { status: string; disabled: boolean };
-type AuthFileStatusOptions = {
-  disabled?: boolean;
-  degraded?: boolean;
-  degradedReason?: DegradedReason;
-  cooldownUntil?: number | null;
-};
-type AuthFileEntry = AuthFilesResponse['files'][number];
 type AuthFileBatchFailure = { name: string; error: string };
-type AuthFileBatchUploadResponse = {
-  status?: string;
-  uploaded?: number;
-  files?: unknown;
-  failed?: unknown;
-};
-type AuthFileBatchDeleteResponse = {
-  status?: string;
-  deleted?: number;
-  files?: unknown;
-  failed?: unknown;
-};
-type AuthFileBatchUploadResult = {
-  status: string;
-  uploaded: number;
-  files: string[];
-  failed: AuthFileBatchFailure[];
-};
-type AuthFileBatchDeleteResult = {
-  status: string;
-  deleted: number;
-  files: string[];
-  failed: AuthFileBatchFailure[];
-};
+type AuthFileEntry = AuthFilesResponse['files'][number];
+
+export type { AuthFileBatchFailure, AuthFileEntry };
 
 export const AUTH_FILE_INVALID_JSON_OBJECT_ERROR = 'AUTH_FILE_INVALID_JSON_OBJECT';
 
-const getStatusCode = (err: unknown): number | undefined => {
+export const isAuthFileInvalidJsonObjectError = (err: unknown): boolean =>
+  err instanceof Error && err.message === AUTH_FILE_INVALID_JSON_OBJECT_ERROR;
+
+export const getStatusCode = (err: unknown): number | undefined => {
   if (!err || typeof err !== 'object') return undefined;
   if ('status' in err) return (err as StatusError).status;
   return undefined;
 };
 
-const normalizeRequestedAuthFileNames = (names: string[]): string[] => {
+export const normalizeRequestedAuthFileNames = (names: string[]): string[] => {
   const seen = new Set<string>();
   const normalized: string[] = [];
 
@@ -108,82 +77,109 @@ const deriveSuccessfulFileNames = (requestedNames: string[], failed: AuthFileBat
   return requestedNames.filter((name) => !failedNames.has(name));
 };
 
-const normalizeBatchUploadResponse = (
+type AuthFileBatchRawResponse = {
+  status?: string;
+  files?: unknown;
+  failed?: unknown;
+};
+
+type AuthFileBatchCoreResult = {
+  status: string;
+  count: number;
+  files: string[];
+  failed: AuthFileBatchFailure[];
+};
+
+const normalizeBatchResponseCore = (
+  countFromPayload: number | undefined,
+  payload: AuthFileBatchRawResponse | undefined,
+  requestedNames: string[]
+): AuthFileBatchCoreResult => {
+  const failed = normalizeBatchFailures(payload?.failed);
+  const filesFromPayload = normalizeBatchFileNames(payload?.files);
+  const count =
+    typeof countFromPayload === 'number'
+      ? countFromPayload
+      : filesFromPayload.length > 0
+        ? filesFromPayload.length
+        : requestedNames.length === 1 && failed.length === 0
+          ? 1
+          : 0;
+
+  let resultFiles = filesFromPayload;
+  if (resultFiles.length === 0 && count > 0) {
+    if (failed.length === 0 && count === requestedNames.length) {
+      resultFiles = [...requestedNames];
+    } else {
+      const derivedNames = deriveSuccessfulFileNames(requestedNames, failed);
+      if (derivedNames.length === count) {
+        resultFiles = derivedNames;
+      }
+    }
+  }
+
+  return {
+    status: typeof payload?.status === 'string' ? payload.status : failed.length > 0 ? 'partial' : 'ok',
+    count,
+    files: resultFiles,
+    failed,
+  };
+};
+
+type AuthFileBatchUploadResponse = {
+  status?: string;
+  uploaded?: number;
+  files?: unknown;
+  failed?: unknown;
+};
+
+type AuthFileBatchDeleteResponse = {
+  status?: string;
+  deleted?: number;
+  files?: unknown;
+  failed?: unknown;
+};
+
+export type { AuthFileBatchUploadResponse, AuthFileBatchDeleteResponse };
+
+type AuthFileBatchUploadResult = {
+  status: string;
+  uploaded: number;
+  files: string[];
+  failed: AuthFileBatchFailure[];
+};
+
+type AuthFileBatchDeleteResult = {
+  status: string;
+  deleted: number;
+  files: string[];
+  failed: AuthFileBatchFailure[];
+};
+
+export type { AuthFileBatchUploadResult, AuthFileBatchDeleteResult };
+
+export const normalizeBatchUploadResponse = (
   payload: AuthFileBatchUploadResponse | undefined,
   requestedNames: string[]
 ): AuthFileBatchUploadResult => {
-  const failed = normalizeBatchFailures(payload?.failed);
-  const uploadedFilesFromPayload = normalizeBatchFileNames(payload?.files);
-  const uploaded =
-    typeof payload?.uploaded === 'number'
-      ? payload.uploaded
-      : uploadedFilesFromPayload.length > 0
-        ? uploadedFilesFromPayload.length
-        : requestedNames.length === 1 && failed.length === 0
-          ? 1
-          : 0;
-
-  let uploadedFiles = uploadedFilesFromPayload;
-  if (uploadedFiles.length === 0 && uploaded > 0) {
-    if (failed.length === 0 && uploaded === requestedNames.length) {
-      uploadedFiles = [...requestedNames];
-    } else {
-      const derivedNames = deriveSuccessfulFileNames(requestedNames, failed);
-      if (derivedNames.length === uploaded) {
-        uploadedFiles = derivedNames;
-      }
-    }
-  }
-
-  return {
-    status: typeof payload?.status === 'string' ? payload.status : failed.length > 0 ? 'partial' : 'ok',
-    uploaded,
-    files: uploadedFiles,
-    failed,
-  };
+  const core = normalizeBatchResponseCore(payload?.uploaded, payload, requestedNames);
+  return { status: core.status, uploaded: core.count, files: core.files, failed: core.failed };
 };
 
-const normalizeBatchDeleteResponse = (
+export const normalizeBatchDeleteResponse = (
   payload: AuthFileBatchDeleteResponse | undefined,
   requestedNames: string[]
 ): AuthFileBatchDeleteResult => {
-  const failed = normalizeBatchFailures(payload?.failed);
-  const deletedFilesFromPayload = normalizeBatchFileNames(payload?.files);
-  const deleted =
-    typeof payload?.deleted === 'number'
-      ? payload.deleted
-      : deletedFilesFromPayload.length > 0
-        ? deletedFilesFromPayload.length
-        : requestedNames.length === 1 && failed.length === 0
-          ? 1
-          : 0;
-
-  let deletedFiles = deletedFilesFromPayload;
-  if (deletedFiles.length === 0 && deleted > 0) {
-    if (failed.length === 0 && deleted === requestedNames.length) {
-      deletedFiles = [...requestedNames];
-    } else {
-      const derivedNames = deriveSuccessfulFileNames(requestedNames, failed);
-      if (derivedNames.length === deleted) {
-        deletedFiles = derivedNames;
-      }
-    }
-  }
-
-  return {
-    status: typeof payload?.status === 'string' ? payload.status : failed.length > 0 ? 'partial' : 'ok',
-    deleted,
-    files: deletedFiles,
-    failed,
-  };
+  const core = normalizeBatchResponseCore(payload?.deleted, payload, requestedNames);
+  return { status: core.status, deleted: core.count, files: core.files, failed: core.failed };
 };
 
-const readTextField = (entry: AuthFileEntry, key: string): string => {
+export const readTextField = (entry: AuthFileEntry, key: string): string => {
   const value = entry[key];
   return typeof value === 'string' ? value.trim() : '';
 };
 
-const readDateField = (entry: AuthFileEntry): number => {
+export const readDateField = (entry: AuthFileEntry): number => {
   const candidates = [entry['modtime'], entry.modified, entry['updated_at'], entry['last_refresh']];
 
   for (const value of candidates) {
@@ -265,7 +261,7 @@ const mergeAuthFileEntries = (entries: AuthFileEntry[]): AuthFileEntry => {
   return merged;
 };
 
-const dedupeAuthFilesResponse = (payload: AuthFilesResponse): AuthFilesResponse => {
+export const dedupeAuthFilesResponse = (payload: AuthFilesResponse): AuthFilesResponse => {
   const files = Array.isArray(payload?.files) ? payload.files : [];
   const grouped = new Map<string, AuthFileEntry[]>();
 
@@ -294,7 +290,7 @@ const dedupeAuthFilesResponse = (payload: AuthFilesResponse): AuthFilesResponse 
   };
 };
 
-const parseAuthFileJsonObject = (rawText: string): Record<string, unknown> => {
+export const parseAuthFileJsonObject = (rawText: string): Record<string, unknown> => {
   const trimmed = rawText.trim();
 
   let parsed: unknown;
@@ -311,15 +307,7 @@ const parseAuthFileJsonObject = (rawText: string): Record<string, unknown> => {
   return { ...(parsed as Record<string, unknown>) };
 };
 
-const saveAuthFileText = async (name: string, text: string) => {
-  const file = new File([text], name, { type: 'application/json' });
-  await authFilesApi.upload(file);
-};
-
-export const isAuthFileInvalidJsonObjectError = (err: unknown): boolean =>
-  err instanceof Error && err.message === AUTH_FILE_INVALID_JSON_OBJECT_ERROR;
-
-const normalizeOauthExcludedModels = (payload: unknown): Record<string, string[]> => {
+export const normalizeOauthExcludedModels = (payload: unknown): Record<string, string[]> => {
   if (!payload || typeof payload !== 'object') return {};
 
   const record = payload as Record<string, unknown>;
@@ -357,7 +345,7 @@ const normalizeOauthExcludedModels = (payload: unknown): Record<string, string[]
   return result;
 };
 
-const normalizeOauthModelAlias = (payload: unknown): Record<string, OAuthModelAliasEntry[]> => {
+export const normalizeOauthModelAlias = (payload: unknown): Record<string, OAuthModelAliasEntry[]> => {
   if (!payload || typeof payload !== 'object') return {};
 
   const record = payload as Record<string, unknown>;
@@ -376,17 +364,17 @@ const normalizeOauthModelAlias = (payload: unknown): Record<string, OAuthModelAl
     if (!key) return;
     if (!Array.isArray(mappings)) return;
 
-	    const seen = new Set<string>();
-	    const normalized = mappings
-	      .map((item) => {
-	        if (!item || typeof item !== 'object') return null;
-	        const entry = item as Record<string, unknown>;
-	        const name = String(entry.name ?? entry.id ?? entry.model ?? '').trim();
-	        const alias = String(entry.alias ?? '').trim();
-	        if (!name || !alias) return null;
-	        const fork = entry.fork === true;
-	        return fork ? { name, alias, fork } : { name, alias };
-	      })
+    const seen = new Set<string>();
+    const normalized = mappings
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const entry = item as Record<string, unknown>;
+        const name = String(entry.name ?? entry.id ?? entry.model ?? '').trim();
+        const alias = String(entry.alias ?? '').trim();
+        if (!name || !alias) return null;
+        const fork = entry.fork === true;
+        return fork ? { name, alias, fork } : { name, alias };
+      })
       .filter(Boolean)
       .filter((entry) => {
         const aliasEntry = entry as OAuthModelAliasEntry;
@@ -416,7 +404,7 @@ const normalizeNumberArray = (value: unknown): number[] => {
   }, []);
 };
 
-const normalizeAccountHealthState = (value: unknown): AccountHealthState | null => {
+export const normalizeAccountHealthState = (value: unknown): AccountHealthState | null => {
   if (!value || typeof value !== 'object') {
     return null;
   }
@@ -449,7 +437,7 @@ const normalizeAccountHealthState = (value: unknown): AccountHealthState | null 
   };
 };
 
-const normalizeAccountHealthMap = (payload: unknown): AccountHealthMap => {
+export const normalizeAccountHealthMap = (payload: unknown): AccountHealthMap => {
   if (!payload || typeof payload !== 'object') {
     return {};
   }
@@ -477,144 +465,4 @@ const normalizeAccountHealthMap = (payload: unknown): AccountHealthMap => {
     },
     {}
   );
-};
-
-const OAUTH_MODEL_ALIAS_ENDPOINT = '/oauth-model-alias';
-
-export const authFilesApi = {
-  list: async () => dedupeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/auth-files')),
-
-  setStatus: (name: string, options: boolean | AuthFileStatusOptions) =>
-    apiClient.patch<AuthFileStatusResponse>('/auth-files/status', {
-      name,
-      ...(typeof options === 'boolean' ? { disabled: options } : options),
-    }),
-
-  async getAccountHealth(): Promise<AccountHealthMap> {
-    const data = await apiClient.get('/auth-files/health');
-    return normalizeAccountHealthMap(data);
-  },
-
-  updateAccountHealth: (updates: Record<string, AccountHealthState | null>) =>
-    apiClient.put('/auth-files/health', updates),
-
-  recoverAccount: (name: string) =>
-    apiClient.post(`/auth-files/health/${encodeURIComponent(name)}/recover`, {}),
-
-  uploadFiles: async (files: File[]): Promise<AuthFileBatchUploadResult> => {
-    const requestedNames = files.map((file) => file.name);
-    if (requestedNames.length === 0) {
-      return { status: 'ok', uploaded: 0, files: [], failed: [] };
-    }
-
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append('file', file, file.name);
-    });
-    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/auth-files', formData);
-    return normalizeBatchUploadResponse(payload, requestedNames);
-  },
-
-  upload: (file: File) => authFilesApi.uploadFiles([file]),
-
-  deleteFiles: async (names: string[]): Promise<AuthFileBatchDeleteResult> => {
-    const requestedNames = normalizeRequestedAuthFileNames(names);
-    if (requestedNames.length === 0) {
-      return { status: 'ok', deleted: 0, files: [], failed: [] };
-    }
-
-    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/auth-files', {
-      data: { names: requestedNames },
-    });
-    return normalizeBatchDeleteResponse(payload, requestedNames);
-  },
-
-  deleteFile: (name: string) => authFilesApi.deleteFiles([name]),
-
-  deleteAll: () => apiClient.delete('/auth-files', { params: { all: true } }),
-
-  downloadText: async (name: string): Promise<string> => {
-    const response = await apiClient.getRaw(`/auth-files/download?name=${encodeURIComponent(name)}`, {
-      responseType: 'blob'
-    });
-    const blob = response.data as Blob;
-    return blob.text();
-  },
-
-  async downloadJsonObject(name: string): Promise<Record<string, unknown>> {
-    const rawText = await authFilesApi.downloadText(name);
-    return parseAuthFileJsonObject(rawText);
-  },
-
-  saveText: (name: string, text: string) => saveAuthFileText(name, text),
-
-  saveJsonObject: (name: string, json: Record<string, unknown>) =>
-    saveAuthFileText(name, JSON.stringify(json)),
-
-  // OAuth 排除模型
-  async getOauthExcludedModels(): Promise<Record<string, string[]>> {
-    const data = await apiClient.get('/oauth-excluded-models');
-    return normalizeOauthExcludedModels(data);
-  },
-
-  saveOauthExcludedModels: (provider: string, models: string[]) =>
-    apiClient.patch('/oauth-excluded-models', { provider, models }),
-
-  deleteOauthExcludedEntry: (provider: string) =>
-    apiClient.delete(`/oauth-excluded-models?provider=${encodeURIComponent(provider)}`),
-
-  replaceOauthExcludedModels: (map: Record<string, string[]>) =>
-    apiClient.put('/oauth-excluded-models', normalizeOauthExcludedModels(map)),
-
-  // OAuth 模型别名
-  async getOauthModelAlias(): Promise<Record<string, OAuthModelAliasEntry[]>> {
-    const data = await apiClient.get(OAUTH_MODEL_ALIAS_ENDPOINT);
-    return normalizeOauthModelAlias(data);
-  },
-
-  saveOauthModelAlias: async (channel: string, aliases: OAuthModelAliasEntry[]) => {
-    const normalizedChannel = String(channel ?? '')
-      .trim()
-      .toLowerCase();
-    const normalizedAliases = normalizeOauthModelAlias({ [normalizedChannel]: aliases })[normalizedChannel] ?? [];
-    await apiClient.patch(OAUTH_MODEL_ALIAS_ENDPOINT, { channel: normalizedChannel, aliases: normalizedAliases });
-  },
-
-  deleteOauthModelAlias: async (channel: string) => {
-    const normalizedChannel = String(channel ?? '')
-      .trim()
-      .toLowerCase();
-
-    try {
-      await apiClient.patch(OAUTH_MODEL_ALIAS_ENDPOINT, { channel: normalizedChannel, aliases: [] });
-    } catch (err: unknown) {
-      const status = getStatusCode(err);
-      if (status !== 405) throw err;
-      await apiClient.delete(`${OAUTH_MODEL_ALIAS_ENDPOINT}?channel=${encodeURIComponent(normalizedChannel)}`);
-    }
-  },
-
-  // 获取认证凭证支持的模型
-  async getModelsForAuthFile(name: string): Promise<{ id: string; display_name?: string; type?: string; owned_by?: string }[]> {
-    const data = await apiClient.get<Record<string, unknown>>(
-      `/auth-files/models?name=${encodeURIComponent(name)}`
-    );
-    const models = data.models ?? data['models'];
-    return Array.isArray(models)
-      ? (models as { id: string; display_name?: string; type?: string; owned_by?: string }[])
-      : [];
-  },
-
-  // 获取指定 channel 的模型定义
-  async getModelDefinitions(channel: string): Promise<{ id: string; display_name?: string; type?: string; owned_by?: string }[]> {
-    const normalizedChannel = String(channel ?? '').trim().toLowerCase();
-    if (!normalizedChannel) return [];
-    const data = await apiClient.get<Record<string, unknown>>(
-      `/model-definitions/${encodeURIComponent(normalizedChannel)}`
-    );
-    const models = data.models ?? data['models'];
-    return Array.isArray(models)
-      ? (models as { id: string; display_name?: string; type?: string; owned_by?: string }[])
-      : [];
-  }
 };

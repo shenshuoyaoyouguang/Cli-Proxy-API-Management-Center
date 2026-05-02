@@ -4,6 +4,7 @@
 
 import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
+import { isRecord } from '@/atoms/usage/guards';
 
 export interface ApiCallRequest {
   authIndex?: string;
@@ -74,9 +75,6 @@ const normalizeBody = (input: unknown): { bodyText: string; body: unknown | null
 };
 
 export const getApiCallErrorMessage = (result: ApiCallResult): string => {
-  const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object';
-
   const status = result.statusCode;
   const body = result.body;
   const bodyText = result.bodyText;

@@ -11,6 +11,7 @@ import {
 } from '@/utils/usage';
 import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
+import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
 
 export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
@@ -40,16 +41,8 @@ let usageRequestToken = 0;
 let inFlightUsageRequest: { id: number; scopeKey: string; promise: Promise<void> } | null = null;
 let usageAbortController: AbortController | null = null;
 
-const isCanceledRequestError = (error: unknown): boolean =>
-  error instanceof Error &&
-  (error.name === 'AbortError' || (error as { code?: unknown }).code === 'ERR_CANCELED');
-
-const getErrorMessage = (error: unknown) =>
-  error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : i18n.t('usage_stats.loading_error');
+const getUsageStatsErrorMessage = (error: unknown) =>
+  getErrorMessage(error, i18n.t('usage_stats.loading_error'));
 
 type PersistedUsageStatsCache = {
   usage: UsageStatsSnapshot | null;
@@ -358,7 +351,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           return;
         }
         if (requestId !== usageRequestToken) return;
-        const message = getErrorMessage(error);
+        const message = getUsageStatsErrorMessage(error);
         set({
           loading: false,
           error: message,

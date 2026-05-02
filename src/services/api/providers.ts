@@ -15,11 +15,9 @@ import type {
   ApiKeyEntry,
   ModelAlias
 } from '@/types';
+import { isRecord } from '@/atoms/usage/guards';
 
 const serializeHeaders = (headers?: Record<string, string>) => (headers && Object.keys(headers).length ? headers : undefined);
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const extractArrayPayload = (data: unknown, key: string): unknown[] => {
   if (Array.isArray(data)) return data;
@@ -61,20 +59,33 @@ const serializeApiKeyEntry = (entry: ApiKeyEntry) => {
   return payload;
 };
 
-const serializeProviderKey = (config: ProviderKeyConfig) => {
+const isNonNullRecord = (x: unknown): x is Record<string, unknown> => x !== null && x !== undefined;
+
+const serializeBaseProviderKey = (
+  config: { apiKey: string; priority?: number; prefix?: string; baseUrl?: string; proxyUrl?: string; headers?: Record<string, string>; excludedModels?: string[] },
+  serializeModels: (models?: ModelAlias[]) => Record<string, unknown>[] | undefined,
+) => {
   const payload: Record<string, unknown> = { 'api-key': config.apiKey };
   if (config.priority !== undefined) payload.priority = config.priority;
   if (config.prefix?.trim()) payload.prefix = config.prefix.trim();
   if (config.baseUrl) payload['base-url'] = config.baseUrl;
-  if (config.websockets !== undefined) payload.websockets = config.websockets;
   if (config.proxyUrl) payload['proxy-url'] = config.proxyUrl;
   const headers = serializeHeaders(config.headers);
   if (headers) payload.headers = headers;
-  const models = serializeModelAliases(config.models);
+  const models = serializeModels((config as ProviderKeyConfig).models);
   if (models && models.length) payload.models = models;
   if (config.excludedModels && config.excludedModels.length) {
     payload['excluded-models'] = config.excludedModels;
   }
+  return payload;
+};
+
+const serializeProviderKey = (config: ProviderKeyConfig) => {
+  const payload = serializeBaseProviderKey(
+    config,
+    (models) => serializeModelAliases(models)?.filter(isNonNullRecord),
+  );
+  if (config.websockets !== undefined) payload.websockets = config.websockets;
   if (config.cloak) {
     const cloakPayload: Record<string, unknown> = {};
     const mode = config.cloak.mode?.trim();
@@ -102,37 +113,17 @@ const serializeVertexModelAliases = (models?: ModelAlias[]) =>
         .filter(Boolean)
     : undefined;
 
-const serializeVertexKey = (config: ProviderKeyConfig) => {
-  const payload: Record<string, unknown> = { 'api-key': config.apiKey };
-  if (config.priority !== undefined) payload.priority = config.priority;
-  if (config.prefix?.trim()) payload.prefix = config.prefix.trim();
-  if (config.baseUrl) payload['base-url'] = config.baseUrl;
-  if (config.proxyUrl) payload['proxy-url'] = config.proxyUrl;
-  const headers = serializeHeaders(config.headers);
-  if (headers) payload.headers = headers;
-  const models = serializeVertexModelAliases(config.models);
-  if (models && models.length) payload.models = models;
-  if (config.excludedModels && config.excludedModels.length) {
-    payload['excluded-models'] = config.excludedModels;
-  }
-  return payload;
-};
+const serializeVertexKey = (config: ProviderKeyConfig) =>
+  serializeBaseProviderKey(
+    config,
+    (models) => serializeVertexModelAliases(models)?.filter(isNonNullRecord) as Record<string, unknown>[] | undefined,
+  );
 
-const serializeGeminiKey = (config: GeminiKeyConfig) => {
-  const payload: Record<string, unknown> = { 'api-key': config.apiKey };
-  if (config.priority !== undefined) payload.priority = config.priority;
-  if (config.prefix?.trim()) payload.prefix = config.prefix.trim();
-  if (config.baseUrl) payload['base-url'] = config.baseUrl;
-  if (config.proxyUrl) payload['proxy-url'] = config.proxyUrl;
-  const headers = serializeHeaders(config.headers);
-  if (headers) payload.headers = headers;
-  const models = serializeModelAliases(config.models);
-  if (models && models.length) payload.models = models;
-  if (config.excludedModels && config.excludedModels.length) {
-    payload['excluded-models'] = config.excludedModels;
-  }
-  return payload;
-};
+const serializeGeminiKey = (config: GeminiKeyConfig) =>
+  serializeBaseProviderKey(
+    config,
+    (models) => serializeModelAliases(models)?.filter(isNonNullRecord) as Record<string, unknown>[] | undefined,
+  );
 
 const serializeOpenAIProvider = (provider: OpenAIProviderConfig) => {
   const payload: Record<string, unknown> = {

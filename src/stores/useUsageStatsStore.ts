@@ -168,14 +168,19 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
     return;
   }
 
+  const storageKey = createCacheStorageKey(cache.scopeKey);
+  const serializedCache = JSON.stringify(cache);
+
   try {
-    localStorage.setItem(createCacheStorageKey(cache.scopeKey), JSON.stringify(cache));
+    localStorage.setItem(storageKey, serializedCache);
+    return;
   } catch {
     CacheLayer.prune();
   }
 
   try {
-    localStorage.setItem(createCacheStorageKey(cache.scopeKey), JSON.stringify(cache));
+    localStorage.setItem(storageKey, serializedCache);
+    return;
   } catch {
     const liteCache: PersistedUsageStatsCache = {
       ...cache,
@@ -184,9 +189,8 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
       detailCount: 0,
     };
     try {
-      localStorage.setItem(createCacheStorageKey(cache.scopeKey), JSON.stringify(liteCache));
+      localStorage.setItem(storageKey, JSON.stringify(liteCache));
     } catch {
-      // Ignore final persistence failures.
     }
   }
 };

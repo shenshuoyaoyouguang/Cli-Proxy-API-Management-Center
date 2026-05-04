@@ -37,7 +37,8 @@ export function getDetailTimestampMs(detail: { timestamp: string; __timestampMs?
   if (typeof detail.timestamp !== 'string') {
     return Number.NaN;
   }
-  return Date.parse(detail.timestamp);
+  const date = new Date(detail.timestamp);
+  return Number.isNaN(date.getTime()) ? Number.NaN : date.getTime();
 }
 
 export function resolveHourWindow(hourWindow: number): number {

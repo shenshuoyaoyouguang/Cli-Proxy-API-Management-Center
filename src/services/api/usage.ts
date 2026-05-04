@@ -28,6 +28,14 @@ export interface UsageImportResponse {
   [key: string]: unknown;
 }
 
+export interface UsageReportResponse {
+  total_requests?: number;
+  failed_requests?: number;
+  origin?: string;
+  session_id?: string;
+  [key: string]: unknown;
+}
+
 export const usageApi = {
   /**
    * 获取使用统计原始数据
@@ -66,7 +74,7 @@ export const usageApi = {
    * 自动持久化使用统计快照
    */
   autoPersistUsage: (payload: AutoPersistUsagePayload) =>
-    apiClient.post<UsageImportResponse>('/usage/import', payload, { timeout: USAGE_TIMEOUT_MS }),
+    apiClient.post<UsageReportResponse>('/usage/reports', payload, { timeout: USAGE_TIMEOUT_MS }),
 
   /**
    * 计算密钥成功/失败统计，必要时会先获取 usage 数据

@@ -27,6 +27,17 @@ function createNormalizeSource() {
   };
 }
 
+function getApisWithFallback(usageData: unknown): Record<string, unknown> | null {
+  let apis = getApisRecord(usageData);
+  if (!apis && isRecord(usageData)) {
+    const usageField = (usageData as Record<string, unknown>).usage;
+    if (isRecord(usageField)) {
+      apis = getApisRecord(usageField);
+    }
+  }
+  return apis;
+}
+
 export function collectUsageDetails(usageData: unknown): UsageDetail[] {
   const cacheKey = isRecord(usageData) ? (usageData as object) : null;
   if (cacheKey) {
@@ -34,8 +45,14 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
     if (cached) return cached;
   }
 
-  const apis = getApisRecord(usageData);
-  if (!apis) return [];
+  const apis = getApisWithFallback(usageData);
+
+  if (!apis) {
+    if (import.meta.env.DEV) {
+      console.warn('[collectUsageDetails] No apis field found in:', usageData);
+    }
+    return [];
+  }
   const details: UsageDetail[] = [];
   const normalizeSource = createNormalizeSource();
 
@@ -83,8 +100,14 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
     if (cached) return cached;
   }
 
-  const apis = getApisRecord(usageData);
-  if (!apis) return [];
+  const apis = getApisWithFallback(usageData);
+
+  if (!apis) {
+    if (import.meta.env.DEV) {
+      console.warn('[collectUsageDetailsWithEndpoint] No apis field found in:', usageData);
+    }
+    return [];
+  }
 
   const details: UsageDetailWithEndpoint[] = [];
   const normalizeSource = createNormalizeSource();

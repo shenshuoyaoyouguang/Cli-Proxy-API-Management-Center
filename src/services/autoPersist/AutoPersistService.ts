@@ -1,6 +1,15 @@
 import { usageApi, type AutoPersistUsagePayload } from '@/services/api/usage';
 import { CacheLayer } from '@/services/cache';
-import type { KeyStats, UsageDetail } from '@/utils/usage';
+import {
+  createAggregateOnlyUsageSnapshot,
+  type KeyStats,
+  type UsageDetail,
+} from '@/utils/usage';
+import {
+  DEFAULT_USAGE_CACHE_MAX_DETAILS,
+  resolveCachedUsageDetailsFromUsage,
+  trimUsageDetailsForCache,
+} from '@/utils/usage/cacheSnapshot';
 
 type UsageStatsSnapshot = Record<string, unknown>;
 
@@ -29,8 +38,6 @@ const AUTO_PERSIST_CACHE_PREFIX = 'cli-proxy-usage-auto-persist-v1';
 const AUTO_PERSIST_TRIGGER_DELTA = 10;
 const AUTO_PERSIST_INTERVAL_MS = 60_000;
 const AUTO_PERSIST_START_DELAY_MS = 30_000;
-const AUTO_PERSIST_MAX_DETAILS = 5_000;
-const AUTO_PERSIST_TRIM_RATIO = 0.2;
 const AUTO_PERSIST_MAX_DELAY_MS = 5 * 60 * 1000;
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
@@ -45,18 +52,11 @@ const createSessionId = () => {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const trimUsageDetails = (usageDetails: UsageDetail[]): UsageDetail[] => {
-  if (usageDetails.length <= AUTO_PERSIST_MAX_DETAILS) {
-    return usageDetails;
-  }
-
-  const trimCount = Math.max(
-    Math.ceil(usageDetails.length * AUTO_PERSIST_TRIM_RATIO),
-    usageDetails.length - AUTO_PERSIST_MAX_DETAILS
-  );
-
-  return usageDetails.slice(trimCount);
-};
+const resolveCachedUsageDetails = (
+  usage: UsageStatsSnapshot | null,
+  usageDetails: UsageDetail[] | undefined
+): UsageDetail[] =>
+  resolveCachedUsageDetailsFromUsage(usage, usageDetails, DEFAULT_USAGE_CACHE_MAX_DETAILS);
 
 const normalizeKeyStats = (value: unknown): KeyStats => {
   if (!value || typeof value !== 'object') {
@@ -96,9 +96,10 @@ const readCache = (scopeKey: string): AutoPersistCache | null => {
       parsed.usage && typeof parsed.usage === 'object'
         ? (parsed.usage as UsageStatsSnapshot)
         : null;
-    const usageDetails = Array.isArray(parsed.usageDetails)
-      ? (parsed.usageDetails as UsageDetail[])
-      : [];
+    const usageDetails = resolveCachedUsageDetails(
+      usage,
+      parsed.usageDetails as UsageDetail[] | undefined
+    );
 
     return {
       scopeKey,
@@ -161,13 +162,11 @@ const writeCache = (cache: AutoPersistCache) => {
   } catch {
     const liteCache: AutoPersistCache = {
       ...cache,
-      usage: null,
+      usage: cache.usage ? createAggregateOnlyUsageSnapshot(cache.usage) : null,
       usageDetails: [],
-      detailCount: 0,
-      rawDetailCount: 0,
+      detailCount: cache.detailCount,
+      rawDetailCount: cache.rawDetailCount,
       payload: null,
-      keyStats: createEmptyKeyStats(),
-      lastRefreshedAt: null,
     };
 
     try {
@@ -264,8 +263,8 @@ export class AutoPersistService {
     const incomingDetailCount = input.usageDetails.length;
     const usage = input.usage;
     const keyStats = input.keyStats;
-    const usageDetails = trimUsageDetails(input.usageDetails);
-    const detailCount = usageDetails.length;
+    const usageDetails = trimUsageDetailsForCache(input.usageDetails, DEFAULT_USAGE_CACHE_MAX_DETAILS);
+    const detailCount = incomingDetailCount;
     const rawDetailCount = incomingDetailCount;
     const lastRefreshedAt = input.lastRefreshedAt;
     const payload =

@@ -1,7 +1,8 @@
 import type { UsageDetail, UsageDetailWithEndpoint } from '@/atoms/usage/types';
 import { isRecord, getApisRecord, normalizeAuthIndex } from '@/atoms/usage/guards';
 import { normalizeUsageSourceId } from '@/atoms/usage/source';
-import { normalizeUsageTokens } from '@/atoms/usage/tokens';
+import { normalizeUsageDetailTokens } from '@/atoms/usage/tokens';
+import { parseTimestampMs } from '@/utils/timestamp';
 
 const USAGE_ENDPOINT_METHOD_REGEX = /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(\S+)/i;
 
@@ -38,14 +39,60 @@ function getApisWithFallback(usageData: unknown): Record<string, unknown> | null
   return apis;
 }
 
-export function collectUsageDetails(usageData: unknown): UsageDetail[] {
-  const cacheKey = isRecord(usageData) ? (usageData as object) : null;
-  if (cacheKey) {
-    const cached = usageDetailsCache.get(cacheKey);
-    if (cached) return cached;
+function readCachedDetails<T>(
+  cache: WeakMap<object, T[]>,
+  usageData: unknown,
+  apis: Record<string, unknown> | null
+): T[] | null {
+  const rootCacheKey = isRecord(usageData) ? (usageData as object) : null;
+  if (rootCacheKey) {
+    const cached = cache.get(rootCacheKey);
+    if (cached) {
+      return cached;
+    }
   }
 
+  const apisCacheKey = apis ? (apis as object) : null;
+  if (!apisCacheKey) {
+    return null;
+  }
+
+  const cached = cache.get(apisCacheKey);
+  if (!cached) {
+    return null;
+  }
+
+  if (rootCacheKey && rootCacheKey !== apisCacheKey) {
+    cache.set(rootCacheKey, cached);
+  }
+
+  return cached;
+}
+
+function writeCachedDetails<T>(
+  cache: WeakMap<object, T[]>,
+  usageData: unknown,
+  apis: Record<string, unknown> | null,
+  details: T[]
+) {
+  const rootCacheKey = isRecord(usageData) ? (usageData as object) : null;
+  const apisCacheKey = apis ? (apis as object) : null;
+
+  if (apisCacheKey) {
+    cache.set(apisCacheKey, details);
+  }
+
+  if (rootCacheKey) {
+    cache.set(rootCacheKey, details);
+  }
+}
+
+export function collectUsageDetails(usageData: unknown): UsageDetail[] {
   const apis = getApisWithFallback(usageData);
+  const cached = readCachedDetails(usageDetailsCache, usageData, apis);
+  if (cached) {
+    return cached;
+  }
 
   if (!apis) {
     if (import.meta.env.DEV) {
@@ -70,8 +117,8 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
       modelDetails.forEach((detailRaw) => {
         if (!isRecord(detailRaw) || typeof detailRaw.timestamp !== 'string') return;
         const timestamp = detailRaw.timestamp;
-        const timestampMs = Date.parse(detailRaw.timestamp);
-        const tokens = normalizeUsageTokens(detailRaw.tokens);
+        const timestampMs = parseTimestampMs(detailRaw.timestamp);
+        const tokens = normalizeUsageDetailTokens(detailRaw);
         const authIndex = normalizeAuthIndex(detailRaw.auth_index);
 
         details.push({
@@ -81,26 +128,22 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
           tokens,
           failed: detailRaw.failed === true,
           __modelName: modelName,
-          __timestampMs: Number.isNaN(timestampMs) ? 0 : timestampMs,
+          __timestampMs: timestampMs,
         });
       });
     });
   });
 
-  if (cacheKey) {
-    usageDetailsCache.set(cacheKey, details);
-  }
+  writeCachedDetails(usageDetailsCache, usageData, apis, details);
   return details;
 }
 
 export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetailWithEndpoint[] {
-  const cacheKey = isRecord(usageData) ? (usageData as object) : null;
-  if (cacheKey) {
-    const cached = usageDetailsWithEndpointCache.get(cacheKey);
-    if (cached) return cached;
-  }
-
   const apis = getApisWithFallback(usageData);
+  const cached = readCachedDetails(usageDetailsWithEndpointCache, usageData, apis);
+  if (cached) {
+    return cached;
+  }
 
   if (!apis) {
     if (import.meta.env.DEV) {
@@ -130,8 +173,8 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
       modelDetails.forEach((detailRaw) => {
         if (!isRecord(detailRaw) || typeof detailRaw.timestamp !== 'string') return;
         const timestamp = detailRaw.timestamp;
-        const timestampMs = Date.parse(detailRaw.timestamp);
-        const tokens = normalizeUsageTokens(detailRaw.tokens);
+        const timestampMs = parseTimestampMs(detailRaw.timestamp);
+        const tokens = normalizeUsageDetailTokens(detailRaw);
         const authIndex = normalizeAuthIndex(detailRaw.auth_index);
 
         details.push({
@@ -144,14 +187,12 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
           __endpoint: endpoint,
           __endpointMethod: endpointMethod,
           __endpointPath: endpointPath,
-          __timestampMs: Number.isNaN(timestampMs) ? 0 : timestampMs,
+          __timestampMs: timestampMs,
         });
       });
     });
   });
 
-  if (cacheKey) {
-    usageDetailsWithEndpointCache.set(cacheKey, details);
-  }
+  writeCachedDetails(usageDetailsWithEndpointCache, usageData, apis, details);
   return details;
 }

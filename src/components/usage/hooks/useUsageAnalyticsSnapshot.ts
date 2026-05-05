@@ -2,10 +2,12 @@ import { useMemo } from 'react';
 import type { CredentialInfo } from '@/types/sourceInfo';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
 import {
+  collectUsageDetails,
   filterUsageByTimeRange,
   getApiStats,
   getModelNamesFromUsage,
   getModelStats,
+  rehydrateUsageAggregatesFromDetails,
   resolveModelNameInDetails,
   normalizeUsageModelNames,
   type ModelPrice,
@@ -104,8 +106,21 @@ export function useUsageAnalyticsSnapshot({
     return mergeAliasReverseMaps(providerMap, aliasReverseMap ?? new Map());
   }, [geminiKeys, claudeConfigs, codexConfigs, vertexConfigs, openaiProviders, aliasReverseMap]);
 
+  const usageDerivedDetails = useMemo(
+    () => (usage ? collectUsageDetails(usage) : []),
+    [usage]
+  );
+
+  const analyticsSourceDetails = useMemo(
+    () =>
+      usageDerivedDetails.length > usageDetails.length
+        ? usageDerivedDetails
+        : usageDetails,
+    [usageDerivedDetails, usageDetails]
+  );
+
   const filteredUsage = useMemo(
-    () => (usage ? filterUsageByTimeRange(usage, timeRange, nowMs) : null),
+    () => (usage ? rehydrateUsageAggregatesFromDetails(filterUsageByTimeRange(usage, timeRange, nowMs)) : null),
     [usage, timeRange, nowMs]
   );
 
@@ -115,8 +130,8 @@ export function useUsageAnalyticsSnapshot({
   );
 
   const filteredDetails = useMemo(
-    () => filterUsageDetailsByTimeRange(usageDetails, timeRange, nowMs),
-    [usageDetails, timeRange, nowMs]
+    () => filterUsageDetailsByTimeRange(analyticsSourceDetails, timeRange, nowMs),
+    [analyticsSourceDetails, timeRange, nowMs]
   );
 
   const resolvedDetails = useMemo(
@@ -155,8 +170,15 @@ export function useUsageAnalyticsSnapshot({
   );
 
   const usageSummary = useMemo(
-    () => createUsageSummaryMetrics(resolvedDetails, modelPrices, nowMs),
-    [resolvedDetails, modelPrices, nowMs]
+    () =>
+      createUsageSummaryMetrics(
+        resolvedDetails,
+        modelPrices,
+        nowMs,
+        30,
+        filteredUsage?.total_tokens
+      ),
+    [filteredUsage?.total_tokens, resolvedDetails, modelPrices, nowMs]
   );
 
   const requestEventRows = useMemo(
@@ -167,9 +189,9 @@ export function useUsageAnalyticsSnapshot({
   const healthRequestEventRows = useMemo(
     () =>
       includeHealthRequestEventRows
-        ? createRequestEventRowsForRange(usageDetails, '1d', nowMs, sourceInfoMap, authFileMap, locale)
+        ? createRequestEventRowsForRange(analyticsSourceDetails, '1d', nowMs, sourceInfoMap, authFileMap, locale)
         : [],
-    [authFileMap, includeHealthRequestEventRows, locale, nowMs, sourceInfoMap, usageDetails]
+    [analyticsSourceDetails, authFileMap, includeHealthRequestEventRows, locale, nowMs, sourceInfoMap]
   );
 
   const credentialRows = useMemo(

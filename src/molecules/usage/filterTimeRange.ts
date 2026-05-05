@@ -2,8 +2,9 @@ import type { UsageTimeRange, UsageDetail } from '@/atoms/usage/types';
 import { USAGE_TIME_RANGE_MS } from '@/atoms/usage/time';
 import { getDetailTimestampMs } from '@/atoms/usage/time';
 import { isRecord, getApisRecord } from '@/atoms/usage/guards';
-import { extractCanonicalTotalTokens } from '@/atoms/usage/tokens';
+import { getUsageDetailTotalTokenCount } from '@/atoms/usage/tokens';
 import type { UsageSummary } from '@/atoms/usage/types';
+import { parseTimestampMs } from '@/utils/timestamp';
 
 function createUsageSummary(): UsageSummary {
   return {
@@ -43,6 +44,22 @@ export function filterUsageByTimeRange<T>(
     return usageData;
   }
 
+  const hasAnyDetails = Object.values(apis).some((apiEntry) => {
+    if (!isRecord(apiEntry)) {
+      return false;
+    }
+    const models = isRecord(apiEntry.models) ? apiEntry.models : null;
+    if (!models) {
+      return false;
+    }
+    return Object.values(models).some(
+      (modelEntry) => isRecord(modelEntry) && Array.isArray(modelEntry.details) && modelEntry.details.length > 0
+    );
+  });
+  if (!hasAnyDetails) {
+    return usageData;
+  }
+
   const windowStart = nowMs - rangeMs;
   const filteredApis: Record<string, unknown> = {};
   const totalSummary = createUsageSummary();
@@ -75,7 +92,7 @@ export function filterUsageByTimeRange<T>(
         if (!detailRecord || typeof detailRecord.timestamp !== 'string') {
           return;
         }
-        const timestamp = Date.parse(detailRecord.timestamp);
+        const timestamp = parseTimestampMs(detailRecord.timestamp);
         if (Number.isNaN(timestamp) || timestamp < windowStart || timestamp > nowMs) {
           return;
         }
@@ -87,7 +104,7 @@ export function filterUsageByTimeRange<T>(
         } else {
           modelSummary.successCount += 1;
         }
-        modelSummary.totalTokens += extractCanonicalTotalTokens(detailRecord.tokens ?? detailRecord);
+        modelSummary.totalTokens += getUsageDetailTotalTokenCount(detailRecord);
       });
 
       if (!filteredDetails.length) {

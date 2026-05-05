@@ -1,4 +1,5 @@
 import type { UsageTimeRange } from './types';
+import { parseTimestampMs } from '@/utils/timestamp';
 
 export const USAGE_TIME_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
   '1d': 1 * 24 * 60 * 60 * 1000,
@@ -34,11 +35,7 @@ export function getDetailTimestampMs(detail: { timestamp: string; __timestampMs?
   if (typeof detail.__timestampMs === 'number' && Number.isFinite(detail.__timestampMs)) {
     return detail.__timestampMs;
   }
-  if (typeof detail.timestamp !== 'string') {
-    return Number.NaN;
-  }
-  const date = new Date(detail.timestamp);
-  return Number.isNaN(date.getTime()) ? Number.NaN : date.getTime();
+  return parseTimestampMs(detail.timestamp);
 }
 
 export function resolveHourWindow(hourWindow: number): number {

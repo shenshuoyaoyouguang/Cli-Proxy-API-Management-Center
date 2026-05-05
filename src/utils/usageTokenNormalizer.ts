@@ -77,8 +77,34 @@ const flattenNumericLeaves = (
   return result;
 };
 
-const NEGATIVE_OUTPUT_SEGMENTS = ['prompt', 'input', 'cache', 'cached', 'reasoning', 'thinking', 'thought'] as const;
-const NEGATIVE_INPUT_SEGMENTS = ['completion', 'output', 'generated', 'generation', 'response', 'candidate', 'reasoning', 'thinking', 'thought'] as const;
+const NEGATIVE_OUTPUT_SEGMENTS = [
+  'prompt',
+  'input',
+  'cache',
+  'cached',
+  'reasoning',
+  'thinking',
+  'thought',
+  'thoughts',
+] as const;
+const NEGATIVE_INPUT_SEGMENTS = [
+  'completion',
+  'output',
+  'generated',
+  'generation',
+  'response',
+  'responses',
+  'candidate',
+  'candidates',
+  'result',
+  'results',
+  'answer',
+  'answers',
+  'reasoning',
+  'thinking',
+  'thought',
+  'thoughts',
+] as const;
 const NEGATIVE_TOTAL_SEGMENTS = ['rate', 'rpm', 'tpm', 'limit', 'remaining', 'max', 'quota'] as const;
 
 const classifyPath = (path: string[], value: number): TokenCandidate[] => {
@@ -119,7 +145,7 @@ const classifyPath = (path: string[], value: number): TokenCandidate[] => {
     leaf.includes('cache_creation') ||
     (hasAny(segments, ['cache']) && hasAny(segments, ['creation', 'create', 'write', 'populate']));
 
-  const hasReasoningSignal = hasAny(segments, ['reasoning', 'thinking', 'thought']);
+  const hasReasoningSignal = hasAny(segments, ['reasoning', 'thinking', 'thought', 'thoughts']);
   const hasPromptSignal = hasAny(segments, ['prompt', 'input']);
   const hasCompletionSignal = hasAny(segments, [
     'completion',
@@ -127,22 +153,53 @@ const classifyPath = (path: string[], value: number): TokenCandidate[] => {
     'generated',
     'generation',
     'response',
+    'responses',
     'candidate',
+    'candidates',
+    'result',
+    'results',
+    'answer',
+    'answers',
   ]);
+  const isDirectPromptAggregateLeaf = [
+    'prompt_tokens',
+    'input_tokens',
+    'prompt_token_count',
+    'input_token_count',
+    'prompt',
+  ].includes(leaf);
 
   if (hasAny(segments, NEGATIVE_TOTAL_SEGMENTS)) {
     // noop
-  } else if (hasAny(segments, ['total']) && countLike) {
+  } else if (
+    leaf === 'total_tokens' ||
+    leaf === 'total_token_count' ||
+    (hasAny(segments, ['total']) && countLike)
+  ) {
     push('total', 'aggregate', leaf === 'total_tokens' ? 120 : 100);
   }
 
-  if (leaf === 'reasoning_tokens' || leaf === 'thinking_tokens' || leaf === 'thought_tokens') {
+  if (
+    leaf === 'reasoning_tokens' ||
+    leaf === 'thinking_tokens' ||
+    leaf === 'thought_tokens' ||
+    leaf === 'reasoning_token_count' ||
+    leaf === 'thinking_token_count' ||
+    leaf === 'thought_token_count' ||
+    leaf === 'thoughts_token_count'
+  ) {
     push('reasoning', 'aggregate', 120);
   } else if (hasReasoningSignal) {
     push('reasoning', 'aggregate', 95);
   }
 
-  if (leaf === 'cached_tokens' || leaf === 'cache_tokens') {
+  if (
+    leaf === 'cached_tokens' ||
+    leaf === 'cache_tokens' ||
+    leaf === 'cached_token_count' ||
+    leaf === 'cache_token_count' ||
+    leaf === 'cached_content_token_count'
+  ) {
     push('cached', 'aggregate', 120);
   } else if (hasCacheReadSignal) {
     push('cached', 'aggregate', 110);
@@ -155,7 +212,11 @@ const classifyPath = (path: string[], value: number): TokenCandidate[] => {
     push('cached', 'aggregate', 90);
   }
 
-  if (leaf === 'prompt_tokens') {
+  if (
+    leaf === 'prompt_tokens' ||
+    leaf === 'prompt_token_count' ||
+    leaf === 'input_token_count'
+  ) {
     push('input', 'aggregate', 125);
   } else if (leaf === 'input_tokens') {
     push('input', 'aggregate', 110);
@@ -170,7 +231,20 @@ const classifyPath = (path: string[], value: number): TokenCandidate[] => {
     push('input', 'aggregate', 92);
   }
 
-  if (leaf === 'completion_tokens' || leaf === 'output_tokens') {
+  if (
+    leaf === 'completion_tokens' ||
+    leaf === 'output_tokens' ||
+    leaf === 'completion_token_count' ||
+    leaf === 'output_token_count' ||
+    leaf === 'candidate_token_count' ||
+    leaf === 'candidates_token_count' ||
+    leaf === 'response_token_count' ||
+    leaf === 'responses_token_count' ||
+    leaf === 'result_token_count' ||
+    leaf === 'results_token_count' ||
+    leaf === 'answer_token_count' ||
+    leaf === 'answers_token_count'
+  ) {
     push('output', 'aggregate', 125);
   } else if (leaf === 'completion') {
     push('output', 'aggregate', 105);
@@ -189,6 +263,8 @@ const classifyPath = (path: string[], value: number): TokenCandidate[] => {
   } else if (
     depth > 1 &&
     hasPromptSignal &&
+    !hasAny(segments, ['cache', 'cached']) &&
+    !isDirectPromptAggregateLeaf &&
     !hasCompletionSignal &&
     !hasReasoningSignal &&
     !hasAny(segments, ['total'])

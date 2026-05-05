@@ -17,6 +17,7 @@ import {
   type SourceInfoMapInput,
 } from '@/utils/sourceResolver';
 import { USAGE_TIME_RANGE_MS } from '@/atoms/usage/time';
+import { parseTimestampMs } from '@/utils/timestamp';
 
 const RUNTIME_QUALITY_HEALTHY_SUCCESS_RATE = 0.99;
 const RUNTIME_QUALITY_CRITICAL_SUCCESS_RATE = 0.97;
@@ -66,6 +67,7 @@ export interface TokenDistribution {
 }
 
 export interface UsageSummaryMetrics {
+  totalTokens: number;
   tokenBreakdown: {
     cachedTokens: number;
     reasoningTokens: number;
@@ -214,12 +216,11 @@ const getDetailTimestampMs = (detail: UsageDetail) => {
     return detail.__timestampMs;
   }
 
-  if (typeof detail.timestamp !== 'string') {
-    return Number.NaN;
-  }
-
-  return Date.parse(detail.timestamp);
+  return parseTimestampMs(detail.timestamp);
 };
+
+const toSortableTimestampMs = (timestampMs: number) =>
+  Number.isFinite(timestampMs) ? timestampMs : Number.NEGATIVE_INFINITY;
 
 const createEmptyPrimaryIncident = (): RuntimeQualityPrimaryIncident => ({
   type: 'none',
@@ -624,10 +625,7 @@ export function createTokenDistribution(details: UsageDetail[]): TokenDistributi
     const tokens = detail.tokens;
     input += typeof tokens.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
     output += typeof tokens.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
-    cached += Math.max(
-      typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-      typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
-    );
+    cached += getCachedTokens(tokens);
     reasoning +=
       typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
   });
@@ -639,9 +637,11 @@ export function createUsageSummaryMetrics(
   details: UsageDetail[],
   modelPrices: Record<string, ModelPrice>,
   nowMs: number,
-  windowMinutes: number = 30
+  windowMinutes: number = 30,
+  fallbackTotalTokens?: unknown
 ): UsageSummaryMetrics {
   const empty: UsageSummaryMetrics = {
+    totalTokens: Math.max(0, toNumber(fallbackTotalTokens)),
     tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0, inputTokens: 0, outputTokens: 0 },
     rateStats: {
       rpm: 0,
@@ -663,6 +663,7 @@ export function createUsageSummaryMetrics(
   let reasoningTokens = 0;
   let inputTokens = 0;
   let outputTokens = 0;
+  let overallTotalTokens = 0;
   let totalCost = 0;
   let requestCount = 0;
   let tokenCount = 0;
@@ -682,6 +683,7 @@ export function createUsageSummaryMetrics(
     inputTokens += Math.max(toNumber(tokens?.input_tokens), 0);
     outputTokens += Math.max(toNumber(tokens?.output_tokens), 0);
     reasoningTokens += Math.max(toNumber(tokens?.reasoning_tokens), 0);
+    overallTotalTokens += totalTokens;
 
     if (hasPrices) {
       totalCost += calculateCost(detail, modelPrices);
@@ -716,6 +718,7 @@ export function createUsageSummaryMetrics(
   });
 
   return {
+    totalTokens: Math.max(overallTotalTokens, toNumber(fallbackTotalTokens)),
     tokenBreakdown: { cachedTokens, reasoningTokens, inputTokens, outputTokens },
     rateStats: {
       rpm: requestCount / safeWindowMinutes,
@@ -877,16 +880,13 @@ export function createRequestEventRows(
       const inputTokens = Math.max(toNumber(detail.tokens?.input_tokens), 0);
       const outputTokens = Math.max(toNumber(detail.tokens?.output_tokens), 0);
       const reasoningTokens = Math.max(toNumber(detail.tokens?.reasoning_tokens), 0);
-      const cachedTokens = Math.max(
-        Math.max(toNumber(detail.tokens?.cached_tokens), 0),
-        Math.max(toNumber(detail.tokens?.cache_tokens), 0)
-      );
+      const cachedTokens = getCachedTokens(detail.tokens);
       const totalTokens = Math.max(toNumber(detail.tokens?.total_tokens), extractTotalTokens(detail));
 
       return {
         id: `${timestamp}-${model}-${sourceRaw || sourceInfo.displayName}-${authIndex}-${index}`,
         timestamp,
-        timestampMs: Number.isNaN(timestampMs) ? 0 : timestampMs,
+        timestampMs,
         timestampLabel: date ? date.toLocaleString(locale) : timestamp || '-',
         model,
         sourceRaw: sourceRaw || '-',
@@ -901,7 +901,7 @@ export function createRequestEventRows(
         totalTokens
       };
     })
-    .sort((a, b) => b.timestampMs - a.timestampMs);
+    .sort((a, b) => toSortableTimestampMs(b.timestampMs) - toSortableTimestampMs(a.timestampMs));
 }
 
 export function createRequestEventRowsForRange(

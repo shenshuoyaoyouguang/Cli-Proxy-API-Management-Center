@@ -69,7 +69,7 @@ export const StatCards = memo(function StatCards({
 }: StatCardsProps) {
   const { t } = useTranslation();
 
-  const { tokenBreakdown, rateStats, totalCost } = usageSummary;
+  const { totalTokens, tokenBreakdown, rateStats, totalCost } = usageSummary;
 
   const statsCards: StatCardData[] = [
     {
@@ -107,7 +107,7 @@ export const StatCards = memo(function StatCards({
       accent: STAT_COLORS.tokens.accent,
       accentSoft: STAT_COLORS.tokens.soft,
       accentBorder: STAT_COLORS.tokens.border,
-      value: loading ? '-' : <TokenNumber value={usage?.total_tokens ?? 0} />,
+      value: loading ? '-' : <TokenNumber value={totalTokens} />,
       meta: (
         <>
           <span className={styles.statMetaItem}>
@@ -198,7 +198,7 @@ export const StatCards = memo(function StatCards({
         <>
           <span className={styles.statMetaItem}>
             {t('usage_stats.total_tokens')}:{' '}
-            {loading ? '-' : <TokenNumber value={usage?.total_tokens ?? 0} />}
+            {loading ? '-' : <TokenNumber value={totalTokens} />}
           </span>
           {!hasPrices && (
             <span className={`${styles.statMetaItem} ${styles.statSubtle}`}>

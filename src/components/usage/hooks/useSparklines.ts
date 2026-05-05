@@ -1,5 +1,12 @@
 import { useCallback, useMemo } from 'react';
-import { calculateCost, collectUsageDetails, extractTotalTokens, type ModelPrice } from '@/utils/usage';
+import {
+  calculateCost,
+  collectUsageDetails,
+  extractTotalTokens,
+  getDetailTimestampMs,
+  type ModelPrice,
+  type UsageDetail,
+} from '@/utils/usage';
 import type { UsagePayload } from './useUsageData';
 
 export interface SparklineData {
@@ -23,6 +30,7 @@ export interface SparklineBundle {
 
 export interface UseSparklinesOptions {
   usage: UsagePayload | null;
+  usageDetails?: UsageDetail[];
   loading: boolean;
   modelPrices: Record<string, ModelPrice>;
   nowMs: number;
@@ -38,16 +46,22 @@ export interface UseSparklinesReturn {
 
 export function useSparklines({
   usage,
+  usageDetails = [],
   loading,
   modelPrices,
   nowMs,
 }: UseSparklinesOptions): UseSparklinesReturn {
   const lastHourSeries = useMemo(() => {
-    if (!usage) return { labels: [], requests: [], tokens: [], costs: [] };
     if (!Number.isFinite(nowMs) || nowMs <= 0) {
       return { labels: [], requests: [], tokens: [], costs: [] };
     }
-    const details = collectUsageDetails(usage);
+    const usageDerivedDetails = usage ? collectUsageDetails(usage) : [];
+    const details =
+      usageDerivedDetails.length > usageDetails.length
+        ? usageDerivedDetails
+        : usageDetails.length
+          ? usageDetails
+          : usageDerivedDetails;
     if (!details.length) return { labels: [], requests: [], tokens: [], costs: [] };
 
     const windowMinutes = 60;
@@ -58,7 +72,7 @@ export function useSparklines({
     const costBuckets = new Array(windowMinutes).fill(0);
 
     details.forEach((detail) => {
-      const timestamp = detail.__timestampMs ?? 0;
+      const timestamp = getDetailTimestampMs(detail);
       if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) {
         return;
       }
@@ -79,7 +93,7 @@ export function useSparklines({
     });
 
     return { labels, requests: requestBuckets, tokens: tokenBuckets, costs: costBuckets };
-  }, [modelPrices, nowMs, usage]);
+  }, [modelPrices, nowMs, usage, usageDetails]);
 
   const buildSparkline = useCallback(
     (

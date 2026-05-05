@@ -113,6 +113,7 @@ vi.mock('@/utils/usage', () => ({
     bySource: { 'k:test-key': { success: 1, failure: 0 } },
     byAuthIndex: { '0': { success: 1, failure: 0 } },
   })),
+  getDetailTimestampMs: vi.fn((detail: UsageDetail) => detail.__timestampMs ?? Date.parse(detail.timestamp)),
 }));
 
 vi.mock('@/i18n', () => ({
@@ -124,10 +125,12 @@ vi.mock('@/i18n', () => ({
 import { useUsageStatsStore } from './useUsageStatsStore';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
+import { collectUsageDetails } from '@/utils/usage';
 
 describe('useUsageStatsStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue(null);
     localStorage.clear();
     sessionStorage.clear();
     useUsageStatsStore.getState().clearUsageStats();
@@ -242,6 +245,16 @@ describe('useUsageStatsStore', () => {
       expect(usageApi.getUsage).toHaveBeenCalled();
     });
 
+    it('clears loading state when the request is canceled without surfacing an error', async () => {
+      const aborted = Object.assign(new Error('Request aborted'), { name: 'AbortError' });
+      vi.mocked(usageApi.getUsage).mockRejectedValue(aborted);
+
+      await expect(useUsageStatsStore.getState().loadUsageStats()).resolves.toBeUndefined();
+
+      expect(useUsageStatsStore.getState().loading).toBe(false);
+      expect(useUsageStatsStore.getState().error).toBeNull();
+    });
+
     it('updates scopeKey when connection changes', async () => {
       vi.mocked(usageApi.getUsage).mockResolvedValue(createMockUsageResponse());
 
@@ -348,6 +361,36 @@ describe('useUsageStatsStore', () => {
       expect(useUsageStatsStore.getState().usageDetails).toHaveLength(5_000);
     });
 
+    it('rebuilds cached usageDetails from raw usage snapshots to heal stale zero-token caches', async () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+
+      localStorage.setItem(
+        `cli-proxy-usage-stats-cache-v1:${encodeURIComponent(scopeKey)}`,
+        JSON.stringify({
+          scopeKey,
+          usage: {
+            apis: {
+              persisted: {
+                models: {
+                  minimax: {
+                    details: [{ timestamp: '2026-01-01T00:00:00.000Z' }],
+                  },
+                },
+              },
+            },
+          },
+          keyStats: createMockKeyStats(),
+          usageDetails: [],
+          lastRefreshedAt: Date.now(),
+        })
+      );
+
+      await useUsageStatsStore.getState().loadUsageStats();
+
+      expect(usageApi.getUsage).not.toHaveBeenCalled();
+      expect(useUsageStatsStore.getState().usageDetails).toHaveLength(1);
+    });
+
     it('does not treat lite auto-persist snapshots as fresh bootstrap data', async () => {
       vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue(
         createMockBootstrapSnapshot()
@@ -358,6 +401,38 @@ describe('useUsageStatsStore', () => {
 
       expect(usageApi.getUsage).toHaveBeenCalledTimes(1);
       expect(useUsageStatsStore.getState().usage).toEqual({ apis: { live: {} } });
+    });
+
+    it('caps persisted usageDetails while preserving the full detailCount for bootstrap decisions', async () => {
+      const largeUsageDetails: UsageDetail[] = Array.from({ length: 5_500 }, (_, index) => ({
+        timestamp: new Date(Date.UTC(2026, 0, 1, 0, index % 60, 0)).toISOString(),
+        source: `source-${index}`,
+        auth_index: String(index),
+        tokens: {
+          input_tokens: 1,
+          output_tokens: 1,
+          reasoning_tokens: 0,
+          cached_tokens: 0,
+          total_tokens: 2,
+        },
+        failed: false,
+        __timestampMs: Date.UTC(2026, 0, 1, 0, index % 60, 0) + index,
+      }));
+
+      vi.mocked(collectUsageDetails).mockReturnValueOnce(largeUsageDetails);
+      vi.mocked(usageApi.getUsage).mockResolvedValue(createMockUsageResponse({ apis: { live: {} } }));
+
+      await useUsageStatsStore.getState().loadUsageStats({ force: true });
+
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+      const raw = localStorage.getItem(
+        `cli-proxy-usage-stats-cache-v1:${encodeURIComponent(scopeKey)}`
+      );
+      const persisted = raw ? (JSON.parse(raw) as BootstrapSnapshot) : null;
+
+      expect(persisted).not.toBeNull();
+      expect(persisted?.detailCount).toBe(5_500);
+      expect(persisted?.usageDetails.length).toBe(5_000);
     });
   });
 

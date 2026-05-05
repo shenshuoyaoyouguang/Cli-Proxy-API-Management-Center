@@ -7,7 +7,12 @@ import type {
   TokenBreakdownSeries,
   TokenCategory,
 } from '@/atoms/usage/types';
-import { formatHourLabel, formatDayLabel, resolveHourWindow } from '@/atoms/usage/time';
+import {
+  formatHourLabel,
+  formatDayLabel,
+  getDetailTimestampMs,
+  resolveHourWindow,
+} from '@/atoms/usage/time';
 import { collectUsageDetails } from '@/molecules/usage/collectDetails';
 import { calculateCost } from '@/atoms/usage/cost';
 import { extractTotalTokens } from './rates';
@@ -103,11 +108,8 @@ export function buildHourlySeriesByModel(
   }
 
   details.forEach((detail) => {
-    const timestamp =
-      typeof detail.__timestampMs === 'number'
-        ? detail.__timestampMs
-        : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    const timestamp = getDetailTimestampMs(detail);
+    if (!Number.isFinite(timestamp)) {
       return;
     }
 
@@ -159,11 +161,8 @@ export function buildDailySeriesByModel(
   }
 
   details.forEach((detail) => {
-    const timestamp =
-      typeof detail.__timestampMs === 'number'
-        ? detail.__timestampMs
-        : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    const timestamp = getDetailTimestampMs(detail);
+    if (!Number.isFinite(timestamp)) {
       return;
     }
     const dayLabel = formatDayLabel(new Date(timestamp));
@@ -274,11 +273,8 @@ export function buildHourlyTokenBreakdown(
   let hasData = false;
 
   details.forEach((detail) => {
-    const timestamp =
-      typeof detail.__timestampMs === 'number'
-        ? detail.__timestampMs
-        : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) return;
+    const timestamp = getDetailTimestampMs(detail);
+    if (!Number.isFinite(timestamp)) return;
     const normalized = new Date(timestamp);
     normalized.setMinutes(0, 0, 0);
     const bucketStart = normalized.getTime();
@@ -313,11 +309,8 @@ export function buildDailyTokenBreakdown(usageData: unknown): TokenBreakdownSeri
   let hasData = false;
 
   details.forEach((detail) => {
-    const timestamp =
-      typeof detail.__timestampMs === 'number'
-        ? detail.__timestampMs
-        : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) return;
+    const timestamp = getDetailTimestampMs(detail);
+    if (!Number.isFinite(timestamp)) return;
     const dayLabel = formatDayLabel(new Date(timestamp));
     if (!dayLabel) return;
 
@@ -378,11 +371,8 @@ export function buildHourlyCostSeries(
   let hasData = false;
 
   details.forEach((detail) => {
-    const timestamp =
-      typeof detail.__timestampMs === 'number'
-        ? detail.__timestampMs
-        : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) return;
+    const timestamp = getDetailTimestampMs(detail);
+    if (!Number.isFinite(timestamp)) return;
     const normalized = new Date(timestamp);
     normalized.setMinutes(0, 0, 0);
     const bucketStart = normalized.getTime();
@@ -410,11 +400,8 @@ export function buildDailyCostSeries(
   let hasData = false;
 
   details.forEach((detail) => {
-    const timestamp =
-      typeof detail.__timestampMs === 'number'
-        ? detail.__timestampMs
-        : Date.parse(detail.timestamp);
-    if (!Number.isFinite(timestamp) || timestamp <= 0) return;
+    const timestamp = getDetailTimestampMs(detail);
+    if (!Number.isFinite(timestamp)) return;
     const dayLabel = formatDayLabel(new Date(timestamp));
     if (!dayLabel) return;
 

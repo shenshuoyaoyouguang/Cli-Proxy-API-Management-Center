@@ -49,12 +49,7 @@ export function bucketDetails<T extends BucketableDetail>(
 
   details.forEach((detail) => {
     const timestamp = getDetailTimestampMs(detail);
-    if (
-      !Number.isFinite(timestamp) ||
-      timestamp <= 0 ||
-      timestamp < windowStart ||
-      timestamp > nowMs
-    ) {
+    if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > nowMs) {
       return;
     }
 

@@ -14,6 +14,7 @@ const REQUEST_EVENTS_PAGE_SIZE = 100;
 export interface RequestEventsDetailsCardProps {
   rows: RequestEventRow[];
   loading: boolean;
+  error?: string | null;
   externalModelFilter?: string | null;
   externalSourceFilter?: string | null;
   externalSourceRawFilter?: string | null;
@@ -29,9 +30,21 @@ const encodeCsv = (value: string | number): string => {
   return `"${safeText.replace(/"/g, '""')}"`;
 };
 
+const appendActiveOption = (
+  options: ReadonlyArray<{ value: string; label: string }>,
+  value: string | null
+) => {
+  if (!value || value === ALL_FILTER || options.some((option) => option.value === value)) {
+    return options;
+  }
+
+  return [...options, { value, label: value }];
+};
+
 export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   rows,
   loading,
+  error = null,
   externalModelFilter = null,
   externalSourceFilter = null,
   externalSourceRawFilter = null,
@@ -41,10 +54,10 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
 }: RequestEventsDetailsCardProps) {
   const { t } = useTranslation();
 
-  const [modelFilter, setModelFilter] = useState(ALL_FILTER);
-  const [sourceFilter, setSourceFilter] = useState(ALL_FILTER);
-  const [resultFilter, setResultFilter] = useState(ALL_FILTER);
-  const [authIndexFilter, setAuthIndexFilter] = useState(ALL_FILTER);
+  const [modelFilter, setModelFilter] = useState<string>(ALL_FILTER);
+  const [sourceFilter, setSourceFilter] = useState<string>(ALL_FILTER);
+  const [resultFilter, setResultFilter] = useState<string>(ALL_FILTER);
+  const [authIndexFilter, setAuthIndexFilter] = useState<string>(ALL_FILTER);
   const [page, setPage] = useState(1);
 
   const handleModelFilterChange = (value: string) => {
@@ -67,27 +80,9 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     setPage(1);
   };
 
-  const modelOptions = useMemo(
-    () => [
-      { value: ALL_FILTER, label: t('usage_stats.filter_all') },
-      ...Array.from(new Set(rows.map((row) => row.model))).map((model) => ({
-        value: model,
-        label: model,
-      })),
-    ],
-    [rows, t]
-  );
-
-  const sourceOptions = useMemo(
-    () => [
-      { value: ALL_FILTER, label: t('usage_stats.filter_all') },
-      ...Array.from(new Set(rows.map((row) => row.source))).map((source) => ({
-        value: source,
-        label: source,
-      })),
-    ],
-    [rows, t]
-  );
+  const activeModelFilter = externalModelFilter ?? modelFilter;
+  const activeSourceFilter = externalSourceFilter ?? sourceFilter;
+  const activeAuthIndexFilter = externalAuthIndexFilter ?? authIndexFilter;
 
   const resultOptions = useMemo(
     () => [
@@ -98,15 +93,49 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     [t]
   );
 
+  const modelOptions = useMemo(
+    () =>
+      appendActiveOption(
+        [
+          { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+          ...Array.from(new Set(rows.map((row) => row.model))).map((model) => ({
+            value: model,
+            label: model,
+          })),
+        ],
+        activeModelFilter
+      ),
+    [activeModelFilter, rows, t]
+  );
+
+  const sourceOptions = useMemo(
+    () =>
+      appendActiveOption(
+        [
+          { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+          ...Array.from(new Set(rows.map((row) => row.source))).map((source) => ({
+            value: source,
+            label: source,
+          })),
+        ],
+        activeSourceFilter
+      ),
+    [activeSourceFilter, rows, t]
+  );
+
   const authIndexOptions = useMemo(
-    () => [
-      { value: ALL_FILTER, label: t('usage_stats.filter_all') },
-      ...Array.from(new Set(rows.map((row) => row.authIndex))).map((authIndex) => ({
-        value: authIndex,
-        label: authIndex,
-      })),
-    ],
-    [rows, t]
+    () =>
+      appendActiveOption(
+        [
+          { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+          ...Array.from(new Set(rows.map((row) => row.authIndex))).map((authIndex) => ({
+            value: authIndex,
+            label: authIndex,
+          })),
+        ],
+        activeAuthIndexFilter
+      ),
+    [activeAuthIndexFilter, rows, t]
   );
 
   const modelOptionSet = useMemo(
@@ -127,64 +156,41 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   );
 
   useEffect(() => {
-    if (externalModelFilter && modelOptionSet.has(externalModelFilter)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
-      setModelFilter(externalModelFilter);
-      setPage(1);
-      return;
-    }
-
-    if (externalModelFilter === null) {
-      setModelFilter(ALL_FILTER);
-    }
-  }, [externalModelFilter, modelOptionSet]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
+    setModelFilter(externalModelFilter ?? ALL_FILTER);
+    setPage(1);
+  }, [externalModelFilter]);
 
   useEffect(() => {
-    if (externalSourceFilter && sourceOptionSet.has(externalSourceFilter)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
-      setSourceFilter(externalSourceFilter);
-      setAuthIndexFilter(ALL_FILTER);
-      setPage(1);
-      return;
-    }
-
-    if (externalSourceFilter === null) {
-      setSourceFilter(ALL_FILTER);
-    }
-  }, [externalSourceFilter, sourceOptionSet]);
-
-  useEffect(() => {
-    if (externalAuthIndexFilter && authIndexOptionSet.has(externalAuthIndexFilter)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
-      setAuthIndexFilter(externalAuthIndexFilter);
-      setPage(1);
-      return;
-    }
-
-    if (externalAuthIndexFilter === null) {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
+    setSourceFilter(externalSourceFilter ?? ALL_FILTER);
+    if (externalSourceFilter !== null && externalAuthIndexFilter === null) {
       setAuthIndexFilter(ALL_FILTER);
     }
-  }, [authIndexOptionSet, externalAuthIndexFilter]);
+    setPage(1);
+  }, [externalAuthIndexFilter, externalSourceFilter]);
 
   useEffect(() => {
-    if (externalResultFilter && resultOptionSet.has(externalResultFilter)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
-      setResultFilter(externalResultFilter);
-      setPage(1);
-      return;
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
+    setAuthIndexFilter(externalAuthIndexFilter ?? ALL_FILTER);
+    setPage(1);
+  }, [externalAuthIndexFilter]);
 
-    if (externalResultFilter === null) {
-      setResultFilter(ALL_FILTER);
-    }
-  }, [externalResultFilter, resultOptionSet]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
+    setResultFilter(externalResultFilter ?? ALL_FILTER);
+    setPage(1);
+  }, [externalResultFilter]);
 
-  const effectiveModelFilter = modelOptionSet.has(modelFilter) ? modelFilter : ALL_FILTER;
-  const effectiveSourceFilter = sourceOptionSet.has(sourceFilter) ? sourceFilter : ALL_FILTER;
-  const effectiveResultFilter = resultOptionSet.has(resultFilter) ? resultFilter : ALL_FILTER;
-  const effectiveAuthIndexFilter = authIndexOptionSet.has(authIndexFilter)
-    ? authIndexFilter
-    : ALL_FILTER;
+  const effectiveModelFilter =
+    externalModelFilter ?? (modelOptionSet.has(modelFilter) ? modelFilter : ALL_FILTER);
+  const effectiveSourceFilter =
+    externalSourceFilter ?? (sourceOptionSet.has(sourceFilter) ? sourceFilter : ALL_FILTER);
+  const effectiveResultFilter =
+    externalResultFilter ?? (resultOptionSet.has(resultFilter) ? resultFilter : ALL_FILTER);
+  const effectiveAuthIndexFilter =
+    externalAuthIndexFilter ??
+    (authIndexOptionSet.has(authIndexFilter) ? authIndexFilter : ALL_FILTER);
 
   const filteredRows = useMemo(
     () =>
@@ -449,6 +455,8 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
 
       {loading && rows.length === 0 ? (
         <div className={styles.hint}>{t('common.loading')}</div>
+      ) : error && rows.length === 0 ? (
+        <EmptyState title={t('usage_stats.loading_error')} description={error} />
       ) : rows.length === 0 ? (
         <EmptyState
           title={t('usage_stats.request_events_empty_title')}

@@ -156,11 +156,11 @@ describe('AutoPersistService', () => {
 
     expect(service.readBootstrapSnapshot(scopeKey)).toMatchObject({
       scopeKey,
-      usage: null,
-      keyStats: { bySource: {}, byAuthIndex: {} },
+      usage: { apis: { first: {} } },
+      keyStats: { bySource: { first: { success: 10, failure: 0 } }, byAuthIndex: {} },
       usageDetails: [],
-      detailCount: 0,
-      lastRefreshedAt: null,
+      detailCount: 10,
+      lastRefreshedAt: expect.any(Number),
     });
 
     setItemSpy.mockRestore();
@@ -207,5 +207,25 @@ describe('AutoPersistService', () => {
 
     expect(localStorage.getItem(storageKey)).toBeNull();
     expect(service.readBootstrapSnapshot(scopeKey)).toBeNull();
+  });
+
+  it('keeps raw detailCount in bootstrap snapshots even when cached usageDetails are trimmed', () => {
+    const service = new AutoPersistService();
+    const scopeKey = 'scope-richness';
+
+    service.onUsageRefreshed({
+      scopeKey,
+      usage: { apis: { first: {} } },
+      keyStats: { bySource: {}, byAuthIndex: {} },
+      usageDetails: createUsageDetails(6_000),
+      lastRefreshedAt: Date.now(),
+    });
+    service.clearRuntimeState(scopeKey);
+
+    expect(service.readBootstrapSnapshot(scopeKey)).toMatchObject({
+      detailCount: 6_000,
+      usageDetails: expect.any(Array),
+    });
+    expect(service.readBootstrapSnapshot(scopeKey)?.usageDetails).toHaveLength(5_000);
   });
 });

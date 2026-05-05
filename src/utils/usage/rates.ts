@@ -1,12 +1,11 @@
 import type { RateStats, TokenBreakdown } from '@/atoms/usage/types';
 import { isRecord, getApisRecord } from '@/atoms/usage/guards';
-import { extractCanonicalTotalTokens } from '@/atoms/usage/tokens';
+import { getDetailTimestampMs } from '@/atoms/usage/time';
+import { getUsageDetailTotalTokenCount } from '@/atoms/usage/tokens';
 import { collectUsageDetails } from '@/molecules/usage/collectDetails';
 
 export function extractTotalTokens(detail: unknown): number {
-  const record = isRecord(detail) ? detail : null;
-  const tokensRaw = isRecord(record?.tokens) ? record.tokens : detail;
-  return extractCanonicalTotalTokens(tokensRaw);
+  return getUsageDetailTotalTokenCount(detail);
 }
 
 export function calculateTokenBreakdown(usageData: unknown): TokenBreakdown {
@@ -49,10 +48,7 @@ export function calculateRecentPerMinuteRates(
   let tokenCount = 0;
 
   details.forEach((detail) => {
-    const timestamp =
-      typeof detail.__timestampMs === 'number'
-        ? detail.__timestampMs
-        : Date.parse(detail.timestamp);
+    const timestamp = getDetailTimestampMs(detail);
     if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) {
       return;
     }

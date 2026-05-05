@@ -41,12 +41,15 @@ export {
 
 // === Token 相关重导出 ===
 export {
+  hasUsageTokenEvidence,
   normalizeUsageTokens,
+  normalizeUsageDetailTokens,
   extractCanonicalTotalTokens,
   getCanonicalCachedTokens,
   toNormalizedTokens,
   getCachedTokenCount,
   getTotalTokenCount,
+  getUsageDetailTotalTokenCount,
 } from '@/atoms/usage/tokens';
 
 // === Source 相关重导出 ===
@@ -79,10 +82,12 @@ export {
 } from '@/molecules/usage/filterTimeRange';
 
 export {
+  createAggregateOnlyUsageSnapshot,
   computeKeyStats,
   computeKeyStatsFromDetails,
   getApiStats,
   getModelStats,
+  rehydrateUsageAggregatesFromDetails,
 } from '@/molecules/usage/aggregate';
 
 // === 格式化重导出 ===

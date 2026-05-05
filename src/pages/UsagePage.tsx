@@ -243,7 +243,7 @@ export function UsagePage() {
   });
 
   const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
-    useSparklines({ usage: filteredUsage, loading, modelPrices, nowMs });
+    useSparklines({ usage: filteredUsage, usageDetails, loading, modelPrices, nowMs });
 
   const { subscriptionTier, loading: subscriptionTierLoading } =
     useUsageSubscriptionTier(authFiles);
@@ -449,6 +449,7 @@ export function UsagePage() {
         <RequestEventsDetailsCard
           rows={requestEventsRowsForDisplay}
           loading={loading}
+          error={error}
           externalModelFilter={externalModelFilter}
           externalSourceFilter={credentialDrilldown.source}
           externalSourceRawFilter={credentialDrilldown.sourceRaw}

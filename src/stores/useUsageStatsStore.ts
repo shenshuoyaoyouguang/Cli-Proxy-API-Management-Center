@@ -4,11 +4,13 @@ import { autoPersistService } from '@/services/autoPersist';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { CacheLayer } from '@/services/cache';
 import {
+  createAggregateOnlyUsageSnapshot,
   collectUsageDetails,
   computeKeyStatsFromDetails,
   type KeyStats,
   type UsageDetail,
 } from '@/utils/usage';
+import { resolveCachedUsageDetailsFromUsage } from '@/utils/usage/cacheSnapshot';
 import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
@@ -37,6 +39,11 @@ type UsageStatsState = {
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
+const resolveCachedUsageDetails = (
+  usage: UsageStatsSnapshot | null,
+  usageDetails: UsageDetail[] | undefined
+): UsageDetail[] => resolveCachedUsageDetailsFromUsage(usage, usageDetails);
+
 let usageRequestToken = 0;
 let inFlightUsageRequest: { id: number; scopeKey: string; promise: Promise<void> } | null = null;
 let usageAbortController: AbortController | null = null;
@@ -53,6 +60,14 @@ type PersistedUsageStatsCache = {
   scopeKey: string;
 };
 
+const createPersistableUsageStatsCache = (
+  cache: PersistedUsageStatsCache
+): PersistedUsageStatsCache => ({
+  ...cache,
+  usageDetails: resolveCachedUsageDetails(cache.usage, cache.usageDetails),
+  detailCount: Math.max(cache.detailCount, cache.usageDetails.length),
+});
+
 const toPersistedUsageStatsCache = (
   scopeKey: string,
   snapshot: Partial<PersistedUsageStatsCache> | null | undefined
@@ -61,24 +76,26 @@ const toPersistedUsageStatsCache = (
     return null;
   }
 
+  const resolvedUsage =
+    snapshot.usage && typeof snapshot.usage === 'object'
+      ? (snapshot.usage as UsageStatsSnapshot)
+      : null;
+  const resolvedUsageDetails = resolveCachedUsageDetails(
+    resolvedUsage,
+    snapshot.usageDetails as UsageDetail[] | undefined
+  );
+
   return {
-    usage:
-      snapshot.usage && typeof snapshot.usage === 'object'
-        ? (snapshot.usage as UsageStatsSnapshot)
-        : null,
+    usage: resolvedUsage,
     keyStats:
       snapshot.keyStats && typeof snapshot.keyStats === 'object'
         ? snapshot.keyStats
         : createEmptyKeyStats(),
-    usageDetails: Array.isArray(snapshot.usageDetails)
-      ? (snapshot.usageDetails as UsageDetail[])
-      : [],
+    usageDetails: resolvedUsageDetails,
     detailCount:
       typeof snapshot.detailCount === 'number' && Number.isFinite(snapshot.detailCount)
         ? Math.max(0, snapshot.detailCount)
-        : Array.isArray(snapshot.usageDetails)
-          ? snapshot.usageDetails.length
-          : 0,
+        : resolvedUsageDetails.length,
     lastRefreshedAt:
       typeof snapshot.lastRefreshedAt === 'number' && Number.isFinite(snapshot.lastRefreshedAt)
         ? snapshot.lastRefreshedAt
@@ -125,11 +142,17 @@ const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | n
       return null;
     }
 
+    const resolvedUsage =
+      parsed.usage && typeof parsed.usage === 'object'
+        ? (parsed.usage as UsageStatsSnapshot)
+        : null;
+    const resolvedUsageDetails = resolveCachedUsageDetails(
+      resolvedUsage,
+      parsed.usageDetails as UsageDetail[] | undefined
+    );
+
     return {
-      usage:
-        parsed.usage && typeof parsed.usage === 'object'
-          ? (parsed.usage as UsageStatsSnapshot)
-          : null,
+      usage: resolvedUsage,
       keyStats:
         parsed.keyStats && typeof parsed.keyStats === 'object'
           ? {
@@ -143,15 +166,11 @@ const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | n
                   : {},
             }
           : createEmptyKeyStats(),
-      usageDetails: Array.isArray(parsed.usageDetails)
-        ? (parsed.usageDetails as UsageDetail[])
-        : [],
+      usageDetails: resolvedUsageDetails,
       detailCount:
         typeof parsed.detailCount === 'number' && Number.isFinite(parsed.detailCount)
           ? Math.max(0, parsed.detailCount)
-          : Array.isArray(parsed.usageDetails)
-            ? parsed.usageDetails.length
-            : 0,
+          : resolvedUsageDetails.length,
       lastRefreshedAt:
         typeof parsed.lastRefreshedAt === 'number' && Number.isFinite(parsed.lastRefreshedAt)
           ? parsed.lastRefreshedAt
@@ -169,7 +188,8 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
   }
 
   const storageKey = createCacheStorageKey(cache.scopeKey);
-  const serializedCache = JSON.stringify(cache);
+  const persistableCache = createPersistableUsageStatsCache(cache);
+  const serializedCache = JSON.stringify(persistableCache);
 
   try {
     localStorage.setItem(storageKey, serializedCache);
@@ -183,14 +203,24 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
     return;
   } catch {
     const liteCache: PersistedUsageStatsCache = {
-      ...cache,
-      usage: null,
-      usageDetails: [],
-      detailCount: 0,
+      ...persistableCache,
+      usage: persistableCache.usage
+        ? createAggregateOnlyUsageSnapshot(persistableCache.usage)
+        : null,
     };
     try {
       localStorage.setItem(storageKey, JSON.stringify(liteCache));
+      return;
     } catch {
+      const ultraLiteCache: PersistedUsageStatsCache = {
+        ...liteCache,
+        usageDetails: [],
+      };
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(ultraLiteCache));
+      } catch {
+        // Ignore storage write failures after exhausting all persistence fallbacks.
+      }
     }
   }
 };
@@ -352,6 +382,13 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       } catch (error: unknown) {
         // Ignore AbortError — it means the request was intentionally cancelled (StrictMode or logout)
         if (isCanceledRequestError(error)) {
+          if (requestId === usageRequestToken) {
+            set({
+              loading: false,
+              error: null,
+              scopeKey,
+            });
+          }
           return;
         }
         if (requestId !== usageRequestToken) return;

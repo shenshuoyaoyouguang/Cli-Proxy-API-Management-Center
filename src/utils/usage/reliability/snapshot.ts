@@ -8,6 +8,7 @@ import type {
   StatusBlockDetail,
   StatusBlockState
 } from './types';
+import { parseTimestampMs } from '@/utils/timestamp';
 
 const EMPTY_COUNTS: ReliabilityCounts = { success: 0, failure: 0, total: 0 };
 
@@ -28,12 +29,7 @@ const normalizeTimestampMs = (detail: UsageDetail): number => {
   if (typeof detail.__timestampMs === 'number' && Number.isFinite(detail.__timestampMs)) {
     return detail.__timestampMs;
   }
-
-  if (typeof detail.timestamp !== 'string') {
-    return Number.NaN;
-  }
-
-  return Date.parse(detail.timestamp);
+  return parseTimestampMs(detail.timestamp);
 };
 
 const normalizeModelName = (detail: UsageDetail): string => {

@@ -76,6 +76,39 @@ describe('usageAnalyticsSnapshot helpers', () => {
     expect(rows[1].source).toBe('Auth File 7');
   });
 
+  it('keeps invalid request-event timestamps out of epoch 0 and still resolves cache_tokens aliases', () => {
+    const rows = createRequestEventRows(
+      [
+        {
+          timestamp: 'not-a-timestamp',
+          source: 'tenant-a',
+          auth_index: '1',
+          failed: false,
+          tokens: {
+            input_tokens: 3,
+            output_tokens: 2,
+            reasoning_tokens: 1,
+            cached_tokens: 0,
+            cache_tokens: 7,
+            total_tokens: 13
+          },
+          __modelName: 'model-b',
+          __timestampMs: Number.NaN
+        },
+        createDetail({ minutesAgo: 5, __modelName: 'model-a' })
+      ],
+      buildSourceInfoMap({}),
+      new Map(),
+      'en-US'
+    );
+
+    expect(rows[0].model).toBe('model-a');
+    expect(rows[1].model).toBe('model-b');
+    expect(Number.isNaN(rows[1].timestampMs)).toBe(true);
+    expect(rows[1].timestampLabel).toBe('not-a-timestamp');
+    expect(rows[1].cachedTokens).toBe(7);
+  });
+
   it('builds request rows for a fixed 24h range independent of page filters', () => {
     const rows = createRequestEventRowsForRange(
       [
@@ -163,6 +196,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
       inputTokens: 34,
       outputTokens: 18
     });
+    expect(summary.totalTokens).toBe(62);
     expect(summary.rateStats.requestCount).toBe(2);
     expect(summary.rateStats.tokenCount).toBe(49);
     expect(summary.rateStats.peakRpm).toBe(2);
@@ -176,6 +210,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
     const summary = createUsageSummaryMetrics([], {}, baseNow);
 
     expect(summary).toEqual({
+      totalTokens: 0,
       tokenBreakdown: {
         cachedTokens: 0,
         reasoningTokens: 0,
@@ -193,6 +228,13 @@ describe('usageAnalyticsSnapshot helpers', () => {
       },
       totalCost: 0
     });
+  });
+
+  it('falls back to aggregate total tokens when no details are available', () => {
+    const summary = createUsageSummaryMetrics([], {}, baseNow, 30, 150);
+
+    expect(summary.totalTokens).toBe(150);
+    expect(summary.rateStats.tokenCount).toBe(0);
   });
 
   it('builds efficiency overview with failure waste signal and cost yield when prices exist', () => {

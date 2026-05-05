@@ -11,6 +11,7 @@ export const SSE_RECONNECT_BASE_DELAY_MS = 1000;
 export const SSE_RECONNECT_MAX_DELAY_MS = 30000;
 export const SSE_DEGRADED_RECONNECT_INTERVAL_MS = 300000;
 export const SSE_POLLING_INTERVAL_MS = 60000;
+const SSE_AUTH_ERROR_EVENT = 'usage:auth-error';
 
 type UsageSSEConnectOptions = {
   resetRetryState?: boolean;
@@ -48,6 +49,12 @@ export class UsageSSEServiceImpl {
   }
 
   disconnect(): void {
+    this.closeSource();
+    this.handler = null;
+    this.connectionStatus = 'disconnected';
+  }
+
+  private closeSource(): void {
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -56,8 +63,6 @@ export class UsageSSEServiceImpl {
       this.source.close();
       this.source = null;
     }
-    this.handler = null;
-    this.connectionStatus = 'disconnected';
   }
 
   getConnectionStatus(): UsageSSEConnectionStatus {
@@ -82,6 +87,10 @@ export class UsageSSEServiceImpl {
 
     this.source.addEventListener('usage:heartbeat', () => {
       this.handleHeartbeatEvent();
+    });
+
+    this.source.addEventListener(SSE_AUTH_ERROR_EVENT, () => {
+      this.handleAuthErrorEvent();
     });
 
     this.source.onopen = () => {
@@ -122,6 +131,12 @@ export class UsageSSEServiceImpl {
     this.handler?.onHeartbeat();
   }
 
+  private handleAuthErrorEvent(): void {
+    const handler = this.handler;
+    this.disconnect();
+    handler?.onAuthError();
+  }
+
   private handleErrorEvent(e: Event): void {
     if (!this.source) return;
 
@@ -129,8 +144,12 @@ export class UsageSSEServiceImpl {
 
     if (this.source.readyState === EventSource.CLOSED) {
       if (this.reconnectAttempts === 0 && this.connectionStatus === 'connecting') {
-        this.handler?.onAuthError();
-        this.disconnect();
+        // A first-connection close is often caused by an older backend or an unavailable
+        // optional SSE endpoint. Treat it as a transport capability issue and fall back
+        // to polling instead of forcing a global logout.
+        this.closeSource();
+        this.connectionStatus = 'degraded';
+        this.handler?.onError(e);
         return;
       }
       this.scheduleReconnect(e);

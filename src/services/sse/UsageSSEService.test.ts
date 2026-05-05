@@ -11,6 +11,7 @@ class MockEventSource {
   readyState = MockEventSource.CONNECTING;
   onopen: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
+  private listeners = new Map<string, Array<(event: MessageEvent) => void>>();
   readonly close = vi.fn(() => {
     this.readyState = MockEventSource.CLOSED;
   });
@@ -19,8 +20,10 @@ class MockEventSource {
     MockEventSource.instances.push(this);
   }
 
-  addEventListener(): void {
-    // These tests only exercise reconnect behavior through onopen/onerror.
+  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
+    const handlers = this.listeners.get(type) ?? [];
+    handlers.push(listener);
+    this.listeners.set(type, handlers);
   }
 
   emitOpen(): void {
@@ -30,6 +33,12 @@ class MockEventSource {
 
   emitError(): void {
     this.onerror?.(new Event('error'));
+  }
+
+  emitMessage(type: string, data: string = '{}'): void {
+    const handlers = this.listeners.get(type) ?? [];
+    const event = { data } as MessageEvent;
+    handlers.forEach((handler) => handler(event));
   }
 
   static latest(): MockEventSource {
@@ -90,6 +99,22 @@ describe('UsageSSEService', () => {
     expect(MockEventSource.instances).toHaveLength(SSE_RECONNECT_MAX_ATTEMPTS + 1);
   });
 
+  it('falls back to polling instead of logging out when the initial SSE connection closes', () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    service.connect('http://localhost:3000', 'management-key', handler);
+
+    const firstStream = MockEventSource.latest();
+    firstStream.readyState = MockEventSource.CLOSED;
+    firstStream.emitError();
+
+    expect(service.getConnectionStatus()).toBe('degraded');
+    expect(handler.onError).toHaveBeenCalledTimes(1);
+    expect(handler.onAuthError).not.toHaveBeenCalled();
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
+
   it('resets retry state after a successful reopen', () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
@@ -111,5 +136,18 @@ describe('UsageSSEService', () => {
     expect(service.getConnectionStatus()).toBe('connecting');
     expect(handler.onError).not.toHaveBeenCalled();
     expect(MockEventSource.instances).toHaveLength(3);
+  });
+
+  it('still propagates explicit auth failure events from the stream', () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    service.connect('http://localhost:3000', 'management-key', handler);
+
+    MockEventSource.latest().emitMessage('usage:auth-error');
+
+    expect(service.getConnectionStatus()).toBe('disconnected');
+    expect(handler.onAuthError).toHaveBeenCalledTimes(1);
+    expect(handler.onError).not.toHaveBeenCalled();
   });
 });

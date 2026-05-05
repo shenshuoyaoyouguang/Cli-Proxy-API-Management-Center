@@ -77,7 +77,6 @@ export function LoginPage() {
   const login = useAuthStore((state) => state.login);
   const restoreSession = useAuthStore((state) => state.restoreSession);
   const storedBase = useAuthStore((state) => state.apiBase);
-  const storedRememberPassword = useAuthStore((state) => state.rememberPassword);
 
   const [apiBase, setApiBase] = useState('');
   const [managementKey, setManagementKey] = useState('');
@@ -120,6 +119,10 @@ export function LoginPage() {
       try {
         const autoLoggedIn = await restoreSession();
         shouldKeepSplash = autoLoggedIn;
+        const {
+          apiBase: restoredBase,
+          rememberPassword: restoredRememberPassword,
+        } = useAuthStore.getState();
 
         if (autoLoggedIn) {
           setAutoLoginSuccess(true);
@@ -129,9 +132,9 @@ export function LoginPage() {
             navigate(redirect, { replace: true });
           }, 1500);
         } else {
-          setApiBase(storedBase || detectedBase);
+          setApiBase(restoredBase || storedBase || detectedBase);
           setManagementKey('');
-          setRememberPassword(storedRememberPassword);
+          setRememberPassword(restoredRememberPassword);
         }
       } finally {
         if (!shouldKeepSplash) {

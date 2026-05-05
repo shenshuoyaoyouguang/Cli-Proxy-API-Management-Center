@@ -51,7 +51,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
       set((state) => {
         const nextCache = new Map(state.cache);
         nextCache.set(apiBase, cacheEntry);
-        return { models: cached, error: null };
+        return { models: cached, error: null, cache: nextCache };
       });
       return cached;
     }

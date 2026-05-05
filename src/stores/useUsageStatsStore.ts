@@ -3,6 +3,7 @@ import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { CacheLayer } from '@/services/cache';
+import { usageSSEService } from '@/services/sse';
 import {
   createAggregateOnlyUsageSnapshot,
   collectUsageDetails,
@@ -14,6 +15,7 @@ import { resolveCachedUsageDetailsFromUsage } from '@/utils/usage/cacheSnapshot'
 import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
+import type { UsageDeltaDetailItem, UsageDeltaEvent, UsageFullEvent } from '@/types/sse';
 
 export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
@@ -33,11 +35,64 @@ type UsageStatsState = {
   error: string | null;
   lastRefreshedAt: number | null;
   scopeKey: string;
+  lastSeq: number | null;
   loadUsageStats: (options?: LoadUsageStatsOptions) => Promise<void>;
   clearUsageStats: () => void;
+  applyDelta: (delta: UsageDeltaEvent) => void;
+  applyFullSnapshot: (snapshot: UsageFullEvent) => void;
 };
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
+
+const toFiniteNumber = (value: unknown): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const addUsageAggregate = (currentValue: unknown, deltaValue: number): number =>
+  toFiniteNumber(currentValue) + deltaValue;
+
+const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail => ({
+  timestamp: new Date(detail.timestamp).toISOString(),
+  source: detail.source,
+  auth_index: null,
+  tokens: {
+    input_tokens: detail.tokens.prompt,
+    output_tokens: detail.tokens.completion,
+    reasoning_tokens: 0,
+    cached_tokens: 0,
+    total_tokens: detail.tokens.total,
+  },
+  failed: !detail.success,
+  __modelName: detail.model,
+  __timestampMs: detail.timestamp,
+});
+
+const mergeUsageDelta = (
+  current: UsageStatsSnapshot | null,
+  delta: UsageDeltaEvent
+): UsageStatsSnapshot => {
+  if (!current) {
+    return {
+      total_requests: delta.requestCount,
+      success_count: delta.successCount,
+      failure_count: delta.failureCount,
+      total_tokens: delta.tokenDelta.totalTokens,
+      prompt_tokens: delta.tokenDelta.promptTokens,
+      completion_tokens: delta.tokenDelta.completionTokens,
+    };
+  }
+
+  const merged = { ...current };
+  merged.total_requests = addUsageAggregate(merged.total_requests, delta.requestCount);
+  merged.success_count = addUsageAggregate(merged.success_count, delta.successCount);
+  merged.failure_count = addUsageAggregate(merged.failure_count, delta.failureCount);
+  merged.total_tokens = addUsageAggregate(merged.total_tokens, delta.tokenDelta.totalTokens);
+  merged.prompt_tokens = addUsageAggregate(merged.prompt_tokens, delta.tokenDelta.promptTokens);
+  merged.completion_tokens = addUsageAggregate(merged.completion_tokens, delta.tokenDelta.completionTokens);
+
+  return merged;
+};
 
 const resolveCachedUsageDetails = (
   usage: UsageStatsSnapshot | null,
@@ -245,6 +300,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   error: null,
   lastRefreshedAt: null,
   scopeKey: '',
+  lastSeq: null,
 
   loadUsageStats: async (options = {}) => {
     const force = options.force === true;
@@ -307,6 +363,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           error: null,
           lastRefreshedAt: bootstrapCache.lastRefreshedAt,
           scopeKey,
+          lastSeq: null,
           loading: false,
         });
       } else {
@@ -317,6 +374,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           error: null,
           lastRefreshedAt: null,
           scopeKey,
+          lastSeq: null,
           loading: false,
         });
       }
@@ -431,6 +489,89 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       error: null,
       lastRefreshedAt: null,
       scopeKey: '',
+      lastSeq: null,
+    });
+  },
+
+  applyDelta: (delta) => {
+    const state = get();
+
+    if (state.usage === null) {
+      usageSSEService.requestFullCorrection();
+      return;
+    }
+
+    if (state.lastSeq !== null && delta.seq !== state.lastSeq + 1) {
+      usageSSEService.requestFullCorrection();
+      return;
+    }
+
+    const mergedUsage = mergeUsageDelta(state.usage, delta);
+    const usageDetails = [...state.usageDetails, ...delta.details.map(createUsageDetailFromDelta)];
+    const keyStats = computeKeyStatsFromDetails(usageDetails);
+    const nextSnapshot = {
+      usage: mergedUsage,
+      keyStats,
+      usageDetails,
+      lastRefreshedAt: delta.timestamp,
+      detailCount: usageDetails.length,
+      scopeKey: state.scopeKey,
+    };
+
+    autoPersistService.onUsageRefreshed({
+      scopeKey: state.scopeKey,
+      usage: mergedUsage,
+      keyStats,
+      usageDetails,
+      lastRefreshedAt: delta.timestamp,
+    });
+
+    writePersistedUsageStats(nextSnapshot);
+
+    set({
+      usage: mergedUsage,
+      usageDetails,
+      keyStats,
+      lastRefreshedAt: delta.timestamp,
+      lastSeq: delta.seq,
+      loading: false,
+      error: null,
+    });
+  },
+
+  applyFullSnapshot: (snapshot) => {
+    const state = get();
+    const usage = snapshot.usage as UsageStatsSnapshot;
+    const usageDetails = Array.isArray(snapshot.usageDetails) ? snapshot.usageDetails : collectUsageDetails(usage);
+    const keyStats = computeKeyStatsFromDetails(usageDetails);
+    const lastRefreshedAt = snapshot.timestamp;
+    const nextSnapshot = {
+      usage,
+      keyStats,
+      usageDetails,
+      lastRefreshedAt,
+      detailCount: usageDetails.length,
+      scopeKey: state.scopeKey,
+    };
+
+    autoPersistService.onUsageRefreshed({
+      scopeKey: state.scopeKey,
+      usage,
+      keyStats,
+      usageDetails,
+      lastRefreshedAt,
+    });
+
+    writePersistedUsageStats(nextSnapshot);
+
+    set({
+      usage,
+      usageDetails,
+      keyStats,
+      lastRefreshedAt,
+      lastSeq: snapshot.seq,
+      loading: false,
+      error: null,
     });
   },
 }));

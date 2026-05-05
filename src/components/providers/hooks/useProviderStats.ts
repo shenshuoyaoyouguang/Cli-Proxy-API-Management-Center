@@ -5,6 +5,7 @@ import type { KeyStats, UsageDetail } from '@/utils/usage';
 
 const EMPTY_KEY_STATS: KeyStats = { bySource: {}, byAuthIndex: {} };
 const EMPTY_USAGE_DETAILS: UsageDetail[] = [];
+const PROVIDER_STATS_REFRESH_INTERVAL_MS = 240_000;
 
 export type UseProviderStatsOptions = {
   enabled?: boolean;
@@ -19,19 +20,14 @@ export const useProviderStats = (options: UseProviderStatsOptions = {}) => {
   const isLoading = useUsageStatsStore((state) => (enabled ? state.loading : false));
   const loadUsageStats = useUsageStatsStore((state) => state.loadUsageStats);
 
-  // 首次进入页面优先复用缓存，避免跨页面重复拉取 /usage。
   const loadKeyStats = useCallback(async () => {
     await loadUsageStats({ staleTimeMs: USAGE_STATS_STALE_TIME_MS });
   }, [loadUsageStats]);
 
-  // 定时器触发时强制刷新共享 usage。
-  const refreshKeyStats = useCallback(async () => {
-    await loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
-  }, [loadUsageStats]);
-
   useInterval(() => {
-    void refreshKeyStats().catch(() => {});
-  }, enabled ? 240_000 : null);
+    if (!enabled) return;
+    void loadKeyStats().catch(() => {});
+  }, enabled ? PROVIDER_STATS_REFRESH_INTERVAL_MS : null);
 
-  return { keyStats, usageDetails, loadKeyStats, refreshKeyStats, isLoading };
+  return { keyStats, usageDetails, loadKeyStats, isLoading };
 };

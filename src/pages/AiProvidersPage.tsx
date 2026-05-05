@@ -65,7 +65,7 @@ export function AiProvidersPage() {
   const pageTransitionLayer = usePageTransitionLayer();
   const isCurrentLayer = pageTransitionLayer ? pageTransitionLayer.status === 'current' : true;
 
-  const { keyStats, usageDetails, loadKeyStats, refreshKeyStats } = useProviderStats({
+  const { keyStats, usageDetails, loadKeyStats } = useProviderStats({
     enabled: isCurrentLayer,
   });
   const usageDetailsBySource = useMemo(
@@ -144,7 +144,7 @@ export function AiProvidersPage() {
     config?.openaiCompatibility,
   ]);
 
-  useHeaderRefresh(refreshKeyStats);
+  useHeaderRefresh(loadKeyStats);
 
   const openEditor = useCallback(
     (path: string) => {

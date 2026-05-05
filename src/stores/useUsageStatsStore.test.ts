@@ -94,6 +94,7 @@ vi.mock('./useAuthStore', () => ({
 }));
 
 vi.mock('@/utils/usage', () => ({
+  createAggregateOnlyUsageSnapshot: vi.fn((usageData) => usageData),
   collectUsageDetails: vi.fn((usageData) => {
     if (!usageData || typeof usageData !== 'object') return [];
     const apis = (usageData as Record<string, unknown>).apis;
@@ -125,7 +126,7 @@ vi.mock('@/i18n', () => ({
 import { useUsageStatsStore } from './useUsageStatsStore';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
-import { collectUsageDetails } from '@/utils/usage';
+import { collectUsageDetails, computeKeyStatsFromDetails } from '@/utils/usage';
 
 describe('useUsageStatsStore', () => {
   beforeEach(() => {
@@ -143,6 +144,7 @@ describe('useUsageStatsStore', () => {
       error: null,
       lastRefreshedAt: null,
       scopeKey: '',
+      lastSeq: null,
     });
   });
 
@@ -474,6 +476,145 @@ describe('useUsageStatsStore', () => {
       expect(state.error).toBeNull();
       expect(state.lastRefreshedAt).toBeNull();
       expect(state.scopeKey).toBe('');
+    });
+  });
+
+  describe('SSE state updates', () => {
+    it('appends delta details without mutating usage.apis and persists the merged snapshot', () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+      const endpoint = 'POST /v1/chat/completions';
+      const existingDetail = createMockUsageDetail({
+        timestamp: '2026-01-01T00:00:00.000Z',
+        source: 'baseline-source',
+        auth_index: '0',
+        __modelName: 'gpt-4.1',
+        __timestampMs: Date.parse('2026-01-01T00:00:00.000Z'),
+      });
+      const usage = {
+        total_requests: 1,
+        success_count: 1,
+        failure_count: 0,
+        total_tokens: 150,
+        prompt_tokens: 100,
+        completion_tokens: 50,
+        apis: {
+          [endpoint]: {
+            models: {
+              'gpt-4.1': {
+                total_requests: 1,
+                success_count: 1,
+                failure_count: 0,
+                total_tokens: 150,
+                details: [
+                  {
+                    timestamp: '2026-01-01T00:00:00.000Z',
+                    source: 'baseline-source',
+                    auth_index: '0',
+                    tokens: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+                    failed: false,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      };
+      const endpointBucket = (usage.apis as Record<string, unknown>)[endpoint];
+
+      useUsageStatsStore.setState({
+        usage,
+        keyStats: createMockKeyStats(),
+        usageDetails: [existingDetail],
+        loading: false,
+        error: null,
+        lastRefreshedAt: Date.parse('2026-01-01T00:00:00.000Z'),
+        scopeKey,
+        lastSeq: 10,
+      });
+
+      useUsageStatsStore.getState().applyDelta({
+        seq: 11,
+        timestamp: Date.parse('2026-01-01T00:01:00.000Z'),
+        requestCount: 1,
+        successCount: 0,
+        failureCount: 1,
+        tokenDelta: {
+          promptTokens: 30,
+          completionTokens: 20,
+          totalTokens: 50,
+        },
+        details: [
+          {
+            model: 'gpt-4.1',
+            source: 'live-source',
+            timestamp: Date.parse('2026-01-01T00:01:00.000Z'),
+            success: false,
+            tokens: {
+              prompt: 30,
+              completion: 20,
+              total: 50,
+            },
+          },
+        ],
+      });
+
+      const state = useUsageStatsStore.getState();
+      const persistedRaw = localStorage.getItem(
+        `cli-proxy-usage-stats-cache-v1:${encodeURIComponent(scopeKey)}`
+      );
+      const persisted = persistedRaw ? (JSON.parse(persistedRaw) as BootstrapSnapshot) : null;
+
+      expect(state.usageDetails).toHaveLength(2);
+      expect(state.usageDetails[1]).toMatchObject({
+        source: 'live-source',
+        auth_index: null,
+        failed: true,
+        __modelName: 'gpt-4.1',
+      });
+      expect((state.usage?.apis as Record<string, unknown>)[endpoint]).toBe(endpointBucket);
+      expect((state.usage?.apis as Record<string, unknown>)['live-source']).toBeUndefined();
+      expect(vi.mocked(collectUsageDetails)).not.toHaveBeenCalled();
+      expect(vi.mocked(computeKeyStatsFromDetails)).toHaveBeenLastCalledWith(state.usageDetails);
+      expect(autoPersistService.onUsageRefreshed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scopeKey,
+          usage: state.usage,
+          usageDetails: state.usageDetails,
+          lastRefreshedAt: Date.parse('2026-01-01T00:01:00.000Z'),
+        })
+      );
+      expect(persisted).not.toBeNull();
+      expect(persisted?.detailCount).toBe(2);
+      expect(persisted?.usageDetails).toHaveLength(2);
+    });
+
+    it('prefers usageDetails from a full snapshot payload when provided', () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+      const snapshotDetails = [
+        createMockUsageDetail({
+          timestamp: '2026-01-01T00:05:00.000Z',
+          source: 'snapshot-source',
+          auth_index: '5',
+          __modelName: 'claude-3.7-sonnet',
+          __timestampMs: Date.parse('2026-01-01T00:05:00.000Z'),
+        }),
+      ];
+
+      useUsageStatsStore.setState({
+        scopeKey,
+        lastSeq: 20,
+      });
+
+      useUsageStatsStore.getState().applyFullSnapshot({
+        seq: 21,
+        timestamp: Date.parse('2026-01-01T00:05:00.000Z'),
+        usage: { apis: { live: {} } },
+        usageDetails: snapshotDetails,
+      });
+
+      expect(vi.mocked(collectUsageDetails)).not.toHaveBeenCalled();
+      expect(useUsageStatsStore.getState().usageDetails).toEqual(snapshotDetails);
+      expect(useUsageStatsStore.getState().lastSeq).toBe(21);
     });
   });
 

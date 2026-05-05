@@ -16,8 +16,8 @@ import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Select } from '@/components/ui/Select';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { useInterval } from '@/hooks/useInterval';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
+import { useUsageSSE } from '@/hooks/useUsageSSE';
 import { useThemeStore, useConfigStore } from '@/stores';
 import {
   StatCards,
@@ -146,8 +146,6 @@ export function UsagePage() {
     importing,
   } = useUsageData();
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
   const { authFileMap, authFiles } = useAuthFilesMap();
 
   // 获取 OAuth 模型别名反向映射，用于将 usage 中的别名解析为原始模型名
@@ -155,11 +153,7 @@ export function UsagePage() {
 
   useHeaderRefresh(loadUsage);
 
-  // Background polling every 60s (does not show loading overlay)
-  useInterval(() => {
-    setIsRefreshing(true);
-    void loadUsage().finally(() => setIsRefreshing(false));
-  }, 60000);
+  const { connectionStatus } = useUsageSSE({ enabled: true });
 
   const [chartLines, setChartLines] = useState<string[]>(loadChartLines);
   const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
@@ -393,11 +387,12 @@ export function UsagePage() {
           {lastRefreshedAt && (
             <span className={styles.lastRefreshed}>
               {t('usage_stats.last_updated')}: {lastRefreshedAt.toLocaleTimeString()}
-              {isRefreshing && (
-                <span title={t('common.loading')}>
-                  <LoadingSpinner size={12} />
-                </span>
-              )}
+              <span className={`${styles.connectionStatus} ${styles[connectionStatus] ?? ''}`}>
+                {connectionStatus === 'connected' && `● ${t('usage_stats.sse_realtime')}`}
+                {connectionStatus === 'degraded' && `● ${t('usage_stats.sse_polling')}`}
+                {connectionStatus === 'connecting' && `● ${t('usage_stats.sse_connecting')}`}
+                {connectionStatus === 'disconnected' && `● ${t('usage_stats.sse_disconnected')}`}
+              </span>
             </span>
           )}
         </div>

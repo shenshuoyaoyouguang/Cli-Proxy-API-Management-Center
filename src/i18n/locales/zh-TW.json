@@ -1092,7 +1092,11 @@
     "request_events_limit_hint": "為確保渲染效能，僅展示 {{shown}} / {{total}} 條事件。",
     "input_tokens": "輸入 Tokens",
     "output_tokens": "輸出 Tokens",
-    "last_updated": "更新於"
+    "last_updated": "更新於",
+    "sse_realtime": "即時",
+    "sse_polling": "輪詢",
+    "sse_connecting": "連線中",
+    "sse_disconnected": "未連線"
   },
   "stats": {
     "success": "成功",

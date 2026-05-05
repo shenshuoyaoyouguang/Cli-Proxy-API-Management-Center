@@ -31,6 +31,28 @@
   white-space: nowrap;
 }
 
+.connectionStatus {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+
+  &.connected {
+    color: #22c55e;
+  }
+
+  &.degraded {
+    color: #eab308;
+  }
+
+  &.connecting {
+    color: var(--text-tertiary);
+  }
+
+  &.disconnected {
+    color: var(--text-tertiary);
+  }
+}
+
 .timeRangeGroup {
   display: inline-flex;
   align-items: center;

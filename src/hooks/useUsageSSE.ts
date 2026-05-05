@@ -81,16 +81,17 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        if (usageSSEService.getConnectionStatus() !== 'degraded') {
-          usageSSEService.disconnect();
-        }
-      } else {
-        if (handlerRef.current && usageSSEService.getConnectionStatus() !== 'degraded') {
-          usageSSEService.connect(apiBase, managementKey, handlerRef.current);
-        }
-        if (usageSSEService.getConnectionStatus() === 'degraded') {
-          void useUsageStatsStore.getState().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
-        }
+        usageSSEService.disconnect();
+        connectionStatusRef.current = 'disconnected';
+        setConnectionStatus('disconnected');
+        return;
+      }
+
+      if (handlerRef.current) {
+        fallenBackRef.current = false;
+        usageSSEService.connect(apiBase, managementKey, handlerRef.current);
+        connectionStatusRef.current = 'connecting';
+        setConnectionStatus('connecting');
       }
     };
 

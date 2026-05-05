@@ -9,6 +9,13 @@ const ENC_PREFIX = 'enc::v1::';
 const ENC_PREFIX_V2 = 'enc::v2::';
 const SECRET_SALT = 'cli-proxy-api-webui::secure-storage';
 
+/**
+ * V1 XOR 加密废弃时间线：
+ * - v1.x: 当前版本，V1 解密路径仍保留用于向后兼容
+ * - v2.0: 计划移除 V1 解密路径，所有数据应在此之前迁移至 V2
+ * 迁移方式：secureStorage.migrateEncryptedKeys() 会将 V1 数据重加密为 V2
+ */
+
 // Base salt for PBKDF2 key derivation (32 bytes)
 const PBKDF2_SALT_BASE = new Uint8Array([
   0x7a, 0x1f, 0x9c, 0x8b, 0x4d, 0x2e, 0x6a, 0x5f, 0x3c, 0x7d, 0x8e, 0x9f, 0x1a, 0x2b, 0x3c, 0x4d,
@@ -212,8 +219,7 @@ export async function decryptData(payload: string): Promise<string> {
       const encodedBody = payload.slice(ENC_PREFIX_V2.length);
       return await decryptAesGcm(encodedBody);
     } catch (error) {
-      console.warn('V2 decryption failed, return as-is:', error);
-      return payload;
+      throw new Error(`V2 decryption failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -225,8 +231,7 @@ export async function decryptData(payload: string): Promise<string> {
       const decrypted = xorBytes(encrypted, getKeyBytes());
       return decodeText(decrypted);
     } catch (error) {
-      console.warn('V1 decryption failed, return as-is:', error);
-      return payload;
+      throw new Error(`V1 decryption failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -248,7 +253,6 @@ export function isEncrypted(value: string): boolean {
 export function decryptDataSync(payload: string): string {
   if (!payload) return payload;
 
-  // v1 XOR 解密
   if (payload.startsWith(ENC_PREFIX)) {
     try {
       const encodedBody = payload.slice(ENC_PREFIX.length);
@@ -256,15 +260,12 @@ export function decryptDataSync(payload: string): string {
       const decrypted = xorBytes(encrypted, getKeyBytes());
       return decodeText(decrypted);
     } catch (error) {
-      console.warn('V1 decryption failed, return as-is:', error);
-      return payload;
+      throw new Error(`V1 sync decryption failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  // v2 数据无法同步解密，返回原值
   if (payload.startsWith(ENC_PREFIX_V2)) {
-    console.warn('V2 encrypted data requires async decryptData()');
-    return payload;
+    throw new Error('V2 encrypted data requires async decryptData()');
   }
 
   return payload;

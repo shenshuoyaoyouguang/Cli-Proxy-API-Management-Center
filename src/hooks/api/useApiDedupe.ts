@@ -17,18 +17,31 @@ function cleanupExpiredRequests(): void {
       pendingRequests.delete(key);
     }
   }
+  scheduleCleanup();
 }
 
 let cleanupTimerId: ReturnType<typeof setInterval> | null = null;
 
-function getCleanupInterval(): ReturnType<typeof setInterval> | null {
+function startCleanupTimer(): void {
   if (!cleanupTimerId) {
     cleanupTimerId = setInterval(cleanupExpiredRequests, CLEANUP_INTERVAL_MS);
   }
-  return cleanupTimerId;
 }
 
-getCleanupInterval();
+function stopCleanupTimer(): void {
+  if (cleanupTimerId && pendingRequests.size === 0) {
+    clearInterval(cleanupTimerId);
+    cleanupTimerId = null;
+  }
+}
+
+function scheduleCleanup(): void {
+  if (pendingRequests.size > 0) {
+    startCleanupTimer();
+  } else {
+    stopCleanupTimer();
+  }
+}
 
 import type { HttpMethod } from './types';
 
@@ -36,3 +49,5 @@ export function generateDedupKey(url: string, method: HttpMethod, params?: unkno
   const paramsKey = params ? JSON.stringify(params) : '';
   return `${method}:${url}:${paramsKey}`;
 }
+
+export { scheduleCleanup };

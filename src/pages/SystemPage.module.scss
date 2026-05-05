@@ -128,6 +128,25 @@
   line-height: 1.4;
 }
 
+.updateBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+  margin-top: $spacing-sm;
+  padding: $spacing-sm $spacing-md;
+  background-color: rgba($primary-color, 0.08);
+  border: 1px solid rgba($primary-color, 0.22);
+  border-radius: $radius-md;
+}
+
+.updateText {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
 .section {
   display: flex;
   flex-direction: column;

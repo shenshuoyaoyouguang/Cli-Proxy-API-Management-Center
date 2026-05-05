@@ -7,7 +7,10 @@
  * 生成唯一 ID
  */
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const randomPart = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID().slice(0, 9)
+    : Math.random().toString(36).substring(2, 11);
+  return `${Date.now()}-${randomPart}`;
 }
 
 /**

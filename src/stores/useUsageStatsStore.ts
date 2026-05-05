@@ -20,6 +20,7 @@ import type { UsageDeltaDetailItem, UsageDeltaEvent, UsageFullEvent } from '@/ty
 
 export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
+const MAX_USAGE_DETAILS_LENGTH = 5000;
 
 export type LoadUsageStatsOptions = {
   force?: boolean;
@@ -523,11 +524,14 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
     const mergedUsage = mergeUsageDelta(state.usage, delta);
     const usageDetails = [...state.usageDetails, ...delta.details.map(createUsageDetailFromDelta)];
-    const keyStats = computeKeyStatsFromDetails(usageDetails);
+    const trimmedDetails = usageDetails.length > MAX_USAGE_DETAILS_LENGTH
+      ? usageDetails.slice(usageDetails.length - MAX_USAGE_DETAILS_LENGTH)
+      : usageDetails;
+    const keyStats = computeKeyStatsFromDetails(trimmedDetails);
     const nextSnapshot = {
       usage: mergedUsage,
       keyStats,
-      usageDetails,
+      usageDetails: trimmedDetails,
       lastRefreshedAt: delta.timestamp,
       detailCount: usageDetails.length,
       scopeKey: state.scopeKey,
@@ -537,7 +541,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       scopeKey: state.scopeKey,
       usage: mergedUsage,
       keyStats,
-      usageDetails,
+      usageDetails: trimmedDetails,
       lastRefreshedAt: delta.timestamp,
     });
 
@@ -545,7 +549,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
     set({
       usage: mergedUsage,
-      usageDetails,
+      usageDetails: trimmedDetails,
       keyStats,
       lastRefreshedAt: delta.timestamp,
       lastSeq: delta.seq,

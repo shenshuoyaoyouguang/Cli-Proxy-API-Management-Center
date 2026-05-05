@@ -102,6 +102,7 @@ function collectAllCacheEntries(): Array<{ fullKey: string; timestamp: number; s
 class CacheLayerImpl {
   private subscribers = new Map<string, Set<() => void>>();
   private globalSubscribers = new Set<(key: string, scopeKey: string) => void>();
+  private estimatedTotalBytes: number | null = null;
 
   /**
    * 订阅缓存变更事件
@@ -215,7 +216,23 @@ class CacheLayerImpl {
       _size: estimateBytes(data),
     };
 
-    // 写入前检查体积（允许本次写入量后再淘汰）
+    if (this.estimatedTotalBytes !== null) {
+      this.estimatedTotalBytes += entry._size;
+    }
+
+    if (this.estimatedTotalBytes !== null && this.estimatedTotalBytes <= maxSizeBytes) {
+      try {
+        localStorage.setItem(fullKey, JSON.stringify(entry));
+        if (import.meta.env.DEV) {
+          console.debug(`[CacheLayer] SET: ${debugKey}`);
+        }
+        this.notifyUpdated(key, resolvedScope);
+        return;
+      } catch {
+        this.estimatedTotalBytes = null;
+      }
+    }
+
     this.prune(maxSizeBytes - entry._size);
 
     try {
@@ -272,9 +289,11 @@ class CacheLayerImpl {
     const targetBytes = maxBytes ?? DEFAULT_MAX_SIZE_BYTES;
 
     const entries = collectAllCacheEntries();
-    if (entries.length === 0) return;
+    if (entries.length === 0) {
+      this.estimatedTotalBytes = 0;
+      return;
+    }
 
-    // 按时间从旧到新排序（LRU）
     entries.sort((a, b) => a.timestamp - b.timestamp);
 
     let totalSize = entries.reduce((sum, e) => sum + e.size, 0);
@@ -284,6 +303,8 @@ class CacheLayerImpl {
       localStorage.removeItem(entry.fullKey);
       totalSize -= entry.size;
     }
+
+    this.estimatedTotalBytes = totalSize;
   }
 }
 

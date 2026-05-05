@@ -62,6 +62,9 @@ class RefreshCoordinatorImpl {
 
   /**
    * 触发所有注册的刷新（MainLayout 刷新按钮调用）
+   *
+   * 并发保护语义：若当前已有刷新正在执行，后续调用者会等待当前刷新完成后被放行，
+   * 而非触发新一轮刷新。调用方不应假设返回时数据已重新加载。
    */
   async triggerAll(): Promise<void> {
     return this.triggerByFilter(() => true);

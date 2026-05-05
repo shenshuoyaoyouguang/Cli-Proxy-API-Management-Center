@@ -48,9 +48,9 @@ export const usageApi = {
       })
       .then((response) => {
         const isValidResponse = response && typeof response === 'object' && !Array.isArray(response);
-        const hasApis = isValidResponse && 'apis' in response && typeof response.apis === 'object';
+        const hasApis = isValidResponse && 'apis' in response && response.apis !== null && typeof response.apis === 'object';
         const hasUsage =
-          isValidResponse && 'usage' in response && typeof response.usage === 'object';
+          isValidResponse && 'usage' in response && response.usage !== null && typeof response.usage === 'object';
         if (!hasApis && !hasUsage) {
           throw new Error(
             '[UsageAPI] Unexpected response structure: missing "apis" or "usage" field'

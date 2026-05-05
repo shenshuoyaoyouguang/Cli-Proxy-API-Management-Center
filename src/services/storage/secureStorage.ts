@@ -94,13 +94,12 @@ class SecureStorageService {
     const stringValue = JSON.stringify(value);
 
     if (encrypt) {
-      localStorage.removeItem(key);
       void encryptData(stringValue)
         .then((encrypted) => {
           localStorage.setItem(key, encrypted);
         })
         .catch((error) => {
-          console.error('Encryption failed, encrypted data was not persisted:', error);
+          console.error('Encryption failed, data was NOT persisted securely:', error);
         });
     } else {
       localStorage.setItem(key, stringValue);
@@ -161,7 +160,6 @@ class SecureStorageService {
       const raw = localStorage.getItem(key);
       if (!raw) return;
 
-      // 如果已经是加密格式，跳过
       if (isEncrypted(raw)) {
         return;
       }
@@ -170,7 +168,6 @@ class SecureStorageService {
       try {
         parsed = JSON.parse(raw);
       } catch {
-        // 原值不是 JSON，直接使用字符串
         parsed = raw;
       }
 
@@ -180,6 +177,35 @@ class SecureStorageService {
         console.warn(`Failed to migrate key "${key}":`, error);
       }
     });
+  }
+
+  /**
+   * 将 V1 (XOR) 加密数据主动重加密为 V2 (AES-256-GCM)
+   * 应在应用启动时调用，确保所有数据迁移至 V2 后可在未来版本移除 V1 解密路径
+   */
+  async migrateEncryptedKeys(keys: string[]): Promise<number> {
+    let migrated = 0;
+
+    for (const key of keys) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+
+      if (!raw.startsWith('enc::v1::')) continue;
+
+      try {
+        const { decryptData } = await import('@/utils/encryption');
+        const decrypted = await decryptData(raw);
+        if (decrypted === raw) continue;
+
+        const encrypted = await encryptData(decrypted);
+        localStorage.setItem(key, encrypted);
+        migrated++;
+      } catch (error) {
+        console.warn(`Failed to migrate V1 key "${key}":`, error);
+      }
+    }
+
+    return migrated;
   }
 
   /**

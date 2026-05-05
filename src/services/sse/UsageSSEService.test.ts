@@ -1,57 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UsageSSEHandler } from '@/types/sse';
-import { SSE_RECONNECT_MAX_ATTEMPTS, UsageSSEServiceImpl } from './UsageSSEService';
+import { UsageSSEServiceImpl, SSE_RECONNECT_MAX_ATTEMPTS } from './UsageSSEService';
 
-class MockEventSource {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 2;
-  static instances: MockEventSource[] = [];
+function createMockStreamResponse(chunks: string[], options?: { status?: number; statusText?: string }): Response {
+  const status = options?.status ?? 200;
+  const statusText = options?.statusText ?? 'OK';
 
-  readyState = MockEventSource.CONNECTING;
-  onopen: ((event: Event) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  private listeners = new Map<string, Array<(event: MessageEvent) => void>>();
-  readonly close = vi.fn(() => {
-    this.readyState = MockEventSource.CLOSED;
+  if (status !== 200) {
+    return new Response(null, { status, statusText });
+  }
+
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
   });
 
-  constructor(readonly url: string) {
-    MockEventSource.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: (event: MessageEvent) => void): void {
-    const handlers = this.listeners.get(type) ?? [];
-    handlers.push(listener);
-    this.listeners.set(type, handlers);
-  }
-
-  emitOpen(): void {
-    this.readyState = MockEventSource.OPEN;
-    this.onopen?.(new Event('open'));
-  }
-
-  emitError(): void {
-    this.onerror?.(new Event('error'));
-  }
-
-  emitMessage(type: string, data: string = '{}'): void {
-    const handlers = this.listeners.get(type) ?? [];
-    const event = { data } as MessageEvent;
-    handlers.forEach((handler) => handler(event));
-  }
-
-  static latest(): MockEventSource {
-    const instance = MockEventSource.instances[MockEventSource.instances.length - 1];
-    if (!instance) {
-      throw new Error('Expected an EventSource instance to exist');
-    }
-    return instance;
-  }
-
-  static reset(): void {
-    MockEventSource.instances = [];
-  }
+  return new Response(readable, {
+    status,
+    statusText,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
 }
 
 const createHandler = (): UsageSSEHandler => ({
@@ -63,91 +36,295 @@ const createHandler = (): UsageSSEHandler => ({
 });
 
 describe('UsageSSEService', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.useFakeTimers();
-    MockEventSource.reset();
-    vi.stubGlobal('EventSource', MockEventSource as unknown as typeof EventSource);
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  it('keeps retry counters across scheduled reconnects until the service degrades', () => {
+  it('sends Authorization header instead of URL query parameter', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
 
+    fetchSpy.mockResolvedValue(createMockStreamResponse([]));
     service.connect('http://localhost:3000', 'management-key', handler);
-    MockEventSource.latest().emitOpen();
 
-    for (let attempt = 0; attempt < SSE_RECONNECT_MAX_ATTEMPTS; attempt += 1) {
-      const current = MockEventSource.latest();
-      current.readyState = MockEventSource.CLOSED;
-      current.emitError();
-      vi.runOnlyPendingTimers();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://localhost:3000/v0/management/usage/stream',
+      expect.objectContaining({
+        headers: {
+          Authorization: 'Bearer management-key',
+          Accept: 'text/event-stream',
+        },
+      })
+    );
+    expect(fetchSpy.mock.calls[0][0]).not.toContain('token=');
+  });
+
+  it('triggers onAuthError on 401 response', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([], { status: 401, statusText: 'Unauthorized' }));
+    service.connect('http://localhost:3000', 'bad-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onAuthError).toHaveBeenCalledTimes(1);
+    expect(service.getConnectionStatus()).toBe('disconnected');
+  });
+
+  it('triggers onAuthError on 403 response', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([], { status: 403, statusText: 'Forbidden' }));
+    service.connect('http://localhost:3000', 'bad-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onAuthError).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnects and aborts the fetch stream', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    let abortSignal: AbortSignal | undefined;
+    fetchSpy.mockImplementation((_url: string, options: RequestInit) => {
+      abortSignal = options.signal ?? undefined;
+      return Promise.resolve(createMockStreamResponse([]));
+    });
+
+    service.connect('http://localhost:3000', 'test-key', handler);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(abortSignal?.aborted).toBe(false);
+    service.disconnect();
+    expect(abortSignal?.aborted).toBe(true);
+    expect(service.getConnectionStatus()).toBe('disconnected');
+  });
+
+  it('attempts reconnection on initial connection failure instead of immediate degradation', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockRejectedValue(new Error('Network error'));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(service.getConnectionStatus()).not.toBe('degraded');
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    service.disconnect();
+  });
+
+  it('enters degraded state after max reconnection attempts', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockRejectedValue(new Error('Network error'));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    for (let i = 0; i < SSE_RECONNECT_MAX_ATTEMPTS; i++) {
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
     }
 
-    const finalAttempt = MockEventSource.latest();
-    finalAttempt.readyState = MockEventSource.CLOSED;
-    finalAttempt.emitError();
-
     expect(service.getConnectionStatus()).toBe('degraded');
-    expect(handler.onError).toHaveBeenCalledTimes(1);
-    expect(handler.onAuthError).not.toHaveBeenCalled();
-    expect(MockEventSource.instances).toHaveLength(SSE_RECONNECT_MAX_ATTEMPTS + 1);
+    const errorEvent = (handler.onError as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(errorEvent).toBeInstanceOf(ErrorEvent);
+    expect(errorEvent.message).toContain('5 attempts');
   });
 
-  it('falls back to polling instead of logging out when the initial SSE connection closes', () => {
+  it('resets isConnecting on disconnect allowing new connections', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
 
-    service.connect('http://localhost:3000', 'management-key', handler);
+    fetchSpy.mockReturnValue(new Promise(() => {}));
+    service.connect('http://localhost:3000', 'test-key', handler);
 
-    const firstStream = MockEventSource.latest();
-    firstStream.readyState = MockEventSource.CLOSED;
-    firstStream.emitError();
-
-    expect(service.getConnectionStatus()).toBe('degraded');
-    expect(handler.onError).toHaveBeenCalledTimes(1);
-    expect(handler.onAuthError).not.toHaveBeenCalled();
-    expect(MockEventSource.instances).toHaveLength(1);
-  });
-
-  it('resets retry state after a successful reopen', () => {
-    const service = new UsageSSEServiceImpl();
-    const handler = createHandler();
-
-    service.connect('http://localhost:3000', 'management-key', handler);
-    MockEventSource.latest().emitOpen();
-
-    const firstClosedStream = MockEventSource.latest();
-    firstClosedStream.readyState = MockEventSource.CLOSED;
-    firstClosedStream.emitError();
-    vi.runOnlyPendingTimers();
-
-    const reopenedStream = MockEventSource.latest();
-    reopenedStream.emitOpen();
-    reopenedStream.readyState = MockEventSource.CLOSED;
-    reopenedStream.emitError();
-    vi.runOnlyPendingTimers();
-
-    expect(service.getConnectionStatus()).toBe('connecting');
-    expect(handler.onError).not.toHaveBeenCalled();
-    expect(MockEventSource.instances).toHaveLength(3);
-  });
-
-  it('still propagates explicit auth failure events from the stream', () => {
-    const service = new UsageSSEServiceImpl();
-    const handler = createHandler();
-
-    service.connect('http://localhost:3000', 'management-key', handler);
-
-    MockEventSource.latest().emitMessage('usage:auth-error');
-
+    service.disconnect();
     expect(service.getConnectionStatus()).toBe('disconnected');
-    expect(handler.onAuthError).toHaveBeenCalledTimes(1);
-    expect(handler.onError).not.toHaveBeenCalled();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    service.disconnect();
+  });
+
+  it('dispatches usage:delta events to handler', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const deltaData = JSON.stringify({
+      seq: 1,
+      timestamp: 1000,
+      requestCount: 5,
+      successCount: 4,
+      failureCount: 1,
+      tokenDelta: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      details: [],
+    });
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:delta\ndata:${deltaData}\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onDelta).toHaveBeenCalledTimes(1);
+    expect((handler.onDelta as ReturnType<typeof vi.fn>).mock.calls[0][0].seq).toBe(1);
+  });
+
+  it('dispatches usage:full events to handler', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const fullData = JSON.stringify({ seq: 1, timestamp: 1000, usage: {} });
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:full\ndata:${fullData}\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onFull).toHaveBeenCalledTimes(1);
+    expect((handler.onFull as ReturnType<typeof vi.fn>).mock.calls[0][0].seq).toBe(1);
+  });
+
+  it('dispatches usage:heartbeat events to handler', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:heartbeat\ndata:{}\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports ErrorEvent with message on JSON parse failure', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:delta\ndata:invalid-json\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onError).toHaveBeenCalledTimes(1);
+    const errorEvent = (handler.onError as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(errorEvent).toBeInstanceOf(ErrorEvent);
+    expect(errorEvent.message).toContain('SSE parse error');
+  });
+
+  it('reconnects when stream ends', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(service.getConnectionStatus()).toBe('connected');
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    service.disconnect();
+  });
+
+  it('resets retry state on successful reconnection', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockRejectedValueOnce(new Error('Network error'));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    fetchSpy.mockResolvedValueOnce(createMockStreamResponse([
+      `event:usage:heartbeat\ndata:{}\n\n`,
+    ]));
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(service.getConnectionStatus()).toBe('connected');
+    service.disconnect();
+  });
+
+  it('handles SSE events split across chunks', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const heartbeatData = '{}';
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:heart`,
+      `beat\ndata:${heartbeatData}\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores SSE comment lines', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const heartbeatData = '{}';
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `: this is a comment\nevent:usage:heartbeat\ndata:${heartbeatData}\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
   });
 });

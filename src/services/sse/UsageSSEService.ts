@@ -9,23 +9,68 @@ import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
 export const SSE_RECONNECT_MAX_ATTEMPTS = 5;
 export const SSE_RECONNECT_BASE_DELAY_MS = 1000;
 export const SSE_RECONNECT_MAX_DELAY_MS = 30000;
-export const SSE_DEGRADED_RECONNECT_INTERVAL_MS = 300000;
-export const SSE_POLLING_INTERVAL_MS = 60000;
 const SSE_AUTH_ERROR_EVENT = 'usage:auth-error';
 
 type UsageSSEConnectOptions = {
   resetRetryState?: boolean;
 };
 
+type ParsedSSEEvent = {
+  eventType: string;
+  data: string;
+};
+
+function parseSSELines(chunk: string, buffer: { value: string }): ParsedSSEEvent[] {
+  buffer.value += chunk;
+  const events: ParsedSSEEvent[] = [];
+  let eventType = 'message';
+  let data = '';
+
+  const lines = buffer.value.split('\n');
+  const lastLine = lines.pop()!;
+  buffer.value = lastLine;
+
+  for (const line of lines) {
+    if (line === '') {
+      if (data !== '') {
+        events.push({ eventType, data });
+        eventType = 'message';
+        data = '';
+      }
+      continue;
+    }
+    if (line.startsWith(':')) {
+      continue;
+    }
+    const colonIndex = line.indexOf(':');
+    if (colonIndex === -1) {
+      continue;
+    }
+    const field = line.slice(0, colonIndex);
+    const value = line.slice(colonIndex + 1).replace(/^ /, '');
+    if (field === 'event') {
+      eventType = value;
+    } else if (field === 'data') {
+      if (data !== '') {
+        data += '\n';
+      }
+      data += value;
+    }
+  }
+
+  return events;
+}
+
 export class UsageSSEServiceImpl {
-  private source: EventSource | null = null;
   private handler: UsageSSEHandler | null = null;
   private reconnectAttempts = 0;
   private connectionStatus: UsageSSEConnectionStatus = 'disconnected';
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private consecutiveErrorCount = 0;
   private baseUrl = '';
   private token = '';
+  private abortController: AbortController | null = null;
+  private sseBuffer = { value: '' };
+  private isConnecting = false;
 
   connect(
     baseUrl: string,
@@ -42,27 +87,26 @@ export class UsageSSEServiceImpl {
       this.resetRetryState();
     }
 
-    const url = `${baseUrl}${MANAGEMENT_API_PREFIX}/usage/stream?token=${encodeURIComponent(token)}`;
-    this.source = new EventSource(url);
     this.connectionStatus = 'connecting';
-    this.setupEventListeners();
+    this.startFetchStream();
   }
 
   disconnect(): void {
-    this.closeSource();
+    this.abortStream();
     this.handler = null;
     this.connectionStatus = 'disconnected';
   }
 
-  private closeSource(): void {
+  private abortStream(): void {
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    if (this.source) {
-      this.source.close();
-      this.source = null;
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
     }
+    this.isConnecting = false;
   }
 
   getConnectionStatus(): UsageSSEConnectionStatus {
@@ -74,54 +118,114 @@ export class UsageSSEServiceImpl {
     this.connect(this.baseUrl, this.token, this.handler);
   }
 
-  private setupEventListeners(): void {
-    if (!this.source || !this.handler) return;
+  private startFetchStream(): void {
+    if (this.isConnecting) return;
+    this.isConnecting = true;
+    this.sseBuffer = { value: '' };
+    this.abortController = new AbortController();
 
-    this.source.addEventListener('usage:delta', (e: MessageEvent) => {
-      this.handleDeltaEvent(e);
-    });
+    const url = `${this.baseUrl}${MANAGEMENT_API_PREFIX}/usage/stream`;
 
-    this.source.addEventListener('usage:full', (e: MessageEvent) => {
-      this.handleFullEvent(e);
-    });
+    fetch(url, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        Accept: 'text/event-stream',
+      },
+      signal: this.abortController.signal,
+    })
+      .then((response) => {
+        this.isConnecting = false;
+        if (!response.ok) {
+          if (response.status === 401 || response.status === 403) {
+            this.handleAuthErrorEvent();
+            return;
+          }
+          this.handleFetchError(new Error(`HTTP ${response.status}`));
+          return;
+        }
 
-    this.source.addEventListener('usage:heartbeat', () => {
-      this.handleHeartbeatEvent();
-    });
+        this.resetRetryState();
+        this.connectionStatus = 'connected';
 
-    this.source.addEventListener(SSE_AUTH_ERROR_EVENT, () => {
-      this.handleAuthErrorEvent();
-    });
+        const reader = response.body?.getReader();
+        if (!reader) {
+          this.handleFetchError(new Error('No readable stream'));
+          return;
+        }
 
-    this.source.onopen = () => {
-      this.resetRetryState();
-      this.connectionStatus = 'connected';
-    };
-
-    this.source.onerror = (e: Event) => {
-      this.handleErrorEvent(e);
-    };
+        this.readStream(reader);
+      })
+      .catch((error: unknown) => {
+        this.isConnecting = false;
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        this.handleFetchError(error);
+      });
   }
 
-  private handleDeltaEvent(e: MessageEvent): void {
+  private async readStream(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+    const decoder = new TextDecoder();
+
     try {
-      const data = JSON.parse(e.data) as UsageDeltaEvent;
-      this.resetRetryState();
-      this.connectionStatus = 'connected';
-      this.handler?.onDelta(data);
-    } catch {
-      this.handler?.onError(e);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          this.handleStreamEnd();
+          break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        const events = parseSSELines(chunk, this.sseBuffer);
+        for (const event of events) {
+          this.dispatchSSEEvent(event);
+        }
+      }
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+      this.handleFetchError(error);
     }
   }
 
-  private handleFullEvent(e: MessageEvent): void {
+  private dispatchSSEEvent(event: ParsedSSEEvent): void {
+    switch (event.eventType) {
+      case 'usage:delta':
+        this.handleDeltaEvent(event.data);
+        break;
+      case 'usage:full':
+        this.handleFullEvent(event.data);
+        break;
+      case 'usage:heartbeat':
+        this.handleHeartbeatEvent();
+        break;
+      case SSE_AUTH_ERROR_EVENT:
+        this.handleAuthErrorEvent();
+        break;
+      default:
+        break;
+    }
+  }
+
+  private handleDeltaEvent(rawData: string): void {
     try {
-      const data = JSON.parse(e.data) as UsageFullEvent;
+      const data = JSON.parse(rawData) as UsageDeltaEvent;
+      this.resetRetryState();
+      this.connectionStatus = 'connected';
+      this.handler?.onDelta(data);
+    } catch (err) {
+      this.handler?.onError(new ErrorEvent('error', { message: `SSE parse error: ${(err as Error).message}` }));
+    }
+  }
+
+  private handleFullEvent(rawData: string): void {
+    try {
+      const data = JSON.parse(rawData) as UsageFullEvent;
       this.resetRetryState();
       this.connectionStatus = 'connected';
       this.handler?.onFull(data);
-    } catch {
-      this.handler?.onError(e);
+    } catch (err) {
+      this.handler?.onError(new ErrorEvent('error', { message: `SSE parse error: ${(err as Error).message}` }));
     }
   }
 
@@ -137,39 +241,21 @@ export class UsageSSEServiceImpl {
     handler?.onAuthError();
   }
 
-  private handleErrorEvent(e: Event): void {
-    if (!this.source) return;
-
-    this.consecutiveErrorCount++;
-
-    if (this.source.readyState === EventSource.CLOSED) {
-      if (this.reconnectAttempts === 0 && this.connectionStatus === 'connecting') {
-        // A first-connection close is often caused by an older backend or an unavailable
-        // optional SSE endpoint. Treat it as a transport capability issue and fall back
-        // to polling instead of forcing a global logout.
-        this.closeSource();
-        this.connectionStatus = 'degraded';
-        this.handler?.onError(e);
-        return;
-      }
-      this.scheduleReconnect(e);
-      return;
-    }
-
-    if (this.source.readyState === EventSource.CONNECTING) {
-      if (this.consecutiveErrorCount > SSE_RECONNECT_MAX_ATTEMPTS * 2) {
-        this.connectionStatus = 'degraded';
-        this.handler?.onError(e);
-      }
-    }
+  private handleFetchError(_error: unknown): void {
+    this.scheduleReconnect();
   }
 
-  private scheduleReconnect(errorEvent: Event): void {
+  private handleStreamEnd(): void {
+    if (this.connectionStatus === 'disconnected') return;
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
     this.reconnectAttempts++;
 
     if (this.reconnectAttempts > SSE_RECONNECT_MAX_ATTEMPTS) {
       this.connectionStatus = 'degraded';
-      this.handler?.onError(errorEvent);
+      this.handler?.onError(new ErrorEvent('error', { message: `SSE reconnect failed after ${SSE_RECONNECT_MAX_ATTEMPTS} attempts` }));
       return;
     }
 
@@ -183,14 +269,12 @@ export class UsageSSEServiceImpl {
 
   private resetRetryState(): void {
     this.reconnectAttempts = 0;
-    this.consecutiveErrorCount = 0;
   }
 
   private computeReconnectDelay(): number {
-    return Math.min(
-      SSE_RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts - 1),
-      SSE_RECONNECT_MAX_DELAY_MS
-    );
+    const base = SSE_RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts - 1);
+    const jitter = base * (0.5 + Math.random() * 0.5);
+    return Math.min(jitter, SSE_RECONNECT_MAX_DELAY_MS);
   }
 }
 

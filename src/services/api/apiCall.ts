@@ -63,7 +63,7 @@ const normalizeBody = (input: unknown): { bodyText: string; body: unknown | null
     try {
       return { bodyText: text, body: JSON.parse(trimmed) };
     } catch {
-      return { bodyText: text, body: text };
+      return { bodyText: text, body: null };
     }
   }
 

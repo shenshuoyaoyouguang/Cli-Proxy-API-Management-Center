@@ -170,15 +170,10 @@ describe('encryption', () => {
   });
 
   describe('decryptDataSync v2 limitation', () => {
-    it('should return v2 payload as-is with warning', () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    it('should throw error for v2 payload', () => {
       const v2Payload = 'enc::v2::somedata';
 
-      const result = decryptDataSync(v2Payload);
-      expect(result).toBe(v2Payload);
-      expect(consoleSpy).toHaveBeenCalledWith('V2 encrypted data requires async decryptData()');
-
-      consoleSpy.mockRestore();
+      expect(() => decryptDataSync(v2Payload)).toThrow('V2 encrypted data requires async decryptData()');
     });
   });
 
@@ -204,12 +199,10 @@ describe('encryption', () => {
       expect(result === plaintext || result.startsWith('enc::v2::')).toBe(true);
     });
 
-    it('should return original payload on decryption failure', async () => {
+    it('should throw error on decryption failure', async () => {
       const invalidPayload = 'enc::v2::invalid-base64!!!';
-      const result = await decryptData(invalidPayload);
 
-      // Should return original payload on failure
-      expect(result).toBe(invalidPayload);
+      await expect(decryptData(invalidPayload)).rejects.toThrow('V2 decryption failed');
     });
   });
 });

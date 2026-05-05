@@ -39,8 +39,6 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@/services/sse', () => ({
   usageSSEService: mocks.usageSSEService,
-  SSE_DEGRADED_RECONNECT_INTERVAL_MS: 300000,
-  SSE_POLLING_INTERVAL_MS: 60000,
 }));
 
 vi.mock('@/stores/useUsageStatsStore', () => ({

@@ -8,7 +8,6 @@ export function ProtectedRoute({ children }: { children: ReactElement }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const managementKey = useAuthStore((state) => state.managementKey);
   const apiBase = useAuthStore((state) => state.apiBase);
-  const checkAuth = useAuthStore((state) => state.checkAuth);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
@@ -16,14 +15,14 @@ export function ProtectedRoute({ children }: { children: ReactElement }) {
       if (!isAuthenticated && managementKey && apiBase) {
         setChecking(true);
         try {
-          await checkAuth();
+          await useAuthStore.getState().checkAuth();
         } finally {
           setChecking(false);
         }
       }
     };
     tryRestore();
-  }, [apiBase, isAuthenticated, managementKey, checkAuth]);
+  }, [apiBase, isAuthenticated, managementKey]);
 
   if (checking) {
     return (

@@ -12,12 +12,12 @@ import {
   useModelsStore,
   useThemeStore,
 } from '@/stores';
-import { useVisualConfig } from '@/hooks/useVisualConfig';
 import { useUpdateRequestLog } from '@/hooks/useConfigApi';
 import { apiKeysApi } from '@/services/api/apiKeys';
 import { classifyModels } from '@/utils/models';
 import { getErrorMessage } from '@/utils/error';
 import { STORAGE_KEY_AUTH } from '@/utils/constants';
+import { selfUpdateService, type UpdateInfo } from '@/services/selfUpdate/SelfUpdateService';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import iconGemini from '@/assets/icons/gemini.svg';
 import iconClaude from '@/assets/icons/claude.svg';
@@ -44,39 +44,12 @@ const MODEL_CATEGORY_ICONS: Record<string, string | { light: string; dark: strin
   minimax: iconMinimax,
 };
 
-const parseVersionSegments = (version?: string | null) => {
-  if (!version) return null;
-  const cleaned = version.trim().replace(/^v/i, '');
-  if (!cleaned) return null;
-  const parts = cleaned
-    .split(/[^0-9]+/)
-    .filter(Boolean)
-    .map((segment) => Number.parseInt(segment, 10))
-    .filter(Number.isFinite);
-  return parts.length ? parts : null;
-};
-
-const compareVersions = (latest?: string | null, current?: string | null) => {
-  const latestParts = parseVersionSegments(latest);
-  const currentParts = parseVersionSegments(current);
-  if (!latestParts || !currentParts) return null;
-  const length = Math.max(latestParts.length, currentParts.length);
-  for (let i = 0; i < length; i++) {
-    const l = latestParts[i] || 0;
-    const c = currentParts[i] || 0;
-    if (l > c) return 1;
-    if (l < c) return -1;
-  }
-  return 0;
-};
-
 export function SystemPage() {
   const { t, i18n } = useTranslation();
   const { showNotification, showConfirmation } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const auth = useAuthStore();
   const config = useConfigStore((state) => state.config);
-  const visualConfig = useVisualConfig();
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
   const updateConfigValue = useConfigStore((state) => state.updateConfigValue);
@@ -95,7 +68,9 @@ export function SystemPage() {
   const [requestLogDraft, setRequestLogDraft] = useState(false);
   const [requestLogTouched, setRequestLogTouched] = useState(false);
   const [requestLogSaving, setRequestLogSaving] = useState(false);
-  const [checkingVersion, setCheckingVersion] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo>(() =>
+    selfUpdateService.getUpdateInfo()
+  );
 
   const apiKeysCache = useRef<string[]>([]);
   const versionTapCount = useRef(0);
@@ -287,54 +262,82 @@ export function SystemPage() {
   };
 
   const handleVersionCheck = useCallback(async () => {
-    setCheckingVersion(true);
-    try {
-      const panelRepo =
-        visualConfig.visualValues.rmPanelRepo.trim() ||
-        'router-for-me/Cli-Proxy-API-Management-Center';
-      const repoPath = panelRepo.replace(/^https?:\/\/github\.com\//, '');
-      const response = await fetch(
-        `https://api.github.com/repos/${repoPath}/releases/latest`,
-        { headers: { Accept: 'application/vnd.github+json' } }
+    const result = await selfUpdateService.checkForUpdates();
+    setUpdateInfo(result);
+
+    if (result.status === 'available' && result.latestVersion) {
+      showNotification(
+        t('system_info.version_update_available', { version: result.latestVersion }),
+        'warning'
       );
-      if (!response.ok) {
-        showNotification(t('system_info.version_check_error'), 'error');
-        return;
-      }
-      const data = (await response.json()) as { tag_name?: string };
-      const latestRaw = data?.tag_name ?? '';
-      const latest = typeof latestRaw === 'string' ? latestRaw : String(latestRaw ?? '');
-      const comparison = compareVersions(latest, appVersion);
-
-      if (!latest) {
-        showNotification(t('system_info.version_check_error'), 'error');
-        return;
-      }
-
-      if (comparison === null) {
-        showNotification(t('system_info.version_current_missing'), 'warning');
-        return;
-      }
-
-      if (comparison > 0) {
-        showNotification(t('system_info.version_update_available', { version: latest }), 'warning');
-      } else {
-        showNotification(t('system_info.version_is_latest'), 'success');
-      }
-    } catch (error: unknown) {
-      const message = getErrorMessage(error);
-      const suffix = message ? `: ${message}` : '';
-      showNotification(`${t('system_info.version_check_error')}${suffix}`, 'error');
-    } finally {
-      setCheckingVersion(false);
+    } else if (result.status === 'up_to_date') {
+      showNotification(t('system_info.version_is_latest'), 'success');
+    } else if (result.status === 'error' && result.error) {
+      showNotification(
+        `${t('system_info.version_check_error')}: ${result.error}`,
+        'error'
+      );
     }
-  }, [appVersion, showNotification, t, visualConfig.visualValues.rmPanelRepo]);
+  }, [showNotification, t]);
+
+  const handleUpdateApply = useCallback(async () => {
+    showConfirmation({
+      title: t('system_info.update_title', { defaultValue: '面板更新' }),
+      message: t('system_info.update_confirm', {
+        defaultValue: `即将下载并应用最新版本 ${updateInfo.latestVersion || ''}，更新完成后请刷新页面。`,
+        version: updateInfo.latestVersion || '',
+      }),
+      confirmText: t('system_info.update_button', { defaultValue: '立即更新' }),
+      cancelText: t('common.cancel'),
+      variant: 'primary',
+      onConfirm: async () => {
+        const result = await selfUpdateService.downloadAndApply();
+        setUpdateInfo(result);
+
+        if (result.status === 'up_to_date') {
+          showNotification(
+            t('system_info.update_success', {
+              defaultValue: '更新已应用，请刷新页面以加载新版本。',
+            }),
+            'success'
+          );
+          if (typeof window !== 'undefined') {
+            window.setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+          }
+        } else if (result.status === 'error' && result.error) {
+          showNotification(
+            `${t('notification.update_failed')}: ${result.error}`,
+            'error'
+          );
+        }
+      },
+    });
+  }, [showConfirmation, showNotification, t, updateInfo.latestVersion]);
+
+  const isChecking = updateInfo.status === 'checking';
+  const isDownloading = updateInfo.status === 'downloading' || updateInfo.status === 'applying';
+  const isUpdateAvailable = updateInfo.status === 'available';
 
   useEffect(() => {
     fetchConfig().catch(() => {
       // ignore
     });
   }, [fetchConfig]);
+
+  useEffect(() => {
+    const unsubscribe = selfUpdateService.subscribe((info) => {
+      setUpdateInfo(info);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (auth.connectionStatus === 'connected' && config) {
+      void selfUpdateService.checkForUpdates();
+    }
+  }, [auth.connectionStatus, config]);
 
   useEffect(() => {
     if (requestLogModalOpen && !requestLogTouched) {
@@ -386,7 +389,8 @@ export function SystemPage() {
                   size="sm"
                   className={styles.tileAction}
                   onClick={() => void handleVersionCheck()}
-                  loading={checkingVersion}
+                  loading={isChecking}
+                  disabled={isDownloading}
                   title={t('system_info.version_check_button')}
                   aria-label={t('system_info.version_check_button')}
                 >
@@ -394,6 +398,30 @@ export function SystemPage() {
                 </Button>
               </div>
               <div className={styles.tileValue}>{apiVersion}</div>
+              {isUpdateAvailable && (
+                <div className={styles.updateBanner}>
+                  <div className={styles.updateText}>
+                    {t('system_info.version_update_available', {
+                      version: updateInfo.latestVersion || '',
+                    })}
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => void handleUpdateApply()}
+                    loading={isDownloading}
+                  >
+                    {t('system_info.update_button', { defaultValue: '立即更新' })}
+                  </Button>
+                </div>
+              )}
+              {isDownloading && (
+                <div className={styles.tileSub}>
+                  {updateInfo.status === 'downloading'
+                    ? t('system_info.downloading', { defaultValue: '正在下载更新...' })
+                    : t('system_info.applying', { defaultValue: '正在应用更新...' })}
+                </div>
+              )}
             </div>
 
             <div className={styles.infoTile}>

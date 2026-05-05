@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { usageSSEService, SSE_DEGRADED_RECONNECT_INTERVAL_MS, SSE_POLLING_INTERVAL_MS } from '@/services/sse';
+import { usageSSEService } from '@/services/sse';
 import { useUsageStatsStore, USAGE_STATS_STALE_TIME_MS } from '@/stores/useUsageStatsStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useInterval } from '@/hooks/useInterval';
 import type { UsageSSEConnectionStatus, UsageSSEHandler } from '@/types/sse';
+
+const SSE_DEGRADED_RECONNECT_INTERVAL_MS = 300000;
+const SSE_POLLING_INTERVAL_MS = 60000;
 
 export type { UsageSSEConnectionStatus };
 

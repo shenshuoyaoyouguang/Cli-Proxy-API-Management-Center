@@ -3,7 +3,7 @@ import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from '@/services/api/client';
 import { useNotificationStore } from '@/stores/useNotificationStore';
 import type { ApiError } from '@/types';
-import { pendingRequests, generateDedupKey } from './useApiDedupe';
+import { pendingRequests, generateDedupKey, scheduleCleanup } from './useApiDedupe';
 import { calculateRetryDelay, sleep } from './useApiRetry';
 import type { HttpMethod } from './types';
 
@@ -127,6 +127,7 @@ export function useApi<T, P = unknown>(
           abortController,
           timestamp: Date.now(),
         });
+        scheduleCleanup();
       }
 
       try {
@@ -139,6 +140,7 @@ export function useApi<T, P = unknown>(
         }
         if (dedup) {
           pendingRequests.delete(dedupKey);
+          scheduleCleanup();
         }
       }
     },

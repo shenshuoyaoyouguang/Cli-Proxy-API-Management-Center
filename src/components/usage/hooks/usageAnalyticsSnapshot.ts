@@ -623,11 +623,11 @@ export function createTokenDistribution(details: UsageDetail[]): TokenDistributi
 
   details.forEach((detail) => {
     const tokens = detail.tokens;
-    input += typeof tokens.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
-    output += typeof tokens.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
+    input += typeof tokens?.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
+    output += typeof tokens?.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
     cached += getCachedTokens(tokens);
     reasoning +=
-      typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
+      typeof tokens?.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
   });
 
   return { input, output, cached, reasoning };

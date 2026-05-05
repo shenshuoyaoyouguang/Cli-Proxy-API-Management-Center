@@ -12,6 +12,7 @@ import {
   type UsageDetail,
 } from '@/utils/usage';
 import { resolveCachedUsageDetailsFromUsage } from '@/utils/usage/cacheSnapshot';
+import { normalizeUsageDetailTokens } from '@/atoms/usage/tokens';
 import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
@@ -44,6 +45,17 @@ type UsageStatsState = {
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
+const ensureUsageDetailTokens = (details: UsageDetail[]): UsageDetail[] =>
+  details.map((detail) => {
+    if (detail.tokens && typeof detail.tokens === 'object') {
+      return detail;
+    }
+    return {
+      ...detail,
+      tokens: normalizeUsageDetailTokens(detail),
+    };
+  });
+
 const toFiniteNumber = (value: unknown): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -52,21 +64,24 @@ const toFiniteNumber = (value: unknown): number => {
 const addUsageAggregate = (currentValue: unknown, deltaValue: number): number =>
   toFiniteNumber(currentValue) + deltaValue;
 
-const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail => ({
-  timestamp: new Date(detail.timestamp).toISOString(),
-  source: detail.source,
-  auth_index: null,
-  tokens: {
-    input_tokens: detail.tokens.prompt,
-    output_tokens: detail.tokens.completion,
-    reasoning_tokens: 0,
-    cached_tokens: 0,
-    total_tokens: detail.tokens.total,
-  },
-  failed: !detail.success,
-  __modelName: detail.model,
-  __timestampMs: detail.timestamp,
-});
+const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail => {
+  const deltaTokens = detail.tokens ?? {};
+  return {
+    timestamp: new Date(detail.timestamp).toISOString(),
+    source: detail.source,
+    auth_index: null,
+    tokens: {
+      input_tokens: deltaTokens.prompt ?? 0,
+      output_tokens: deltaTokens.completion ?? 0,
+      reasoning_tokens: 0,
+      cached_tokens: 0,
+      total_tokens: deltaTokens.total ?? 0,
+    },
+    failed: !detail.success,
+    __modelName: detail.model,
+    __timestampMs: detail.timestamp,
+  };
+};
 
 const mergeUsageDelta = (
   current: UsageStatsSnapshot | null,
@@ -542,7 +557,9 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   applyFullSnapshot: (snapshot) => {
     const state = get();
     const usage = snapshot.usage as UsageStatsSnapshot;
-    const usageDetails = Array.isArray(snapshot.usageDetails) ? snapshot.usageDetails : collectUsageDetails(usage);
+    const usageDetails = Array.isArray(snapshot.usageDetails)
+      ? ensureUsageDetailTokens(snapshot.usageDetails)
+      : collectUsageDetails(usage);
     const keyStats = computeKeyStatsFromDetails(usageDetails);
     const lastRefreshedAt = snapshot.timestamp;
     const nextSnapshot = {

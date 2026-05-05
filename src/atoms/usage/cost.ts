@@ -12,6 +12,9 @@ export function calculateCost(
     return 0;
   }
   const tokens = detail.tokens;
+  if (!tokens) {
+    return 0;
+  }
   const rawInputTokens = Number(tokens.input_tokens);
   const rawCompletionTokens = Number(tokens.output_tokens);
   const rawCachedTokensPrimary = Number(tokens.cached_tokens);

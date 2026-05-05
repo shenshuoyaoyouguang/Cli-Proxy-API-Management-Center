@@ -284,14 +284,14 @@ export function buildHourlyTokenBreakdown(
     if (bucketIndex < 0 || bucketIndex >= labels.length) return;
 
     const tokens = detail.tokens;
-    const input = typeof tokens.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
-    const output = typeof tokens.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
+    const input = typeof tokens?.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
+    const output = typeof tokens?.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
     const cached = Math.max(
-      typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-      typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
+      typeof tokens?.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
+      typeof tokens?.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
     );
     const reasoning =
-      typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
+      typeof tokens?.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
 
     dataByCategory.input[bucketIndex] += input;
     dataByCategory.output[bucketIndex] += output;
@@ -319,14 +319,14 @@ export function buildDailyTokenBreakdown(usageData: unknown): TokenBreakdownSeri
     }
 
     const tokens = detail.tokens;
-    const input = typeof tokens.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
-    const output = typeof tokens.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
+    const input = typeof tokens?.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
+    const output = typeof tokens?.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
     const cached = Math.max(
-      typeof tokens.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-      typeof tokens.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
+      typeof tokens?.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
+      typeof tokens?.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
     );
     const reasoning =
-      typeof tokens.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
+      typeof tokens?.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
 
     dayMap[dayLabel].input += input;
     dayMap[dayLabel].output += output;

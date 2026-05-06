@@ -208,6 +208,16 @@ describe('UsageSSEService', () => {
       successCount: 4,
       failureCount: 1,
       tokenDelta: { input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, cached_tokens: 20, total_tokens: 150 },
+      modelBreakdown: [
+        {
+          endpoint: 'POST /v1/chat/completions',
+          model: 'gpt-4',
+          requestCount: 5,
+          successCount: 4,
+          failureCount: 1,
+          tokenDelta: { input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, cached_tokens: 20, total_tokens: 150 },
+        },
+      ],
       details: [
         {
           timestamp: '2024-01-01T00:00:00Z',
@@ -239,6 +249,22 @@ describe('UsageSSEService', () => {
     expect(delta.tokenDelta.promptTokens).toBe(100);
     expect(delta.tokenDelta.completionTokens).toBe(50);
     expect(delta.tokenDelta.totalTokens).toBe(150);
+    expect(delta.modelBreakdown).toEqual([
+      {
+        endpoint: 'POST /v1/chat/completions',
+        model: 'gpt-4',
+        requestCount: 5,
+        successCount: 4,
+        failureCount: 1,
+        tokenDelta: {
+          promptTokens: 100,
+          completionTokens: 50,
+          reasoningTokens: 10,
+          cachedTokens: 20,
+          totalTokens: 150,
+        },
+      },
+    ]);
     expect(delta.details).toHaveLength(1);
     expect(delta.details[0].model).toBe('gpt-4');
     expect(delta.details[0].success).toBe(true);
@@ -258,7 +284,7 @@ describe('UsageSSEService', () => {
       successCount: 0,
       failureCount: 1,
       tokenDelta: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
-      details: [{ model: 'm1', source: 's1', failed: true, tokens: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } }],
+      details: [{ model: '', source: 's1', failed: true, tokens: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } }],
     });
 
     fetchSpy.mockResolvedValue(createMockStreamResponse([
@@ -270,6 +296,7 @@ describe('UsageSSEService', () => {
     await Promise.resolve();
 
     const delta = (handler.onDelta as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(delta.details[0].model).toBe('unknown');
     expect(delta.details[0].success).toBe(false);
   });
 

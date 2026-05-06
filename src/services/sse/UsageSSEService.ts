@@ -3,6 +3,8 @@ import type {
   UsageSSEHandler,
   UsageDeltaEvent,
   UsageFullEvent,
+  UsageModelBreakdownItem,
+  UsageTokenDelta,
 } from '@/types/sse';
 import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
 
@@ -113,25 +115,64 @@ type RawDeltaPayload = {
   failureCount?: number;
   tokenDelta?: RawTokenDelta;
   details?: RawDeltaDetail[];
+  modelBreakdown?: RawModelBreakdown[];
 };
 
+type RawModelBreakdown = {
+  endpoint?: string;
+  model?: string;
+  requestCount?: number;
+  request_count?: number;
+  successCount?: number;
+  success_count?: number;
+  failureCount?: number;
+  failure_count?: number;
+  tokenDelta?: RawTokenDelta;
+  token_delta?: RawTokenDelta;
+};
+
+function normalizeStringValue(value: unknown, fallback = ''): string {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || fallback;
+}
+
+function mapTokenDelta(raw?: RawTokenDelta): UsageTokenDelta {
+  return {
+    promptTokens: raw?.input_tokens ?? 0,
+    completionTokens: raw?.output_tokens ?? 0,
+    reasoningTokens: raw?.reasoning_tokens ?? 0,
+    cachedTokens: raw?.cached_tokens ?? 0,
+    totalTokens: raw?.total_tokens ?? 0,
+  };
+}
+
+function mapModelBreakdownItem(raw: RawModelBreakdown): UsageModelBreakdownItem {
+  return {
+    endpoint: normalizeStringValue(raw.endpoint, 'unknown'),
+    model: normalizeStringValue(raw.model, 'unknown'),
+    requestCount: raw.requestCount ?? raw.request_count ?? 0,
+    successCount: raw.successCount ?? raw.success_count ?? 0,
+    failureCount: raw.failureCount ?? raw.failure_count ?? 0,
+    tokenDelta: mapTokenDelta(raw.tokenDelta ?? raw.token_delta),
+  };
+}
+
 function mapDeltaEvent(raw: RawDeltaPayload): UsageDeltaEvent {
-  const td = raw.tokenDelta ?? {};
+  const modelBreakdown = Array.isArray(raw.modelBreakdown)
+    ? raw.modelBreakdown.map(mapModelBreakdownItem)
+    : undefined;
+
   return {
     seq: raw.seq ?? 0,
     timestamp: raw.timestamp ?? 0,
     requestCount: raw.requestCount ?? 0,
     successCount: raw.successCount ?? 0,
     failureCount: raw.failureCount ?? 0,
-    tokenDelta: {
-      promptTokens: td.input_tokens ?? 0,
-      completionTokens: td.output_tokens ?? 0,
-      totalTokens: td.total_tokens ?? 0,
-    },
+    tokenDelta: mapTokenDelta(raw.tokenDelta),
     details: (raw.details ?? []).map((d) => {
       const tk = d.tokens ?? {};
       return {
-        model: d.model ?? '',
+        model: normalizeStringValue(d.model, 'unknown'),
         source: d.source ?? '',
         timestamp: typeof d.timestamp === 'number' ? d.timestamp : new Date(d.timestamp ?? 0).getTime(),
         success: !d.failed,
@@ -142,6 +183,7 @@ function mapDeltaEvent(raw: RawDeltaPayload): UsageDeltaEvent {
         },
       };
     }),
+    modelBreakdown,
   };
 }
 

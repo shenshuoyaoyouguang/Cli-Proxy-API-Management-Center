@@ -16,7 +16,14 @@ import { normalizeUsageDetailTokens } from '@/atoms/usage/tokens';
 import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
-import type { UsageDeltaDetailItem, UsageDeltaEvent, UsageFullEvent } from '@/types/sse';
+import { parseTimestampMs } from '@/utils/timestamp';
+import type {
+  UsageDeltaDetailItem,
+  UsageDeltaEvent,
+  UsageFullEvent,
+  UsageModelBreakdownItem,
+  UsageSnapshotDetailItem,
+} from '@/types/sse';
 
 export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
@@ -46,14 +53,36 @@ type UsageStatsState = {
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
-const ensureUsageDetailTokens = (details: UsageDetail[]): UsageDetail[] =>
+const UNKNOWN_USAGE_MODEL = 'unknown';
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const normalizeStringValue = (value: unknown, fallback = ''): string => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed || fallback;
+};
+
+const normalizeUsageModelName = (value: unknown): string =>
+  normalizeStringValue(value, UNKNOWN_USAGE_MODEL);
+
+const ensureUsageDetailTokens = (details: UsageSnapshotDetailItem[]): UsageDetail[] =>
   details.map((detail) => {
-    if (detail.tokens && typeof detail.tokens === 'object') {
-      return detail;
-    }
+    const tokens =
+      detail.tokens && typeof detail.tokens === 'object'
+        ? detail.tokens
+        : normalizeUsageDetailTokens(detail);
+    const modelName = normalizeUsageModelName(detail.__modelName ?? detail.model);
+    const timestampMs =
+      typeof detail.__timestampMs === 'number' && Number.isFinite(detail.__timestampMs)
+        ? detail.__timestampMs
+        : parseTimestampMs(detail.timestamp);
+
     return {
       ...detail,
-      tokens: normalizeUsageDetailTokens(detail),
+      tokens,
+      __modelName: modelName,
+      __timestampMs: Number.isFinite(timestampMs) ? timestampMs : undefined,
     };
   });
 
@@ -79,9 +108,110 @@ const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail =
       total_tokens: deltaTokens.total ?? 0,
     },
     failed: !detail.success,
-    __modelName: detail.model,
+    __modelName: normalizeUsageModelName(detail.model),
     __timestampMs: detail.timestamp,
   };
+};
+
+const createEmptyApiUsageEntry = (): Record<string, unknown> => ({
+  total_requests: 0,
+  success_count: 0,
+  failure_count: 0,
+  total_tokens: 0,
+  models: {},
+});
+
+const createEmptyModelUsageEntry = (): Record<string, unknown> => ({
+  total_requests: 0,
+  success_count: 0,
+  failure_count: 0,
+  total_tokens: 0,
+  details: [],
+});
+
+const cloneUsageWithApis = (usage: UsageStatsSnapshot): [UsageStatsSnapshot, Record<string, unknown>] => {
+  const nextUsage = { ...usage };
+  const sourceApis = isRecord(nextUsage.apis)
+    ? (nextUsage.apis as Record<string, unknown>)
+    : null;
+  const nextApis: Record<string, unknown> = {};
+
+  if (sourceApis) {
+    Object.entries(sourceApis).forEach(([endpoint, apiEntry]) => {
+      if (!isRecord(apiEntry)) {
+        nextApis[endpoint] = apiEntry;
+        return;
+      }
+
+      const nextApiEntry: Record<string, unknown> = { ...apiEntry };
+      const sourceModels = isRecord(apiEntry.models)
+        ? (apiEntry.models as Record<string, unknown>)
+        : null;
+      const nextModels: Record<string, unknown> = {};
+
+      if (sourceModels) {
+        Object.entries(sourceModels).forEach(([modelName, modelEntry]) => {
+          nextModels[modelName] = isRecord(modelEntry)
+            ? { ...(modelEntry as Record<string, unknown>) }
+            : modelEntry;
+        });
+      }
+
+      nextApiEntry.models = nextModels;
+      nextApis[endpoint] = nextApiEntry;
+    });
+  }
+
+  nextUsage.apis = nextApis;
+  return [nextUsage, nextApis];
+};
+
+const mergeModelBreakdown = (
+  current: UsageStatsSnapshot,
+  modelBreakdown: UsageModelBreakdownItem[] | undefined
+): UsageStatsSnapshot => {
+  if (!Array.isArray(modelBreakdown) || modelBreakdown.length === 0) {
+    return current;
+  }
+
+  const [nextUsage, nextApis] = cloneUsageWithApis(current);
+
+  modelBreakdown.forEach((item) => {
+    const endpoint = normalizeStringValue(item.endpoint, UNKNOWN_USAGE_MODEL);
+    const model = normalizeUsageModelName(item.model);
+    const tokenDelta = item.tokenDelta ?? { totalTokens: 0 };
+
+    const apiEntry = isRecord(nextApis[endpoint])
+      ? (nextApis[endpoint] as Record<string, unknown>)
+      : createEmptyApiUsageEntry();
+    if (!isRecord(nextApis[endpoint])) {
+      nextApis[endpoint] = apiEntry;
+    }
+
+    const models = isRecord(apiEntry.models)
+      ? (apiEntry.models as Record<string, unknown>)
+      : {};
+    apiEntry.models = models;
+
+    const modelEntry = isRecord(models[model])
+      ? (models[model] as Record<string, unknown>)
+      : createEmptyModelUsageEntry();
+    if (!isRecord(models[model])) {
+      models[model] = modelEntry;
+    }
+
+    modelEntry.total_requests = addUsageAggregate(modelEntry.total_requests, item.requestCount);
+    modelEntry.success_count = addUsageAggregate(modelEntry.success_count, item.successCount);
+    modelEntry.failure_count = addUsageAggregate(modelEntry.failure_count, item.failureCount);
+    modelEntry.total_tokens = addUsageAggregate(modelEntry.total_tokens, tokenDelta.totalTokens);
+
+    apiEntry.total_requests = addUsageAggregate(apiEntry.total_requests, item.requestCount);
+    apiEntry.success_count = addUsageAggregate(apiEntry.success_count, item.successCount);
+    apiEntry.failure_count = addUsageAggregate(apiEntry.failure_count, item.failureCount);
+    apiEntry.total_tokens = addUsageAggregate(apiEntry.total_tokens, tokenDelta.totalTokens);
+  });
+
+  return nextUsage;
 };
 
 const mergeUsageDelta = (
@@ -522,7 +652,10 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       return;
     }
 
-    const mergedUsage = mergeUsageDelta(state.usage, delta);
+    const mergedUsage = mergeModelBreakdown(
+      mergeUsageDelta(state.usage, delta),
+      delta.modelBreakdown
+    );
     const usageDetails = [...state.usageDetails, ...delta.details.map(createUsageDetailFromDelta)];
     const trimmedDetails = usageDetails.length > MAX_USAGE_DETAILS_LENGTH
       ? usageDetails.slice(usageDetails.length - MAX_USAGE_DETAILS_LENGTH)

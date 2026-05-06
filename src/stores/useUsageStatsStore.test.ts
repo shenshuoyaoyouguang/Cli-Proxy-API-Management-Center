@@ -588,6 +588,110 @@ describe('useUsageStatsStore', () => {
       expect(persisted?.usageDetails).toHaveLength(2);
     });
 
+    it('merges modelBreakdown into usage.apis without mutating the previous snapshot', () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+      const endpoint = 'POST /v1/chat/completions';
+      const usage = {
+        total_requests: 1,
+        success_count: 1,
+        failure_count: 0,
+        total_tokens: 150,
+        prompt_tokens: 100,
+        completion_tokens: 50,
+        apis: {
+          [endpoint]: {
+            total_requests: 1,
+            success_count: 1,
+            failure_count: 0,
+            total_tokens: 150,
+            models: {
+              'gpt-4.1': {
+                total_requests: 1,
+                success_count: 1,
+                failure_count: 0,
+                total_tokens: 150,
+                details: [],
+              },
+            },
+          },
+        },
+      };
+      const originalApis = usage.apis;
+      const originalEndpointBucket = (usage.apis as Record<string, unknown>)[endpoint];
+
+      useUsageStatsStore.setState({
+        usage,
+        keyStats: createMockKeyStats(),
+        usageDetails: [],
+        loading: false,
+        error: null,
+        lastRefreshedAt: Date.parse('2026-01-01T00:00:00.000Z'),
+        scopeKey,
+        lastSeq: 10,
+      });
+
+      useUsageStatsStore.getState().applyDelta({
+        seq: 11,
+        timestamp: Date.parse('2026-01-01T00:01:00.000Z'),
+        requestCount: 1,
+        successCount: 1,
+        failureCount: 0,
+        tokenDelta: {
+          promptTokens: 30,
+          completionTokens: 20,
+          totalTokens: 50,
+        },
+        modelBreakdown: [
+          {
+            endpoint,
+            model: 'gpt-4o-mini',
+            requestCount: 1,
+            successCount: 1,
+            failureCount: 0,
+            tokenDelta: {
+              promptTokens: 30,
+              completionTokens: 20,
+              totalTokens: 50,
+            },
+          },
+        ],
+        details: [
+          {
+            model: 'gpt-4o-mini',
+            source: 'live-source',
+            timestamp: Date.parse('2026-01-01T00:01:00.000Z'),
+            success: true,
+            tokens: {
+              prompt: 30,
+              completion: 20,
+              total: 50,
+            },
+          },
+        ],
+      });
+
+      const state = useUsageStatsStore.getState();
+      const nextApis = state.usage?.apis as Record<string, unknown>;
+      const nextEndpointBucket = nextApis[endpoint] as Record<string, unknown>;
+      const nextModels = nextEndpointBucket.models as Record<string, unknown>;
+
+      expect(nextApis).not.toBe(originalApis);
+      expect(nextEndpointBucket).not.toBe(originalEndpointBucket);
+      expect((originalEndpointBucket as { models: Record<string, unknown> }).models).not.toHaveProperty('gpt-4o-mini');
+      expect(nextModels['gpt-4o-mini']).toMatchObject({
+        total_requests: 1,
+        success_count: 1,
+        failure_count: 0,
+        total_tokens: 50,
+      });
+      expect(nextEndpointBucket).toMatchObject({
+        total_requests: 2,
+        success_count: 2,
+        failure_count: 0,
+        total_tokens: 200,
+      });
+    });
+
     it('prefers usageDetails from a full snapshot payload when provided', () => {
       const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
       const snapshotDetails = [
@@ -615,6 +719,44 @@ describe('useUsageStatsStore', () => {
       expect(vi.mocked(collectUsageDetails)).not.toHaveBeenCalled();
       expect(useUsageStatsStore.getState().usageDetails).toEqual(snapshotDetails);
       expect(useUsageStatsStore.getState().lastSeq).toBe(21);
+    });
+
+    it('backfills __modelName from raw usage:full details when the snapshot payload includes model', () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+
+      useUsageStatsStore.setState({
+        scopeKey,
+        lastSeq: 20,
+      });
+
+      useUsageStatsStore.getState().applyFullSnapshot({
+        seq: 21,
+        timestamp: Date.parse('2026-01-01T00:05:00.000Z'),
+        usage: { apis: { live: {} } },
+        usageDetails: [
+          {
+            timestamp: '2026-01-01T00:05:00.000Z',
+            source: 'snapshot-source',
+            auth_index: '5',
+            tokens: {
+              input_tokens: 100,
+              output_tokens: 50,
+              reasoning_tokens: 0,
+              cached_tokens: 0,
+              total_tokens: 150,
+            },
+            failed: false,
+            model: 'claude-3.7-sonnet',
+          } as UsageDetail & { model: string },
+        ],
+      });
+
+      expect(useUsageStatsStore.getState().usageDetails).toEqual([
+        expect.objectContaining({
+          __modelName: 'claude-3.7-sonnet',
+          __timestampMs: Date.parse('2026-01-01T00:05:00.000Z'),
+        }),
+      ]);
     });
   });
 

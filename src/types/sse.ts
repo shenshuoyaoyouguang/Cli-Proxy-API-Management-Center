@@ -7,6 +7,8 @@ export type UsageSSEConnectionStatus = 'connecting' | 'connected' | 'degraded' |
 export interface UsageTokenDelta {
   promptTokens: number;
   completionTokens: number;
+  reasoningTokens?: number;
+  cachedTokens?: number;
   totalTokens: number;
 }
 
@@ -18,6 +20,15 @@ export interface UsageDeltaDetailItem {
   tokens: { prompt: number; completion: number; total: number };
 }
 
+export interface UsageModelBreakdownItem {
+  endpoint: string;
+  model: string;
+  requestCount: number;
+  successCount: number;
+  failureCount: number;
+  tokenDelta: UsageTokenDelta;
+}
+
 export interface UsageDeltaEvent {
   seq: number;
   timestamp: number;
@@ -26,13 +37,23 @@ export interface UsageDeltaEvent {
   failureCount: number;
   tokenDelta: UsageTokenDelta;
   details: UsageDeltaDetailItem[];
+  modelBreakdown?: UsageModelBreakdownItem[];
+}
+
+export interface UsageSnapshotDetailItem extends UsageDetail {
+  model?: string;
+  provider?: string;
+  auth_type?: string;
+  endpoint?: string;
+  request_id?: string;
+  latency_ms?: number;
 }
 
 export interface UsageFullEvent {
   seq: number;
   timestamp: number;
   usage: Record<string, unknown>;
-  usageDetails?: UsageDetail[];
+  usageDetails?: UsageSnapshotDetailItem[];
 }
 
 export interface UsageSSEHandler {

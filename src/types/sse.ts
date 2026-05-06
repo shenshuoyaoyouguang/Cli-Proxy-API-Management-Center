@@ -17,7 +17,7 @@ export interface UsageDeltaDetailItem {
   source: string;
   timestamp: number;
   success: boolean;
-  tokens: { prompt: number; completion: number; total: number };
+  tokens: { prompt: number; completion: number; total: number; reasoning?: number; cached?: number };
 }
 
 export interface UsageModelBreakdownItem {

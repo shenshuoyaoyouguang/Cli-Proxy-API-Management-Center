@@ -179,6 +179,8 @@ function mapDeltaEvent(raw: RawDeltaPayload): UsageDeltaEvent {
         tokens: {
           prompt: tk.input_tokens ?? 0,
           completion: tk.output_tokens ?? 0,
+          reasoning: tk.reasoning_tokens ?? 0,
+          cached: tk.cached_tokens ?? 0,
           total: tk.total_tokens ?? 0,
         },
       };

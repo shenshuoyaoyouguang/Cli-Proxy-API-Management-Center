@@ -103,8 +103,8 @@ const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail =
     tokens: {
       input_tokens: deltaTokens.prompt ?? 0,
       output_tokens: deltaTokens.completion ?? 0,
-      reasoning_tokens: 0,
-      cached_tokens: 0,
+      reasoning_tokens: deltaTokens.reasoning ?? 0,
+      cached_tokens: deltaTokens.cached ?? 0,
       total_tokens: deltaTokens.total ?? 0,
     },
     failed: !detail.success,
@@ -226,6 +226,8 @@ const mergeUsageDelta = (
       total_tokens: delta.tokenDelta.totalTokens,
       prompt_tokens: delta.tokenDelta.promptTokens,
       completion_tokens: delta.tokenDelta.completionTokens,
+      reasoning_tokens: delta.tokenDelta.reasoningTokens ?? 0,
+      cached_tokens: delta.tokenDelta.cachedTokens ?? 0,
     };
   }
 
@@ -236,6 +238,8 @@ const mergeUsageDelta = (
   merged.total_tokens = addUsageAggregate(merged.total_tokens, delta.tokenDelta.totalTokens);
   merged.prompt_tokens = addUsageAggregate(merged.prompt_tokens, delta.tokenDelta.promptTokens);
   merged.completion_tokens = addUsageAggregate(merged.completion_tokens, delta.tokenDelta.completionTokens);
+  merged.reasoning_tokens = addUsageAggregate(merged.reasoning_tokens, delta.tokenDelta.reasoningTokens ?? 0);
+  merged.cached_tokens = addUsageAggregate(merged.cached_tokens, delta.tokenDelta.cachedTokens ?? 0);
 
   return merged;
 };

@@ -1,9 +1,10 @@
 import type { UsageDetail, ModelPrice } from './types';
 
 const TOKENS_PER_PRICE_UNIT = 1_000_000;
+const RPM_TPM_PER_PRICE_UNIT = 1_000;
 
 export function calculateCost(
-  detail: Pick<UsageDetail, 'tokens' | '__modelName'>,
+  detail: Pick<UsageDetail, 'tokens' | '__modelName'> & { requestCount?: number },
   modelPrices: Record<string, ModelPrice>
 ): number {
   const modelName = detail.__modelName || '';
@@ -34,12 +35,22 @@ export function calculateCost(
   const cachedCost = (cachedTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.cache) || 0);
   const completionCost =
     (completionTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.completion) || 0);
-  const total = promptCost + cachedCost + completionCost;
+  const totalTokens = inputTokens + completionTokens;
+  const requestCount = detail.requestCount ?? 1;
+  const rpmCost =
+    typeof price.rpm === 'number' && price.rpm >= 0
+      ? (requestCount / RPM_TPM_PER_PRICE_UNIT) * price.rpm
+      : 0;
+  const tpmCost =
+    typeof price.tpm === 'number' && price.tpm >= 0
+      ? (totalTokens / RPM_TPM_PER_PRICE_UNIT) * price.tpm
+      : 0;
+  const total = promptCost + cachedCost + completionCost + rpmCost + tpmCost;
   return Number.isFinite(total) && total > 0 ? total : 0;
 }
 
 export function calculateTotalCost(
-  details: Pick<UsageDetail, 'tokens' | '__modelName'>[],
+  details: (Pick<UsageDetail, 'tokens' | '__modelName'> & { requestCount?: number })[],
   modelPrices: Record<string, ModelPrice>
 ): number {
   if (!details.length || !Object.keys(modelPrices).length) {

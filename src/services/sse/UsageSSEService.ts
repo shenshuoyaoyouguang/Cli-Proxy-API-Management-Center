@@ -9,7 +9,7 @@ import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
 export const SSE_RECONNECT_MAX_ATTEMPTS = 5;
 export const SSE_RECONNECT_BASE_DELAY_MS = 1000;
 export const SSE_RECONNECT_MAX_DELAY_MS = 30000;
-const SSE_AUTH_ERROR_EVENT = 'usage:auth-error';
+export const SSE_BUFFER_MAX_SIZE = 1_048_576;
 
 type UsageSSEConnectOptions = {
   resetRetryState?: boolean;
@@ -17,48 +17,132 @@ type UsageSSEConnectOptions = {
 
 type ParsedSSEEvent = {
   eventType: string;
+  id: string;
   data: string;
 };
 
 function parseSSELines(chunk: string, buffer: { value: string }): ParsedSSEEvent[] {
-  buffer.value += chunk;
-  const events: ParsedSSEEvent[] = [];
-  let eventType = 'message';
-  let data = '';
+  try {
+    buffer.value += chunk;
 
-  const lines = buffer.value.split('\n');
-  const lastLine = lines.pop()!;
-  buffer.value = lastLine;
+    if (buffer.value.length > SSE_BUFFER_MAX_SIZE) {
+      buffer.value = '';
+      throw new Error('SSE buffer overflow: max size exceeded');
+    }
 
-  for (const line of lines) {
-    if (line === '') {
-      if (data !== '') {
-        events.push({ eventType, data });
-        eventType = 'message';
-        data = '';
+    const events: ParsedSSEEvent[] = [];
+    let eventType = 'message';
+    let id = '';
+    let data = '';
+
+    const lines = buffer.value.split(/\r\n|\n|\r/);
+    const lastLine = lines.pop()!;
+    buffer.value = lastLine;
+
+    for (const line of lines) {
+      if (line === '') {
+        if (data !== '') {
+          events.push({ eventType, id, data });
+          eventType = 'message';
+          id = '';
+          data = '';
+        }
+        continue;
       }
-      continue;
-    }
-    if (line.startsWith(':')) {
-      continue;
-    }
-    const colonIndex = line.indexOf(':');
-    if (colonIndex === -1) {
-      continue;
-    }
-    const field = line.slice(0, colonIndex);
-    const value = line.slice(colonIndex + 1).replace(/^ /, '');
-    if (field === 'event') {
-      eventType = value;
-    } else if (field === 'data') {
-      if (data !== '') {
-        data += '\n';
+      if (line.startsWith(':')) {
+        continue;
       }
-      data += value;
+      const colonIndex = line.indexOf(':');
+      if (colonIndex === -1) {
+        continue;
+      }
+      const field = line.slice(0, colonIndex);
+      const value = line.slice(colonIndex + 1).replace(/^ /, '');
+      if (field === 'event') {
+        eventType = value;
+      } else if (field === 'id') {
+        id = value;
+      } else if (field === 'data') {
+        if (data !== '') {
+          data += '\n';
+        }
+        data += value;
+      }
     }
+
+    return events;
+  } catch (err) {
+    buffer.value = '';
+    throw err;
   }
+}
 
-  return events;
+type RawTokenDelta = {
+  input_tokens?: number;
+  output_tokens?: number;
+  reasoning_tokens?: number;
+  cached_tokens?: number;
+  total_tokens?: number;
+};
+
+type RawDeltaDetail = {
+  timestamp?: string | number;
+  provider?: string;
+  model?: string;
+  source?: string;
+  auth_index?: string;
+  auth_type?: string;
+  endpoint?: string;
+  request_id?: string;
+  latency_ms?: number;
+  failed?: boolean;
+  tokens?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    cached_tokens?: number;
+    total_tokens?: number;
+  };
+};
+
+type RawDeltaPayload = {
+  seq?: number;
+  timestamp?: number;
+  requestCount?: number;
+  successCount?: number;
+  failureCount?: number;
+  tokenDelta?: RawTokenDelta;
+  details?: RawDeltaDetail[];
+};
+
+function mapDeltaEvent(raw: RawDeltaPayload): UsageDeltaEvent {
+  const td = raw.tokenDelta ?? {};
+  return {
+    seq: raw.seq ?? 0,
+    timestamp: raw.timestamp ?? 0,
+    requestCount: raw.requestCount ?? 0,
+    successCount: raw.successCount ?? 0,
+    failureCount: raw.failureCount ?? 0,
+    tokenDelta: {
+      promptTokens: td.input_tokens ?? 0,
+      completionTokens: td.output_tokens ?? 0,
+      totalTokens: td.total_tokens ?? 0,
+    },
+    details: (raw.details ?? []).map((d) => {
+      const tk = d.tokens ?? {};
+      return {
+        model: d.model ?? '',
+        source: d.source ?? '',
+        timestamp: typeof d.timestamp === 'number' ? d.timestamp : new Date(d.timestamp ?? 0).getTime(),
+        success: !d.failed,
+        tokens: {
+          prompt: tk.input_tokens ?? 0,
+          completion: tk.output_tokens ?? 0,
+          total: tk.total_tokens ?? 0,
+        },
+      };
+    }),
+  };
 }
 
 export class UsageSSEServiceImpl {
@@ -71,6 +155,7 @@ export class UsageSSEServiceImpl {
   private abortController: AbortController | null = null;
   private sseBuffer = { value: '' };
   private isConnecting = false;
+  private lastEventId = '';
 
   connect(
     baseUrl: string,
@@ -94,6 +179,8 @@ export class UsageSSEServiceImpl {
   disconnect(): void {
     this.abortStream();
     this.handler = null;
+    this.baseUrl = '';
+    this.token = '';
     this.connectionStatus = 'disconnected';
   }
 
@@ -115,6 +202,7 @@ export class UsageSSEServiceImpl {
 
   requestFullCorrection(): void {
     if (!this.handler || !this.baseUrl || !this.token) return;
+    this.lastEventId = '';
     this.connect(this.baseUrl, this.token, this.handler);
   }
 
@@ -124,11 +212,14 @@ export class UsageSSEServiceImpl {
     this.sseBuffer = { value: '' };
     this.abortController = new AbortController();
 
-    const url = `${this.baseUrl}${MANAGEMENT_API_PREFIX}/usage/stream`;
+    const url = new URL(`${this.baseUrl}${MANAGEMENT_API_PREFIX}/usage/stream`);
+    url.searchParams.set('token', this.token);
+    if (this.lastEventId) {
+      url.searchParams.set('Last-Event-ID', this.lastEventId);
+    }
 
-    fetch(url, {
+    fetch(url.toString(), {
       headers: {
-        Authorization: `Bearer ${this.token}`,
         Accept: 'text/event-stream',
       },
       signal: this.abortController.signal,
@@ -175,9 +266,18 @@ export class UsageSSEServiceImpl {
           break;
         }
         const chunk = decoder.decode(value, { stream: true });
-        const events = parseSSELines(chunk, this.sseBuffer);
-        for (const event of events) {
-          this.dispatchSSEEvent(event);
+        try {
+          const events = parseSSELines(chunk, this.sseBuffer);
+          for (const event of events) {
+            if (event.id) {
+              this.lastEventId = event.id;
+            }
+            this.dispatchSSEEvent(event);
+          }
+        } catch (parseErr) {
+          this.handler?.onError(new ErrorEvent('error', { message: `SSE parse error: ${(parseErr as Error).message}` }));
+          this.scheduleReconnect();
+          return;
         }
       }
     } catch (error: unknown) {
@@ -199,9 +299,6 @@ export class UsageSSEServiceImpl {
       case 'usage:heartbeat':
         this.handleHeartbeatEvent();
         break;
-      case SSE_AUTH_ERROR_EVENT:
-        this.handleAuthErrorEvent();
-        break;
       default:
         break;
     }
@@ -209,7 +306,8 @@ export class UsageSSEServiceImpl {
 
   private handleDeltaEvent(rawData: string): void {
     try {
-      const data = JSON.parse(rawData) as UsageDeltaEvent;
+      const raw = JSON.parse(rawData) as RawDeltaPayload;
+      const data = mapDeltaEvent(raw);
       this.resetRetryState();
       this.connectionStatus = 'connected';
       this.handler?.onDelta(data);
@@ -236,24 +334,29 @@ export class UsageSSEServiceImpl {
   }
 
   private handleAuthErrorEvent(): void {
-    const handler = this.handler;
-    this.disconnect();
-    handler?.onAuthError();
+    this.abortStream();
+    this.connectionStatus = 'degraded';
+    this.handler?.onAuthError();
   }
 
-  private handleFetchError(_error: unknown): void {
+  private handleFetchError(error: unknown): void {
+    this.connectionStatus = 'connecting';
+    this.handler?.onError(new ErrorEvent('error', {
+      message: `SSE connection error (attempt ${this.reconnectAttempts + 1}/${SSE_RECONNECT_MAX_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`,
+    }));
     this.scheduleReconnect();
   }
 
   private handleStreamEnd(): void {
     if (this.connectionStatus === 'disconnected') return;
+    this.connectionStatus = 'connecting';
     this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {
     this.reconnectAttempts++;
 
-    if (this.reconnectAttempts > SSE_RECONNECT_MAX_ATTEMPTS) {
+    if (this.reconnectAttempts >= SSE_RECONNECT_MAX_ATTEMPTS) {
       this.connectionStatus = 'degraded';
       this.handler?.onError(new ErrorEvent('error', { message: `SSE reconnect failed after ${SSE_RECONNECT_MAX_ATTEMPTS} attempts` }));
       return;

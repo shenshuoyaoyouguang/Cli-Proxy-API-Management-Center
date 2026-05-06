@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { AutocompleteInput } from '@/components/ui/AutocompleteInput';
 import type { ModelPrice } from '@/utils/usage';
+import { syncPricesForModels } from '@/molecules/usage/priceAutoSync';
+import { clearPriceCatalogCache } from '@/atoms/usage/priceCatalog';
+import { saveModelPrices } from '@/utils/usage/modelPrices';
 import styles from '@/pages/UsagePage.module.scss';
 
 const PRICE_PAGE_SIZE = 10;
@@ -29,14 +32,20 @@ export function PriceSettingsCard({
   const [promptPrice, setPromptPrice] = useState('');
   const [completionPrice, setCompletionPrice] = useState('');
   const [cachePrice, setCachePrice] = useState('');
+  const [rpmPrice, setRpmPrice] = useState('');
+  const [tpmPrice, setTpmPrice] = useState('');
   const [page, setPage] = useState(1);
+  const [syncing, setSyncing] = useState(false);
 
   const selectedModel = useMemo(
     () => modelNames.find((name) => name === modelQuery) ?? '',
     [modelNames, modelQuery]
   );
 
-  const priceEntries = useMemo(() => Object.entries(modelPrices), [modelPrices]);
+  const priceEntries = useMemo(() => {
+    const usedSet = new Set(modelNames.map((n) => n.toLowerCase()));
+    return Object.entries(modelPrices).filter(([key]) => usedSet.has(key.toLowerCase()));
+  }, [modelPrices, modelNames]);
   const totalPages = Math.max(1, Math.ceil(priceEntries.length / PRICE_PAGE_SIZE));
   // currentPage 直接从 page 和 totalPages 计算，不需要 useEffect 同步
   const currentPage = Math.min(page, totalPages);
@@ -51,11 +60,31 @@ export function PriceSettingsCard({
   const [editPrompt, setEditPrompt] = useState('');
   const [editCompletion, setEditCompletion] = useState('');
   const [editCache, setEditCache] = useState('');
+  const [editRpm, setEditRpm] = useState('');
+  const [editTpm, setEditTpm] = useState('');
 
   const clearPriceInputs = () => {
     setPromptPrice('');
     setCompletionPrice('');
     setCachePrice('');
+    setRpmPrice('');
+    setTpmPrice('');
+  };
+
+  const handleSyncFromCatalog = async () => {
+    setSyncing(true);
+    try {
+      clearPriceCatalogCache();
+      const updated = await syncPricesForModels(modelNames, modelPrices);
+      if (updated !== modelPrices) {
+        onPricesChange(updated);
+        saveModelPrices(updated);
+      }
+    } catch {
+      // sync failure is non-critical
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const resetCreateForm = () => {
@@ -70,7 +99,12 @@ export function PriceSettingsCard({
     const prompt = parseFloat(promptPrice) || 0;
     const completion = parseFloat(completionPrice) || 0;
     const cache = cachePrice.trim() === '' ? prompt : parseFloat(cachePrice) || 0;
-    const newPrices = { ...modelPrices, [selectedModel]: { prompt, completion, cache } };
+    const rpm = rpmPrice.trim() === '' ? undefined : parseFloat(rpmPrice) || undefined;
+    const tpm = tpmPrice.trim() === '' ? undefined : parseFloat(tpmPrice) || undefined;
+    const priceData: ModelPrice = { prompt, completion, cache };
+    if (rpm !== undefined) priceData.rpm = rpm;
+    if (tpm !== undefined) priceData.tpm = tpm;
+    const newPrices = { ...modelPrices, [selectedModel]: priceData };
     const targetIndex = Object.keys(newPrices).indexOf(selectedModel);
     const targetPage = targetIndex >= 0 ? Math.floor(targetIndex / PRICE_PAGE_SIZE) + 1 : 1;
 
@@ -99,6 +133,8 @@ export function PriceSettingsCard({
     setEditPrompt(price?.prompt?.toString() || '');
     setEditCompletion(price?.completion?.toString() || '');
     setEditCache(price?.cache?.toString() || '');
+    setEditRpm(price?.rpm?.toString() || '');
+    setEditTpm(price?.tpm?.toString() || '');
   };
 
   const handleSaveEdit = () => {
@@ -107,7 +143,12 @@ export function PriceSettingsCard({
     const prompt = parseFloat(editPrompt) || 0;
     const completion = parseFloat(editCompletion) || 0;
     const cache = editCache.trim() === '' ? prompt : parseFloat(editCache) || 0;
-    const newPrices = { ...modelPrices, [editModel]: { prompt, completion, cache } };
+    const rpm = editRpm.trim() === '' ? undefined : parseFloat(editRpm) || undefined;
+    const tpm = editTpm.trim() === '' ? undefined : parseFloat(editTpm) || undefined;
+    const priceData: ModelPrice = { prompt, completion, cache };
+    if (rpm !== undefined) priceData.rpm = rpm;
+    if (tpm !== undefined) priceData.tpm = tpm;
+    const newPrices = { ...modelPrices, [editModel]: priceData };
 
     onPricesChange(newPrices);
 
@@ -116,6 +157,8 @@ export function PriceSettingsCard({
       setPromptPrice(prompt.toString());
       setCompletionPrice(completion.toString());
       setCachePrice(cache.toString());
+      if (rpm !== undefined) setRpmPrice(rpm.toString());
+      if (tpm !== undefined) setTpmPrice(tpm.toString());
     }
 
     setEditModel(null);
@@ -148,12 +191,16 @@ export function PriceSettingsCard({
       setPromptPrice(price.prompt.toString());
       setCompletionPrice(price.completion.toString());
       setCachePrice(price.cache.toString());
+      setRpmPrice(price.rpm?.toString() || '');
+      setTpmPrice(price.tpm?.toString() || '');
       return;
     }
 
     setPromptPrice('');
     setCompletionPrice('');
     setCachePrice('');
+    setRpmPrice('');
+    setTpmPrice('');
   };
 
   return (
@@ -203,6 +250,26 @@ export function PriceSettingsCard({
                 step="0.0001"
               />
             </div>
+            <div className={styles.formField}>
+              <label>RPM ($/1K)</label>
+              <Input
+                type="number"
+                value={rpmPrice}
+                onChange={(e) => setRpmPrice(e.target.value)}
+                placeholder="0.00"
+                step="0.0001"
+              />
+            </div>
+            <div className={styles.formField}>
+              <label>TPM ($/1K)</label>
+              <Input
+                type="number"
+                value={tpmPrice}
+                onChange={(e) => setTpmPrice(e.target.value)}
+                placeholder="0.00"
+                step="0.0001"
+              />
+            </div>
             <Button variant="primary" onClick={handleSavePrice} disabled={!selectedModel}>
               {t('common.save')}
             </Button>
@@ -211,7 +278,17 @@ export function PriceSettingsCard({
 
         {/* Saved Prices List */}
         <div className={styles.pricesList}>
-          <h4 className={styles.pricesTitle}>{t('usage_stats.saved_prices')}</h4>
+          <div className={styles.pricesTitleRow}>
+            <h4 className={styles.pricesTitle}>{t('usage_stats.saved_prices')}</h4>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncFromCatalog}
+              disabled={syncing || modelNames.length === 0}
+            >
+              {syncing ? '...' : 'Sync'}
+            </Button>
+          </div>
           {priceEntries.length > 0 ? (
             <>
               <div className={styles.pricesGrid}>
@@ -230,6 +307,12 @@ export function PriceSettingsCard({
                         <span>
                           {t('usage_stats.model_price_cache')}: ${price.cache.toFixed(4)}/1M
                         </span>
+                        {price.rpm !== undefined && (
+                          <span>RPM: ${price.rpm.toFixed(4)}/1K</span>
+                        )}
+                        {price.tpm !== undefined && (
+                          <span>TPM: ${price.tpm.toFixed(4)}/1K</span>
+                        )}
                       </div>
                     </div>
                     <div className={styles.priceActions}>
@@ -318,6 +401,26 @@ export function PriceSettingsCard({
               type="number"
               value={editCache}
               onChange={(e) => setEditCache(e.target.value)}
+              placeholder="0.00"
+              step="0.0001"
+            />
+          </div>
+          <div className={styles.formField}>
+            <label>RPM ($/1K)</label>
+            <Input
+              type="number"
+              value={editRpm}
+              onChange={(e) => setEditRpm(e.target.value)}
+              placeholder="0.00"
+              step="0.0001"
+            />
+          </div>
+          <div className={styles.formField}>
+            <label>TPM ($/1K)</label>
+            <Input
+              type="number"
+              value={editTpm}
+              onChange={(e) => setEditTpm(e.target.value)}
               placeholder="0.00"
               step="0.0001"
             />

@@ -27,6 +27,8 @@ export interface ModelPrice {
   prompt: number;
   completion: number;
   cache: number;
+  rpm?: number;
+  tpm?: number;
 }
 
 export interface UsageDetail {

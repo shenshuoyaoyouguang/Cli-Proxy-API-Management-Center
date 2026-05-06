@@ -695,6 +695,13 @@
   gap: 10px;
 }
 
+.pricesTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
 .pricesTitle {
   font-size: 12px;
   font-weight: 600;

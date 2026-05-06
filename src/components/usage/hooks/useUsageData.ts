@@ -4,6 +4,7 @@ import { USAGE_STATS_STALE_TIME_MS, useNotificationStore, useUsageStatsStore } f
 import { usageApi } from '@/services/api/usage';
 import { downloadBlob } from '@/utils/download';
 import { loadModelPrices, saveModelPrices, type ModelPrice, type UsageDetail } from '@/utils/usage';
+import { syncPricesForModels } from '@/molecules/usage/priceAutoSync';
 
 export interface UsagePayload {
   total_requests?: number;
@@ -54,6 +55,22 @@ export function useUsageData(): UseUsageDataReturn {
     void loadUsageStats({ staleTimeMs: USAGE_STATS_STALE_TIME_MS }).catch(() => {});
     setModelPrices(loadModelPrices());
   }, [loadUsageStats]);
+
+  const syncRef = useRef(false);
+  useEffect(() => {
+    if (syncRef.current || usageDetails.length === 0) return;
+    const modelNames = [...new Set(usageDetails.map((d) => d.__modelName).filter((n): n is string => Boolean(n)))];
+    if (modelNames.length === 0) return;
+
+    syncRef.current = true;
+    const currentPrices = loadModelPrices();
+    void syncPricesForModels(modelNames, currentPrices).then((updated) => {
+      if (updated !== currentPrices) {
+        setModelPrices(updated);
+        saveModelPrices(updated);
+      }
+    });
+  }, [usageDetails]);
 
   const handleExport = async () => {
     setExporting(true);

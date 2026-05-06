@@ -42,7 +42,8 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
       },
       onHeartbeat: () => {},
       onError: () => {
-        if (!fallenBackRef.current) {
+        const currentStatus = usageSSEService.getConnectionStatus();
+        if (currentStatus === 'degraded' && !fallenBackRef.current) {
           fallenBackRef.current = true;
           connectionStatusRef.current = 'degraded';
           setConnectionStatus('degraded');
@@ -52,7 +53,11 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
         }
       },
       onAuthError: () => {
-        window.dispatchEvent(new Event('unauthorized'));
+        connectionStatusRef.current = 'degraded';
+        setConnectionStatus('degraded');
+        if (!useUsageStatsStore.getState().usage) {
+          void useUsageStatsStore.getState().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
+        }
       },
     };
     handlerRef.current = handler;

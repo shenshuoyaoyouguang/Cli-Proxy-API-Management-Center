@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UsageSSEHandler } from '@/types/sse';
-import { UsageSSEServiceImpl, SSE_RECONNECT_MAX_ATTEMPTS } from './UsageSSEService';
+import { UsageSSEServiceImpl, SSE_RECONNECT_MAX_ATTEMPTS, SSE_BUFFER_MAX_SIZE } from './UsageSSEService';
 
 function createMockStreamResponse(chunks: string[], options?: { status?: number; statusText?: string }): Response {
   const status = options?.status ?? 200;
@@ -51,7 +51,7 @@ describe('UsageSSEService', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends Authorization header instead of URL query parameter', async () => {
+  it('sends token via URL query parameter instead of Authorization header', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
 
@@ -60,16 +60,37 @@ describe('UsageSSEService', () => {
 
     await vi.runOnlyPendingTimersAsync();
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'http://localhost:3000/v0/management/usage/stream',
-      expect.objectContaining({
-        headers: {
-          Authorization: 'Bearer management-key',
-          Accept: 'text/event-stream',
-        },
-      })
-    );
-    expect(fetchSpy.mock.calls[0][0]).not.toContain('token=');
+    const calledUrl = fetchSpy.mock.calls[0][0] as string;
+    expect(calledUrl).toContain('token=management-key');
+    expect(calledUrl).toContain('/v0/management/usage/stream');
+    expect(calledUrl).not.toContain('Authorization');
+    const fetchOptions = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(fetchOptions.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('sends Last-Event-ID query parameter when reconnecting with cached event id', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:delta\nid:42\ndata:${JSON.stringify({ seq: 42, timestamp: 1000, tokenDelta: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }, details: [] })}\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handler.onDelta).toHaveBeenCalledTimes(1);
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([]));
+    service.connect('http://localhost:3000', 'test-key', handler, { resetRetryState: false });
+
+    await vi.runOnlyPendingTimersAsync();
+
+    const reconnectUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(reconnectUrl).toContain('Last-Event-ID=42');
+    service.disconnect();
   });
 
   it('triggers onAuthError on 401 response', async () => {
@@ -83,7 +104,7 @@ describe('UsageSSEService', () => {
     await Promise.resolve();
 
     expect(handler.onAuthError).toHaveBeenCalledTimes(1);
-    expect(service.getConnectionStatus()).toBe('disconnected');
+    expect(service.getConnectionStatus()).toBe('degraded');
   });
 
   it('triggers onAuthError on 403 response', async () => {
@@ -133,7 +154,7 @@ describe('UsageSSEService', () => {
     await vi.runOnlyPendingTimersAsync();
     await Promise.resolve();
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
     service.disconnect();
   });
 
@@ -153,9 +174,10 @@ describe('UsageSSEService', () => {
     }
 
     expect(service.getConnectionStatus()).toBe('degraded');
-    const errorEvent = (handler.onError as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(errorEvent).toBeInstanceOf(ErrorEvent);
-    expect(errorEvent.message).toContain('5 attempts');
+    const errorCalls = (handler.onError as ReturnType<typeof vi.fn>).mock.calls;
+    const finalError = errorCalls[errorCalls.length - 1][0];
+    expect(finalError).toBeInstanceOf(ErrorEvent);
+    expect(finalError.message).toContain('5 attempts');
   });
 
   it('resets isConnecting on disconnect allowing new connections', async () => {
@@ -175,22 +197,36 @@ describe('UsageSSEService', () => {
     service.disconnect();
   });
 
-  it('dispatches usage:delta events to handler', async () => {
+  it('dispatches usage:delta events with backend field name mapping', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
 
-    const deltaData = JSON.stringify({
+    const backendDeltaData = JSON.stringify({
       seq: 1,
       timestamp: 1000,
       requestCount: 5,
       successCount: 4,
       failureCount: 1,
-      tokenDelta: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
-      details: [],
+      tokenDelta: { input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, cached_tokens: 20, total_tokens: 150 },
+      details: [
+        {
+          timestamp: '2024-01-01T00:00:00Z',
+          provider: 'openai',
+          model: 'gpt-4',
+          source: 'api',
+          auth_index: '0',
+          auth_type: 'api_key',
+          endpoint: '/v1/chat/completions',
+          request_id: 'req-123',
+          latency_ms: 500,
+          failed: false,
+          tokens: { input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, cached_tokens: 20, total_tokens: 150 },
+        },
+      ],
     });
 
     fetchSpy.mockResolvedValue(createMockStreamResponse([
-      `event:usage:delta\ndata:${deltaData}\n\n`,
+      `event:usage:delta\ndata:${backendDeltaData}\n\n`,
     ]));
     service.connect('http://localhost:3000', 'test-key', handler);
 
@@ -198,7 +234,43 @@ describe('UsageSSEService', () => {
     await Promise.resolve();
 
     expect(handler.onDelta).toHaveBeenCalledTimes(1);
-    expect((handler.onDelta as ReturnType<typeof vi.fn>).mock.calls[0][0].seq).toBe(1);
+    const delta = (handler.onDelta as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(delta.seq).toBe(1);
+    expect(delta.tokenDelta.promptTokens).toBe(100);
+    expect(delta.tokenDelta.completionTokens).toBe(50);
+    expect(delta.tokenDelta.totalTokens).toBe(150);
+    expect(delta.details).toHaveLength(1);
+    expect(delta.details[0].model).toBe('gpt-4');
+    expect(delta.details[0].success).toBe(true);
+    expect(delta.details[0].tokens.prompt).toBe(100);
+    expect(delta.details[0].tokens.completion).toBe(50);
+    expect(delta.details[0].tokens.total).toBe(150);
+  });
+
+  it('maps backend failed:true to success:false in delta details', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const backendDeltaData = JSON.stringify({
+      seq: 2,
+      timestamp: 2000,
+      requestCount: 1,
+      successCount: 0,
+      failureCount: 1,
+      tokenDelta: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+      details: [{ model: 'm1', source: 's1', failed: true, tokens: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } }],
+    });
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:delta\ndata:${backendDeltaData}\n\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    const delta = (handler.onDelta as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(delta.details[0].success).toBe(false);
   });
 
   it('dispatches usage:full events to handler', async () => {
@@ -245,18 +317,96 @@ describe('UsageSSEService', () => {
 
     await vi.runOnlyPendingTimersAsync();
     await Promise.resolve();
+    await Promise.resolve();
 
-    expect(handler.onError).toHaveBeenCalledTimes(1);
-    const errorEvent = (handler.onError as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(errorEvent).toBeInstanceOf(ErrorEvent);
-    expect(errorEvent.message).toContain('SSE parse error');
+    const errorCalls = (handler.onError as ReturnType<typeof vi.fn>).mock.calls;
+    const parseError = errorCalls.find(
+      (call) => call[0] instanceof ErrorEvent && (call[0] as ErrorEvent).message.includes('SSE parse error')
+    );
+    expect(parseError).toBeDefined();
+    service.disconnect();
+  });
+
+  it('reports parse error on buffer overflow without crashing', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const overflowChunk = 'x'.repeat(SSE_BUFFER_MAX_SIZE + 1);
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([overflowChunk]));
+
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handler.onError).toHaveBeenCalled();
+    const calls = (handler.onError as ReturnType<typeof vi.fn>).mock.calls;
+    const bufferOverflowCall = calls.find(
+      (call) => call[0] instanceof ErrorEvent && (call[0] as ErrorEvent).message.includes('buffer overflow')
+    );
+    expect(bufferOverflowCall).toBeDefined();
+
+    service.disconnect();
   });
 
   it('reconnects when stream ends', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
 
+    let resolveStream: () => void = () => {};
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`event:usage:heartbeat\ndata:{}\n\n`));
+        resolveStream = () => controller.close();
+      },
+    });
+    fetchSpy.mockResolvedValue(new Response(readable, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
+    expect(service.getConnectionStatus()).toBe('connected');
+
+    resolveStream();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(service.getConnectionStatus()).toBe('connecting');
+
     fetchSpy.mockResolvedValue(createMockStreamResponse([]));
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    service.disconnect();
+  });
+
+  it('sets connectionStatus to connecting when stream ends', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    let resolveStream: () => void = () => {};
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`event:usage:heartbeat\ndata:{}\n\n`));
+        resolveStream = () => controller.close();
+      },
+    });
+    fetchSpy.mockResolvedValue(new Response(readable, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+
     service.connect('http://localhost:3000', 'test-key', handler);
 
     await vi.runOnlyPendingTimersAsync();
@@ -265,10 +415,11 @@ describe('UsageSSEService', () => {
 
     expect(service.getConnectionStatus()).toBe('connected');
 
-    await vi.runOnlyPendingTimersAsync();
+    resolveStream();
+    await Promise.resolve();
     await Promise.resolve();
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(service.getConnectionStatus()).toBe('connecting');
     service.disconnect();
   });
 
@@ -277,15 +428,24 @@ describe('UsageSSEService', () => {
     const handler = createHandler();
 
     fetchSpy.mockRejectedValueOnce(new Error('Network error'));
+
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`event:usage:heartbeat\ndata:{}\n\n`));
+      },
+    });
+    fetchSpy.mockResolvedValue(new Response(readable, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+
     service.connect('http://localhost:3000', 'test-key', handler);
 
     await vi.runOnlyPendingTimersAsync();
     await Promise.resolve();
-
-    fetchSpy.mockResolvedValueOnce(createMockStreamResponse([
-      `event:usage:heartbeat\ndata:{}\n\n`,
-    ]));
     await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -326,5 +486,118 @@ describe('UsageSSEService', () => {
     await Promise.resolve();
 
     expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles CRLF line endings in SSE stream', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const heartbeatData = '{}';
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:heartbeat\r\ndata:${heartbeatData}\r\n\r\n`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles CR line endings in SSE stream', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    const heartbeatData = '{}';
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([
+      `event:usage:heartbeat\rdata:${heartbeatData}\r\r`,
+    ]));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears credentials on disconnect', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockReturnValue(new Promise(() => {}));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    service.disconnect();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([]));
+    service.connect('http://localhost:3000', 'new-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+
+    const calledUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(calledUrl).toContain('token=new-key');
+    expect(calledUrl).not.toContain('test-key');
+    service.disconnect();
+  });
+
+  it('requestFullCorrection clears lastEventId and reconnects', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    let resolveStream: () => void = () => {};
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`event:usage:delta\nid:42\ndata:${JSON.stringify({ seq: 42, timestamp: 1000, tokenDelta: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }, details: [] })}\n\n`));
+        resolveStream = () => controller.close();
+      },
+    });
+    fetchSpy.mockResolvedValue(new Response(readable, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }));
+
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handler.onDelta).toHaveBeenCalledTimes(1);
+
+    resolveStream();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    fetchSpy.mockResolvedValue(createMockStreamResponse([]));
+    service.requestFullCorrection();
+
+    await vi.runOnlyPendingTimersAsync();
+
+    const correctionUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(correctionUrl).not.toContain('Last-Event-ID');
+    service.disconnect();
+  });
+
+  it('notifies handler with error info on fetch error', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockRejectedValue(new Error('Network error'));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    const errorCalls = (handler.onError as ReturnType<typeof vi.fn>).mock.calls;
+    const connectionError = errorCalls.find(
+      (call) => call[0] instanceof ErrorEvent && (call[0] as ErrorEvent).message.includes('SSE connection error')
+    );
+    expect(connectionError).toBeDefined();
+    expect((connectionError![0] as ErrorEvent).message).toContain('Network error');
+    service.disconnect();
   });
 });

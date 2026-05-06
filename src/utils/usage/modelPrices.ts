@@ -23,6 +23,8 @@ export function loadModelPrices(): Record<string, ModelPrice> {
       const promptRaw = Number(priceRecord?.prompt);
       const completionRaw = Number(priceRecord?.completion);
       const cacheRaw = Number(priceRecord?.cache);
+      const rpmRaw = Number(priceRecord?.rpm);
+      const tpmRaw = Number(priceRecord?.tpm);
 
       if (
         !Number.isFinite(promptRaw) &&
@@ -41,11 +43,19 @@ export function loadModelPrices(): Record<string, ModelPrice> {
             ? promptRaw
             : prompt;
 
-      normalized[model] = {
+      const entry: ModelPrice = {
         prompt,
         completion,
         cache,
       };
+      if (Number.isFinite(rpmRaw) && rpmRaw >= 0) {
+        entry.rpm = rpmRaw;
+      }
+      if (Number.isFinite(tpmRaw) && tpmRaw >= 0) {
+        entry.tpm = tpmRaw;
+      }
+
+      normalized[model] = entry;
     });
     return normalized;
   } catch {

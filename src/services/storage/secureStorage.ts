@@ -5,7 +5,7 @@
  * 因此该服务不再保留任何明文镜像，敏感值不应再放入 Web Storage。
  */
 
-import { encryptData, isEncrypted } from '@/utils/encryption';
+import { decryptData, encryptData, isEncrypted } from '@/utils/encryption';
 
 interface StorageOptions {
   encrypt?: boolean;
@@ -134,6 +134,46 @@ class SecureStorageService {
       }
 
       return decoded.serialized as T;
+    }
+  }
+
+  /**
+   * 异步获取数据（支持 V2 AES-GCM 解密）
+   * 当需要读取 V2 加密数据时，必须使用此方法替代同步的 getItem
+   */
+  async getItemAsync<T = unknown>(key: string, options: StorageOptions = {}): Promise<T | null> {
+    const { encrypt = true } = options;
+
+    const raw = localStorage.getItem(key);
+    if (raw === null) return null;
+
+    if (!encrypt) {
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        return raw as T;
+      }
+    }
+
+    try {
+      const decrypted = await decryptData(raw);
+
+      try {
+        const parsed = JSON.parse(decrypted) as T;
+
+        if (raw.startsWith('enc::v1::')) {
+          this.migrateLegacyValue(key, parsed);
+        }
+
+        return parsed;
+      } catch {
+        if (raw.startsWith('enc::v1::')) {
+          this.migrateLegacyValue(key, decrypted);
+        }
+        return decrypted as T;
+      }
+    } catch {
+      return null;
     }
   }
 

@@ -16,7 +16,6 @@ import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection'
 import { CacheLayer } from '@/services/cache';
 import { clearModelsCache } from '@/features/authFiles/hooks/useAuthFilesModels';
 import { buildScopeKey } from '@/utils/helpers';
-import { decryptData } from '@/utils/encryption';
 
 interface AuthStoreState extends AuthState {
   connectionStatus: ConnectionStatus;
@@ -92,17 +91,14 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       );
 
       // 仅在用户选择"记住密码"时恢复管理密钥
-      // 注意：必须使用异步解密，因为 V2 AES-GCM 数据无法同步解密
+      // 通过 secureStorage.getItemAsync 异步解密 V2 AES-GCM 数据
       let storedKey = '';
       if (rememberConnection) {
-        const encryptedKey = localStorage.getItem('managementKey');
-        if (encryptedKey) {
-          try {
-            storedKey = await decryptData(encryptedKey);
-          } catch {
-            // 解密失败，密钥可能已损坏或格式不正确
-            storedKey = '';
-          }
+        try {
+          const decrypted = await secureStorage.getItemAsync<string>('managementKey');
+          storedKey = decrypted ?? '';
+        } catch {
+          storedKey = '';
         }
       }
 

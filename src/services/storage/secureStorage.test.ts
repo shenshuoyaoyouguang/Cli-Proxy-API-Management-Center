@@ -130,6 +130,72 @@ describe('SecureStorageService', () => {
     });
   });
 
+  describe('getItemAsync', () => {
+    it('returns null for non-existent key', async () => {
+      const result = await secureStorage.getItemAsync('non-existent');
+      expect(result).toBeNull();
+    });
+
+    it('returns plaintext when encrypt option is false', async () => {
+      storage['key'] = '"plain-value"';
+      const result = await secureStorage.getItemAsync<string>('key', { encrypt: false });
+      expect(result).toBe('plain-value');
+    });
+
+    it('handles non-JSON stored values when encrypt is false', async () => {
+      storage['key'] = 'raw-string';
+      const result = await secureStorage.getItemAsync<string>('key', { encrypt: false });
+      expect(result).toBe('raw-string');
+    });
+
+    it('handles object stored values when encrypt is false', async () => {
+      storage['key'] = '{"name":"test"}';
+      const result = await secureStorage.getItemAsync<{ name: string }>('key', { encrypt: false });
+      expect(result).toEqual({ name: 'test' });
+    });
+
+    it('decrypts v2 encrypted string values with JSON.parse', async () => {
+      // Simulates the full round-trip: setItem encrypts JSON.stringify(value), getItemAsync decrypts and JSON.parses
+      const encryptedValue = 'enc::v2::' + btoa('"my-secret-key"');
+      storage['managementKey'] = encryptedValue;
+
+      const result = await secureStorage.getItemAsync<string>('managementKey');
+      expect(result).toBe('my-secret-key');
+    });
+
+    it('decrypts v2 encrypted object values', async () => {
+      const encryptedValue = 'enc::v2::' + btoa('{"role":"admin"}');
+      storage['key'] = encryptedValue;
+
+      const result = await secureStorage.getItemAsync<{ role: string }>('key');
+      expect(result).toEqual({ role: 'admin' });
+    });
+
+    it('decrypts v1 encrypted values and triggers migration', async () => {
+      const encryptedValue = 'enc::v1::' + btoa('"legacy-value"');
+      storage['key'] = encryptedValue;
+
+      const result = await secureStorage.getItemAsync<string>('key');
+      expect(result).toBe('legacy-value');
+    });
+
+    it('returns null when decryption fails', async () => {
+      const { decryptData } = await import('@/utils/encryption');
+      (decryptData as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('decrypt failed'));
+
+      storage['key'] = 'enc::v2::corrupt';
+
+      const result = await secureStorage.getItemAsync<string>('key');
+      expect(result).toBeNull();
+    });
+
+    it('handles unencrypted data with encrypt=true', async () => {
+      storage['key'] = '"unencrypted"';
+      const result = await secureStorage.getItemAsync<string>('key');
+      expect(result).toBe('unencrypted');
+    });
+  });
+
   describe('removeItem', () => {
     it('removes item from storage', () => {
       storage['key'] = 'value';

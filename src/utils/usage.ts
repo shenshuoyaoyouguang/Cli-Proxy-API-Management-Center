@@ -73,6 +73,7 @@ export { calculateCost, calculateTotalCost } from '@/atoms/usage/cost';
 // === 分子层重导出 ===
 export {
   collectUsageDetails,
+  collectUsageDetailsFromEvents,
   collectUsageDetailsWithEndpoint,
 } from '@/molecules/usage/collectDetails';
 

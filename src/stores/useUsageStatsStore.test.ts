@@ -73,6 +73,7 @@ const createMockBootstrapSnapshot = (overrides: Partial<BootstrapSnapshot> = {})
 vi.mock('@/services/api', () => ({
   usageApi: {
     getUsage: vi.fn(),
+    getUsageEvents: vi.fn(),
   },
 }));
 
@@ -99,7 +100,6 @@ vi.mock('@/utils/usage', () => ({
     if (!usageData || typeof usageData !== 'object') return [];
     const apis = (usageData as Record<string, unknown>).apis;
     if (!apis || typeof apis !== 'object') return [];
-    // Return mock details
     return [
       {
         timestamp: new Date().toISOString(),
@@ -109,6 +109,10 @@ vi.mock('@/utils/usage', () => ({
         failed: false,
       },
     ];
+  }),
+  collectUsageDetailsFromEvents: vi.fn((events) => {
+    if (!Array.isArray(events) || events.length === 0) return [];
+    return events as UsageDetail[];
   }),
   computeKeyStatsFromDetails: vi.fn(() => ({
     bySource: { 'k:test-key': { success: 1, failure: 0 } },
@@ -132,6 +136,7 @@ describe('useUsageStatsStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue(null);
+    vi.mocked(usageApi.getUsageEvents).mockResolvedValue([]);
     localStorage.clear();
     sessionStorage.clear();
     useUsageStatsStore.getState().clearUsageStats();

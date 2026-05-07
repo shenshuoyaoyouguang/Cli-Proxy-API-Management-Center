@@ -36,6 +36,34 @@ export interface UsageReportResponse {
   [key: string]: unknown;
 }
 
+export interface UsageEvent {
+  timestamp: string | number;
+  source: string;
+  auth_index?: string | number | null;
+  provider?: string;
+  model?: string;
+  endpoint?: string;
+  request_id?: string;
+  latency_ms?: number;
+  failed?: boolean;
+  tokens?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    cached_tokens?: number;
+    cache_tokens?: number;
+    total_tokens?: number;
+  };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    cached_tokens?: number;
+    total_tokens?: number;
+  };
+  [key: string]: unknown;
+}
+
 export const usageApi = {
   /**
    * 获取使用统计原始数据
@@ -58,6 +86,15 @@ export const usageApi = {
         }
         return response;
       }),
+
+  /**
+   * 获取请求事件明细（完整字段列表）
+   */
+  getUsageEvents: (config?: AxiosRequestConfig) =>
+    apiClient.get<UsageEvent[]>('/usage-events', {
+      timeout: USAGE_TIMEOUT_MS,
+      ...config,
+    }),
 
   /**
    * 导出使用统计快照

@@ -3,6 +3,7 @@ import { isRecord, getApisRecord, normalizeAuthIndex } from '@/atoms/usage/guard
 import { normalizeUsageSourceId } from '@/atoms/usage/source';
 import { normalizeUsageDetailTokens } from '@/atoms/usage/tokens';
 import { parseTimestampMs } from '@/utils/timestamp';
+import type { UsageEvent } from '@/services/api/usage';
 
 const USAGE_ENDPOINT_METHOD_REGEX = /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(\S+)/i;
 
@@ -194,5 +195,53 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
   });
 
   writeCachedDetails(usageDetailsWithEndpointCache, usageData, apis, details);
+  return details;
+}
+
+export function collectUsageDetailsFromEvents(events: UsageEvent[]): UsageDetail[] {
+  if (!Array.isArray(events)) {
+    if (import.meta.env.DEV) {
+      console.warn('[collectUsageDetailsFromEvents] Expected array, got:', typeof events);
+    }
+    return [];
+  }
+
+  const details: UsageDetail[] = [];
+  const normalizeSource = createNormalizeSource();
+
+  events.forEach((event) => {
+    if (!isRecord(event)) return;
+
+    let timestamp: string;
+    let timestampMs: number;
+
+    if (typeof event.timestamp === 'number') {
+      timestampMs = event.timestamp;
+      timestamp = new Date(timestampMs).toISOString();
+    } else if (typeof event.timestamp === 'string') {
+      timestamp = event.timestamp;
+      timestampMs = parseTimestampMs(timestamp);
+    } else {
+      return;
+    }
+
+    const tokenSource = event.tokens ?? event.usage;
+    const tokens = normalizeUsageDetailTokens(tokenSource);
+    const authIndex = normalizeAuthIndex(event.auth_index);
+    const modelName = typeof event.model === 'string' && event.model.trim()
+      ? event.model.trim()
+      : undefined;
+
+    details.push({
+      timestamp,
+      source: normalizeSource(event.source),
+      auth_index: authIndex,
+      tokens,
+      failed: event.failed === true,
+      __modelName: modelName,
+      __timestampMs: Number.isFinite(timestampMs) ? timestampMs : undefined,
+    });
+  });
+
   return details;
 }

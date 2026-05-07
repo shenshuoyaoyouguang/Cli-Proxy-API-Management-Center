@@ -7,6 +7,7 @@ import { usageSSEService } from '@/services/sse';
 import {
   createAggregateOnlyUsageSnapshot,
   collectUsageDetails,
+  collectUsageDetailsFromEvents,
   computeKeyStatsFromDetails,
   type KeyStats,
   type UsageDetail,
@@ -549,14 +550,24 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
     const requestPromise = (async () => {
       try {
-        const usageResponse = await usageApi.getUsage({ signal: activeAbortController.signal });
+        const [usageResponse, eventsResponse] = await Promise.all([
+          usageApi.getUsage({ signal: activeAbortController.signal }),
+          usageApi.getUsageEvents({ signal: activeAbortController.signal }).catch(() => undefined),
+        ]);
+
         const rawUsage = usageResponse?.usage ?? usageResponse;
         const usage =
           rawUsage && typeof rawUsage === 'object' ? (rawUsage as UsageStatsSnapshot) : null;
 
         if (requestId !== usageRequestToken) return;
 
-        const usageDetails = collectUsageDetails(usage);
+        let usageDetails: UsageDetail[];
+        if (eventsResponse && Array.isArray(eventsResponse) && eventsResponse.length > 0) {
+          usageDetails = collectUsageDetailsFromEvents(eventsResponse);
+        } else {
+          usageDetails = collectUsageDetails(usage);
+        }
+
         const keyStats = computeKeyStatsFromDetails(usageDetails);
         const lastRefreshedAt = Date.now();
         const nextSnapshot = {

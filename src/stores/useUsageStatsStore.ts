@@ -14,6 +14,7 @@ import {
 } from '@/utils/usage';
 import { resolveCachedUsageDetailsFromUsage } from '@/utils/usage/cacheSnapshot';
 import { normalizeUsageDetailTokens } from '@/atoms/usage/tokens';
+import { expireUsageFailed } from '@/molecules/usage/expireUsageFailed';
 import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
@@ -444,6 +445,24 @@ const removePersistedUsageStats = (scopeKey: string) => {
   }
 };
 
+const cleanBootstrapCache = (cache: PersistedUsageStatsCache): PersistedUsageStatsCache => {
+  const { usage, usageDetails, removedCount, topLevelRemovedCount } =
+    expireUsageFailed(cache.usage, cache.usageDetails);
+  if (removedCount === 0) return cache;
+
+  const keyStats = computeKeyStatsFromDetails(usageDetails);
+  const detailCount = Math.max(cache.detailCount - topLevelRemovedCount, usageDetails.length);
+  const cleaned: PersistedUsageStatsCache = {
+    ...cache,
+    usage,
+    keyStats,
+    usageDetails,
+    detailCount,
+  };
+  writePersistedUsageStats(cleaned);
+  return cleaned;
+};
+
 export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   usage: null,
   keyStats: createEmptyKeyStats(),
@@ -502,9 +521,12 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     const fresh = cachedLastRefreshedAt !== null && now - cachedLastRefreshedAt < staleTimeMs;
 
     // 只有在需要显示历史数据时才选择更丰富的缓存源，避免不必要的状态抖动
-    const bootstrapCache = scopeChanged || !fresh
+    const rawBootstrapCache = scopeChanged || !fresh
       ? pickRicherUsageSnapshot(persistedCache, autoPersistCache)
       : autoPersistCache ?? pickRicherUsageSnapshot(persistedCache, autoPersistCache);
+
+    // 页面加载/数据恢复时，清理过期的失败记录
+    const bootstrapCache = rawBootstrapCache ? cleanBootstrapCache(rawBootstrapCache) : null;
 
     if (scopeChanged) {
       if (bootstrapCache) {

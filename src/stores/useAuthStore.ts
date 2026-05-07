@@ -16,6 +16,7 @@ import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection'
 import { CacheLayer } from '@/services/cache';
 import { clearModelsCache } from '@/features/authFiles/hooks/useAuthFilesModels';
 import { buildScopeKey } from '@/utils/helpers';
+import { decryptData } from '@/utils/encryption';
 
 interface AuthStoreState extends AuthState {
   connectionStatus: ConnectionStatus;
@@ -74,7 +75,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
   connectionStatus: 'disconnected',
   connectionError: null,
 
-  // 恢复连接信息，但不再从浏览器存储恢复管理密钥
+  // 恢复连接信息，根据用户选择恢复管理密钥
   restoreSession: () => {
     if (restoreSessionPromise) return restoreSessionPromise;
 
@@ -89,19 +90,60 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       const resolvedBase = normalizeApiBase(
         storedBase || detectApiBaseFromLocation()
       );
+
+      // 仅在用户选择"记住密码"时恢复管理密钥
+      // 注意：必须使用异步解密，因为 V2 AES-GCM 数据无法同步解密
+      let storedKey = '';
+      if (rememberConnection) {
+        const encryptedKey = localStorage.getItem('managementKey');
+        if (encryptedKey) {
+          try {
+            storedKey = await decryptData(encryptedKey);
+          } catch {
+            // 解密失败，密钥可能已损坏或格式不正确
+            storedKey = '';
+          }
+        }
+      }
+
       purgeSensitiveSessionStorage();
       persistConnectionPreference(resolvedBase, rememberConnection);
 
       set({
         apiBase: resolvedBase,
-        managementKey: '',
+        managementKey: storedKey,
         rememberPassword: rememberConnection,
         isAuthenticated: false,
         connectionStatus: 'disconnected',
         connectionError: null,
       });
 
-      apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
+      apiClient.setConfig({ apiBase: resolvedBase, managementKey: storedKey });
+
+      // 如果恢复了密钥和API地址，尝试验证认证状态
+      if (storedKey && resolvedBase) {
+        try {
+          const scopeKey = buildScopeKey(resolvedBase, storedKey);
+          await useConfigStore.getState().fetchConfig(undefined, false, scopeKey);
+          set({
+            isAuthenticated: true,
+            connectionStatus: 'connected',
+          });
+          void useAccountHealthStore.getState().loadHealthMap({ apiBase: resolvedBase, managementKey: storedKey });
+          restoreSessionPromise = null;
+          return true;
+        } catch {
+          // 验证失败，清除密钥但不清除API地址
+          set({
+            managementKey: '',
+            isAuthenticated: false,
+            connectionStatus: 'error',
+            connectionError: 'Session expired, please login again',
+          });
+          apiClient.setConfig({ apiBase: resolvedBase, managementKey: '' });
+        }
+      }
+
       restoreSessionPromise = null;
       return false;
     })();
@@ -137,6 +179,13 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
         connectionStatus: 'connected',
         connectionError: null,
       });
+
+      // 根据用户选择决定是否保存管理密钥
+      if (rememberPassword) {
+        secureStorage.setItem('managementKey', managementKey);
+      } else {
+        secureStorage.removeItem('managementKey');
+      }
 
       purgeSensitiveSessionStorage();
       persistConnectionPreference(apiBase, rememberPassword);
@@ -175,6 +224,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
 
     apiClient.setConfig({ apiBase: '', managementKey: '' });
     purgeSensitiveSessionStorage();
+    secureStorage.removeItem('managementKey');  // 登出时清除保存的密钥
     persistConnectionPreference(apiBase, rememberPassword);
 
     set({

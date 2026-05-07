@@ -5,6 +5,18 @@
 @use './variables.scss' as *;
 
 // 响应式断点
+@mixin xs {
+  @media (max-width: 639px) {
+    @content;
+  }
+}
+
+@mixin sm {
+  @media (min-width: 640px) and (max-width: 767px) {
+    @content;
+  }
+}
+
 @mixin mobile {
   @media (max-width: #{$breakpoint-mobile}) {
     @content;
@@ -17,8 +29,20 @@
   }
 }
 
+@mixin lg {
+  @media (min-width: #{$breakpoint-tablet + 1}) and (max-width: #{$breakpoint-desktop - 1}) {
+    @content;
+  }
+}
+
 @mixin desktop {
   @media (min-width: #{$breakpoint-tablet + 1}) {
+    @content;
+  }
+}
+
+@mixin xl {
+  @media (min-width: #{$breakpoint-desktop}) {
     @content;
   }
 }
@@ -60,4 +84,31 @@
     outline: 2px solid $primary-color;
     outline-offset: 2px;
   }
+}
+
+@mixin card-base {
+  background: var(--bg-secondary);
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+}
+
+@mixin card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+@mixin card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: $radius-md;
+  background: var(--bg-tertiary);
+  color: var(--primary-color);
+  flex-shrink: 0;
 }

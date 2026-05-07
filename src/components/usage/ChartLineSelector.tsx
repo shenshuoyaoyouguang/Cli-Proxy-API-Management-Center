@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
-import styles from '@/pages/UsagePage.module.scss';
+import { IconSettings } from '@/components/ui/icons';
+import styles from './ChartLineSelector.module.scss';
 
 export interface ChartLineSelectorProps {
   chartLines: string[];
@@ -53,7 +54,15 @@ export function ChartLineSelector({
 
   return (
     <Card
-      title={t('usage_stats.chart_line_actions_label')}
+      className={styles.card}
+      title={
+        <span className={styles.cardHeader}>
+          <span className={styles.cardIcon}>
+            <IconSettings size={16} />
+          </span>
+          {t('usage_stats.chart_line_actions_label')}
+        </span>
+      }
       extra={
         <div className={styles.chartLineHeader}>
           <span className={styles.chartLineCount}>

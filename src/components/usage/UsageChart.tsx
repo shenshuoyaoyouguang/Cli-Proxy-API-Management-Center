@@ -6,9 +6,10 @@ import { Line } from 'react-chartjs-2';
 const MemoizedLine = memo(Line);
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { IconChartLine } from '@/components/ui/icons';
 import type { ChartData } from '@/utils/usage';
 import { getHourChartMinWidth } from '@/utils/usage/chartConfig';
-import styles from '@/pages/UsagePage.module.scss';
+import styles from './UsageChart.module.scss';
 
 export interface UsageChartProps {
   title: string;
@@ -35,7 +36,15 @@ export function UsageChart({
 
   return (
     <Card
-      title={title}
+      className={styles.card}
+      title={
+        <span className={styles.cardHeader}>
+          <span className={styles.cardIcon}>
+            <IconChartLine size={16} />
+          </span>
+          {title}
+        </span>
+      }
       extra={
         <div className={styles.periodButtons}>
           <Button

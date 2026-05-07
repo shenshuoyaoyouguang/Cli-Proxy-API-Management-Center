@@ -2,13 +2,14 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { throttle } from 'lodash-es';
 import { useTranslation } from 'react-i18next';
+import { IconHeart } from '@/components/ui/icons';
 import {
   calculateServiceHealthData,
   type ServiceHealthData,
   type StatusBlockDetail,
   type UsageDetail
 } from '@/utils/usage';
-import styles from '@/pages/UsagePage.module.scss';
+import styles from './ServiceHealthCard.module.scss';
 
 const COLOR_STOPS = [
   { r: 239, g: 68, b: 68 }, // #ef4444
@@ -227,10 +228,15 @@ export function ServiceHealthCard({ details, loading, healthData: providedHealth
         : styles.healthRateLow;
 
   return (
-    <div className={styles.healthCard}>
-      <div className={styles.healthHeader}>
-        <h3 className={styles.healthTitle}>{t('service_health.title')}</h3>
-        <div className={styles.healthMeta}>
+    <div className={styles.card}>
+      <div className={styles.cardHeader}>
+        <h3 className={styles.cardTitle}>
+          <span className={styles.cardIcon}>
+            <IconHeart size={16} />
+          </span>
+          {t('service_health.title')}
+        </h3>
+        <div className={styles.cardMeta}>
           <span className={styles.healthWindow}>{t('service_health.window')}</span>
           <span className={`${styles.healthRate} ${rateClass}`}>
             {loading ? '--' : hasData ? `${healthData.successRate.toFixed(1)}%` : '--'}

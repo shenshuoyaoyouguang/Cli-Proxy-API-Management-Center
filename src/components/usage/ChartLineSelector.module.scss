@@ -1,0 +1,70 @@
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.card {
+  @include card-base;
+}
+
+.cardHeader {
+  @include card-header;
+}
+
+.cardIcon {
+  @include card-icon;
+}
+
+.chartLineHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chartLineCount {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.chartLineList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+
+  @include tablet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chartLineItem {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+
+  @include mobile {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+}
+
+.chartLineLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  min-width: 64px;
+}
+
+.chartLineHint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin: 10px 0 0 0;
+}

@@ -11,6 +11,7 @@ import {
   IconTrendingUp,
 } from '@/components/ui/icons';
 import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
+import { SkeletonCard } from '@/components/ui/Skeleton';
 import type { HealthScore } from '@/utils/usage/healthScore';
 import type { SLAMetrics } from '@/utils/usage/slaCalculator';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
@@ -23,7 +24,6 @@ import { ModelUsageSummaryCard } from './ModelUsageSummaryCard';
 import type { ModelStat } from './ModelStatsCard';
 import { STAT_COLORS, STATUS_COLORS } from '@/constants/colors';
 import styles from '@/pages/UsagePage.module.scss';
-import cardStyles from './StatCards.module.scss';
 
 interface StatCardData {
   key: string;
@@ -35,7 +35,7 @@ interface StatCardData {
   value: string | ReactNode;
   meta?: ReactNode;
   trend: SparklineBundle | null;
-  enhanced?: boolean;
+  size: 'large' | 'medium' | 'small';
 }
 
 export interface StatCardsProps {
@@ -101,6 +101,7 @@ export const StatCards = memo(function StatCards({
         </>
       ),
       trend: sparklines.requests,
+      size: 'large',
     },
     {
       key: 'tokens',
@@ -123,6 +124,7 @@ export const StatCards = memo(function StatCards({
         </>
       ),
       trend: sparklines.tokens,
+      size: 'large',
     },
     {
       key: 'rpm',
@@ -133,27 +135,14 @@ export const StatCards = memo(function StatCards({
       accentBorder: STAT_COLORS.rpm.border,
       value: loading ? '-' : <RateNumber value={rateStats.rpm} />,
       meta: (
-        <div className={cardStyles.enhancedMeta}>
-          <div className={cardStyles.rateRow}>
-            <span className={cardStyles.rateLabel}>{t('usage_stats.current')}</span>
-            <span className={cardStyles.rateValue}>
-              <RateNumber value={rateStats.rpm} />
-            </span>
-          </div>
-          <div className={cardStyles.rateRow}>
-            <span className={cardStyles.rateLabel}>{t('usage_stats.peak')}</span>
-            <span className={cardStyles.rateValue}>
-              <RateNumber value={rateStats.peakRpm} />
-            </span>
-          </div>
-          <div className={cardStyles.rateRow}>
-            <span className={cardStyles.rateLabel}>{t('usage_stats.total_requests')}</span>
-            <span className={cardStyles.rateValue}>{rateStats.requestCount.toLocaleString()}</span>
-          </div>
-        </div>
+        <>
+          <span className={styles.statMetaItem}>
+            {t('usage_stats.peak')}: <RateNumber value={rateStats.peakRpm} />
+          </span>
+        </>
       ),
       trend: sparklines.rpm,
-      enhanced: true,
+      size: 'small',
     },
     {
       key: 'tpm',
@@ -164,29 +153,14 @@ export const StatCards = memo(function StatCards({
       accentBorder: STAT_COLORS.tpm.border,
       value: loading ? '-' : <RateNumber value={rateStats.tpm} />,
       meta: (
-        <div className={cardStyles.enhancedMeta}>
-          <div className={cardStyles.rateRow}>
-            <span className={cardStyles.rateLabel}>{t('usage_stats.current')}</span>
-            <span className={cardStyles.rateValue}>
-              <RateNumber value={rateStats.tpm} />
-            </span>
-          </div>
-          <div className={cardStyles.rateRow}>
-            <span className={cardStyles.rateLabel}>{t('usage_stats.peak')}</span>
-            <span className={cardStyles.rateValue}>
-              <RateNumber value={rateStats.peakTpm} />
-            </span>
-          </div>
-          <div className={cardStyles.rateRow}>
-            <span className={cardStyles.rateLabel}>{t('usage_stats.total_tokens')}</span>
-            <span className={cardStyles.rateValue}>
-              <TokenNumber value={rateStats.tokenCount} />
-            </span>
-          </div>
-        </div>
+        <>
+          <span className={styles.statMetaItem}>
+            {t('usage_stats.peak')}: <RateNumber value={rateStats.peakTpm} />
+          </span>
+        </>
       ),
       trend: sparklines.tpm,
-      enhanced: true,
+      size: 'small',
     },
     {
       key: 'cost',
@@ -198,10 +172,6 @@ export const StatCards = memo(function StatCards({
       value: loading ? '-' : hasPrices ? <CostNumber value={totalCost} /> : '--',
       meta: (
         <>
-          <span className={styles.statMetaItem}>
-            {t('usage_stats.total_tokens')}:{' '}
-            {loading ? '-' : <TokenNumber value={totalTokens} />}
-          </span>
           {!hasPrices && (
             <span className={`${styles.statMetaItem} ${styles.statSubtle}`}>
               {t('usage_stats.cost_need_price')}
@@ -210,20 +180,58 @@ export const StatCards = memo(function StatCards({
         </>
       ),
       trend: hasPrices ? sparklines.cost : null,
+      size: 'small',
     },
   ];
 
+  const getCardSizeClass = (size: StatCardData['size']) => {
+    switch (size) {
+      case 'large':
+        return styles.cardLarge;
+      case 'medium':
+        return styles.cardMedium;
+      case 'small':
+      default:
+        return styles.cardSmall;
+    }
+  };
+
+  const SKELETON_SIZES: StatCardData['size'][] = ['large', 'large', 'small', 'small', 'small'];
+
+  if (loading && !usage) {
+    return (
+      <div className={styles.statsGrid}>
+        {SKELETON_SIZES.map((size, index) => (
+          <div
+            key={`skeleton-${index}`}
+            className={getCardSizeClass(size)}
+            style={{ animationDelay: `${index * 50}ms` } as CSSProperties}
+          >
+            <SkeletonCard />
+          </div>
+        ))}
+        <div className={styles.cardMedium}>
+          <SkeletonCard rows={2} />
+        </div>
+        <div className={styles.cardMedium}>
+          <SkeletonCard rows={2} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.statsGrid}>
-      {statsCards.map((card) => (
+      {statsCards.map((card, index) => (
         <div
           key={card.key}
-          className={`${styles.statCard} ${card.enhanced ? cardStyles.enhancedCard : ''}`}
+          className={`${styles.statCard} ${getCardSizeClass(card.size)}`}
           style={
             {
               '--accent': card.accent,
               '--accent-soft': card.accentSoft,
               '--accent-border': card.accentBorder,
+              animationDelay: `${index * 50}ms`,
             } as CSSProperties
           }
         >
@@ -233,7 +241,9 @@ export const StatCards = memo(function StatCards({
             </div>
             <span className={styles.statIconBadge}>{card.icon}</span>
           </div>
-          <div className={styles.statValue}>{card.value}</div>
+          <div className={`${styles.statValue} ${card.size === 'small' ? styles.statValueSmall : ''}`}>
+            {card.value}
+          </div>
           {card.meta && <div className={styles.statMetaRow}>{card.meta}</div>}
           <div className={styles.statTrend}>
             {card.trend ? (

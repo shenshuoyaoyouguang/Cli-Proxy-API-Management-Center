@@ -1,28 +1,171 @@
 @use '../styles/variables' as *;
 @use '../styles/mixins' as *;
 
+// ============================================
+// Container & Layout
+// ============================================
 .container {
   width: 100%;
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   position: relative;
+  padding-bottom: 40px;
 }
 
+// ============================================
+// Header
+// ============================================
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+
+  @include mobile {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
 }
 
-.headerActions {
+.headerLeft {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   flex-wrap: wrap;
+
+  @include mobile {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  @include mobile {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+.pageTitle {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.02em;
+
+  @include mobile {
+    font-size: 22px;
+  }
+}
+
+.timeRangeGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeRangeLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+
+  @include mobile {
+    display: none;
+  }
+}
+
+.timeRangeSelectControl {
+  min-width: 140px;
+}
+
+// ============================================
+// SSE Connection Status
+// ============================================
+.connectionStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: $radius-full;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+
+  .statusDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  &.connected {
+    color: var(--success-color);
+    border-color: rgba($success-color, 0.35);
+    background: rgba($success-color, 0.08);
+
+    .statusDot {
+      background: var(--success-color);
+      animation: pulse 2s ease-in-out infinite;
+    }
+  }
+
+  &.degraded {
+    color: #eab308;
+    border-color: rgba(234, 179, 8, 0.35);
+    background: rgba(234, 179, 8, 0.08);
+
+    .statusDot {
+      background: #eab308;
+      animation: pulse 2s ease-in-out infinite;
+    }
+  }
+
+  &.connecting {
+    color: var(--text-tertiary);
+
+    .statusDot {
+      background: var(--text-tertiary);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+  }
+
+  &.disconnected {
+    color: var(--text-tertiary);
+
+    .statusDot {
+      background: var(--text-tertiary);
+    }
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connectionStatus .statusDot {
+    animation: none !important;
+  }
 }
 
 .lastRefreshed {
@@ -31,68 +174,29 @@
   white-space: nowrap;
 }
 
-.connectionStatus {
-  margin-left: 6px;
-  font-size: 10px;
-  font-weight: 600;
-
-  &.connected {
-    color: #22c55e;
-  }
-
-  &.degraded {
-    color: #eab308;
-  }
-
-  &.connecting {
-    color: var(--text-tertiary);
-  }
-
-  &.disconnected {
-    color: var(--text-tertiary);
-  }
+// ============================================
+// Section Dividers
+// ============================================
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.timeRangeGroup {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.timeRangeLabel {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.timeRangeSelectControl {
-  min-width: 164px;
-}
-
-.pageTitle {
-  font-size: 28px;
+.sectionTitle {
+  font-size: 14px;
   font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.errorBox {
-  padding: 10px;
-  background-color: rgba($error-color, 0.1);
-  border: 1px solid var(--error-color);
-  border-radius: $radius-sm;
-  color: var(--error-color);
-  font-size: 12px;
-}
-
-.hint {
   color: var(--text-secondary);
-  font-size: 12px;
-  text-align: center;
-  padding: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
 }
 
+// ============================================
+// Loading States
+// ============================================
 .loadingOverlay {
   position: absolute;
   inset: 0;
@@ -129,83 +233,146 @@
   color: var(--text-secondary);
 }
 
-// Stats Grid
+// ============================================
+// Error & Hint
+// ============================================
+.errorBox {
+  padding: 12px 16px;
+  background-color: rgba($error-color, 0.1);
+  border: 1px solid var(--error-color);
+  border-radius: $radius-md;
+  color: var(--error-color);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+}
+
+// ============================================
+// Bento Grid - Stats Cards
+// ============================================
 .statsGrid {
   display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "requests requests tokens tokens"
+    "rpm tpm cost sla";
+
+  @include tablet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "requests requests"
+      "tokens tokens"
+      "rpm tpm"
+      "cost sla";
+  }
 
   @include mobile {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "requests"
+      "tokens"
+      "rpm"
+      "tpm"
+      "cost"
+      "sla";
   }
 }
 
+// Card size variants
+.cardLarge {
+  grid-column: span 2;
+
+  @include mobile {
+    grid-column: auto;
+  }
+}
+
+.cardMedium {
+  grid-column: span 1;
+}
+
+.cardSmall {
+  grid-column: span 1;
+}
+
+// ============================================
+// Stat Card Styles
+// ============================================
 .statCard {
   --accent: var(--primary-color);
   --accent-soft: rgba($primary-color, 0.18);
   --accent-border: rgba($primary-color, 0.35);
 
-  grid-column: span 4;
   position: relative;
-  padding: 18px;
+  padding: 20px;
   background:
     radial-gradient(120% 140% at 12% 0%, var(--accent-soft) 0%, rgba(0, 0, 0, 0) 62%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)), var(--bg-primary);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)),
+    var(--bg-primary);
   border-radius: $radius-lg;
   border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: 176px;
-  box-shadow: var(--shadow-lg);
+  gap: 12px;
+  min-height: 180px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 4px 8px rgba(0, 0, 0, 0.08),
+    0 12px 24px rgba(0, 0, 0, 0.1);
   transition:
-    transform $transition-fast,
-    box-shadow $transition-fast,
-    border-color $transition-fast;
+    transform 200ms ease,
+    box-shadow 200ms ease,
+    border-color 200ms ease;
   overflow: hidden;
+  animation: cardEnter 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 
   &::before {
     content: '';
     position: absolute;
     top: 0;
     left: 0;
-    height: 3px;
+    height: 2px;
     width: 100%;
-    background: linear-gradient(90deg, var(--accent), rgba(0, 0, 0, 0));
+    background: var(--accent);
     opacity: 0.95;
   }
 
   &:hover {
-    transform: translateY(-2px);
+    transform: translateY(-4px);
     border-color: var(--accent-border);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
-  }
-
-  @include tablet {
-    grid-column: span 6;
+    box-shadow:
+      0 4px 8px rgba(0, 0, 0, 0.08),
+      0 8px 16px rgba(0, 0, 0, 0.12),
+      0 16px 40px rgba(0, 0, 0, 0.16);
   }
 
   @include mobile {
-    grid-column: auto;
-    min-height: 168px;
+    min-height: 160px;
+    padding: 16px;
   }
 }
 
-.statCard:nth-child(-n + 2) {
-  grid-column: span 6;
-
-  .statValue {
-    font-size: 32px;
+@keyframes cardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-@include mobile {
-  .statCard:nth-child(-n + 2) {
-    grid-column: auto;
-
-    .statValue {
-      font-size: 28px;
-    }
+@media (prefers-reduced-motion: reduce) {
+  .statCard {
+    animation: none;
   }
 }
 
@@ -219,35 +386,7 @@
 .statLabelGroup {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-}
-
-.statIconBadge {
-  width: 34px;
-  height: 34px;
-  border-radius: $radius-md;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 13px;
-  background: var(--accent);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
-  flex-shrink: 0;
-
-  svg {
-    display: block;
-  }
-}
-
-.statHeader {
-  display: flex;
-  align-items: center;
-  gap: $spacing-sm;
-}
-
-.statIcon {
-  font-size: 18px;
+  gap: 2px;
 }
 
 .statLabel {
@@ -255,61 +394,52 @@
   color: var(--text-tertiary);
   font-weight: 700;
   letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.statIconBadge {
+  width: 28px;
+  height: 28px;
+  border-radius: $radius-md;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 13px;
+  background: var(--accent);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+
+  svg {
+    display: block;
+  }
 }
 
 .statValue {
-  font-size: 28px;
+  font-size: 36px;
   font-weight: 800;
   color: var(--text-primary);
-  line-height: 1.2;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
-}
+  letter-spacing: -0.02em;
 
-.statValueRow {
-  display: flex;
-  gap: $spacing-lg;
+  @include mobile {
+    font-size: 28px;
+  }
 }
 
 .statValueSmall {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+  font-size: 24px;
 
-.statValueLabel {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.statValueNum {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.statMeta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-}
-
-.statSuccess {
-  color: var(--success-color);
-}
-
-.statFailure {
-  color: var(--danger-color);
-}
-
-.statNeutral {
-  color: var(--text-secondary);
+  @include mobile {
+    font-size: 20px;
+  }
 }
 
 .statMetaRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 10px;
+  gap: 8px 12px;
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -352,12 +482,138 @@
   height: 100% !important;
 }
 
-.statHint {
-  color: var(--text-tertiary);
-  font-style: italic;
+// ============================================
+// Content Grids
+// ============================================
+.chartsGrid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+
+  > * {
+    min-width: 0;
+  }
+
+  @include desktop {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-// API List (80%比例)
+.detailsGrid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+
+  > * {
+    min-width: 0;
+  }
+
+  @include desktop {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+// ============================================
+// Chart Section
+// ============================================
+.chartWrapper {
+  padding: 16px;
+  background-color: var(--bg-secondary);
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.chartLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  min-width: 0;
+
+  @include mobile {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 240px;
+  padding: 4px 10px;
+  border-radius: $radius-full;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: background-color 150ms ease, border-color 150ms ease;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-hover);
+  }
+
+  @include mobile {
+    max-width: 180px;
+  }
+}
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.legendLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartArea {
+  height: 280px;
+
+  @include mobile {
+    height: 240px;
+  }
+}
+
+.chartScroller {
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+
+  :global(canvas) {
+    touch-action: pan-x pan-y !important;
+  }
+}
+
+.chartCanvas {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.periodButtons {
+  display: flex;
+  gap: 6px;
+}
+
+// ============================================
+// API List
+// ============================================
 .apiSortBar {
   display: flex;
   flex-wrap: wrap;
@@ -512,7 +768,9 @@
   }
 }
 
-// Fixed-height cards with internal scrolling (API details / model stats)
+// ============================================
+// Fixed-height cards
+// ============================================
 .detailsFixedCard {
   display: flex;
   flex-direction: column;
@@ -538,9 +796,13 @@
   color: var(--text-secondary);
 }
 
-// Table (80%比例)
+// ============================================
+// Table Styles
+// ============================================
 .tableWrapper {
   overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
 }
 
 .table {
@@ -550,7 +812,7 @@
 
   th,
   td {
-    padding: 10px 12px;
+    padding: 12px 14px;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
   }
@@ -560,6 +822,9 @@
     color: var(--text-tertiary);
     background-color: var(--bg-secondary);
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   th.sortableHeader {
@@ -575,8 +840,24 @@
     color: var(--text-primary);
   }
 
-  tbody tr:hover {
-    background-color: var(--bg-tertiary);
+  tbody tr {
+    transition: background-color 0.15s ease;
+    position: relative;
+
+    &:hover {
+      background-color: var(--bg-tertiary);
+
+      &::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--primary-color);
+        border-radius: 0 2px 2px 0;
+      }
+    }
   }
 }
 
@@ -635,7 +916,9 @@
   white-space: nowrap;
 }
 
-// Pricing Section (80%比例)
+// ============================================
+// Pricing Section
+// ============================================
 .pricingSection {
   display: flex;
   flex-direction: column;
@@ -674,12 +957,11 @@
     font-weight: 500;
   }
 
-  // 确保 Input 组件的 form-group 包装器不影响布局
   :global(.form-group) {
     margin: 0;
 
     > label {
-      display: none; // 隐藏 Input 自带的 label，使用外层的
+      display: none;
     }
   }
 
@@ -786,142 +1068,9 @@
   gap: 12px;
 }
 
-// Chart Section (80%比例)
-.chartSection {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.chartControls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-
-  @include mobile {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-
-.chartWrapper {
-  padding: 14px;
-  background-color: var(--bg-secondary);
-  border-radius: $radius-lg;
-  border: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.chartLegend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  align-items: center;
-  min-width: 0;
-
-  @include mobile {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 4px;
-  }
-}
-
-.legendItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 240px;
-  padding: 4px 10px;
-  border-radius: $radius-full;
-  border: 1px solid var(--border-color);
-  background: var(--bg-primary);
-  font-size: 12px;
-  color: var(--text-secondary);
-
-  @include mobile {
-    max-width: 180px;
-  }
-}
-
-.legendDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
-.legendLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chartArea {
-  height: 280px;
-
-  @include mobile {
-    height: 320px;
-  }
-}
-
-.chartScroller {
-  width: 100%;
-  height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-
-  // Chart.js 默认会设置 canvas 的 touch-action: none，导致移动端无法横向滚动
-  :global(canvas) {
-    touch-action: pan-x pan-y !important;
-  }
-}
-
-.chartCanvas {
-  position: relative;
-  height: 100%;
-  width: 100%;
-}
-
-.periodButtons {
-  display: flex;
-  gap: 6px;
-}
-
-.chartsGrid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: minmax(0, 1fr);
-
-  > * {
-    min-width: 0;
-  }
-
-  @include desktop {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.detailsGrid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: minmax(0, 1fr);
-
-  > * {
-    min-width: 0;
-  }
-
-  @include desktop {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
+// ============================================
+// Token Efficiency
+// ============================================
 .tokenEfficiencySection {
   display: flex;
   flex-direction: column;
@@ -1078,6 +1227,9 @@
   opacity: 0.9;
 }
 
+// ============================================
+// Request Events
+// ============================================
 .requestEventsActions {
   display: inline-flex;
   align-items: center;
@@ -1228,6 +1380,9 @@
   white-space: nowrap;
 }
 
+// ============================================
+// Chart Line Selector
+// ============================================
 .chartLineHeader {
   display: inline-flex;
   align-items: center;
@@ -1280,7 +1435,9 @@
   margin: 10px 0 0 0;
 }
 
+// ============================================
 // Service Health Card
+// ============================================
 .healthCard {
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
@@ -1386,116 +1543,6 @@
   background-color: var(--border-secondary, #e5e7eb);
 }
 
-.healthTooltip {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: var(--floating-surface, #ffffff);
-  background-image: none;
-  border: 1px solid var(--floating-border, #e5e7eb);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: nowrap;
-  box-shadow: var(--floating-shadow, 0 10px 24px rgba(0, 0, 0, 0.16));
-  z-index: $z-dropdown;
-  pointer-events: none;
-  color: var(--text-primary);
-  opacity: 1;
-  background-clip: padding-box;
-
-  &::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 5px solid transparent;
-    border-top-color: var(--floating-surface, #ffffff);
-  }
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 6px solid transparent;
-    border-top-color: var(--floating-border, #e5e7eb);
-  }
-}
-
-// When tooltip should appear below (for top rows)
-.healthTooltipBelow {
-  bottom: auto;
-  top: calc(100% + 8px);
-
-  &::after {
-    top: auto;
-    bottom: 100%;
-    border-top-color: transparent;
-    border-bottom-color: var(--floating-surface, #ffffff);
-  }
-
-  &::before {
-    top: auto;
-    bottom: 100%;
-    border-top-color: transparent;
-    border-bottom-color: var(--floating-border, #e5e7eb);
-  }
-}
-
-.healthTooltipLeft {
-  left: 0;
-  transform: translateX(0);
-
-  &::after,
-  &::before {
-    left: 8px;
-    transform: none;
-  }
-}
-
-.healthTooltipRight {
-  left: auto;
-  right: 0;
-  transform: translateX(0);
-
-  &::after,
-  &::before {
-    left: auto;
-    right: 8px;
-    transform: none;
-  }
-}
-
-.healthTooltipTime {
-  color: var(--text-secondary);
-  display: block;
-  margin-bottom: 2px;
-}
-
-.healthTooltipStats {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.healthTooltipSuccess {
-  color: var(--success-color, #22c55e);
-}
-
-.healthTooltipFailure {
-  color: var(--danger-color, #ef4444);
-}
-
-.healthTooltipRate {
-  color: var(--text-secondary);
-  margin-left: 2px;
-}
-
 .healthLegend {
   display: flex;
   align-items: center;
@@ -1537,13 +1584,69 @@
     height: 6px;
   }
 
-  .healthTooltip {
-    font-size: 10px;
-    padding: 4px 8px;
-  }
-
   .healthLegendBlock {
     width: 8px;
     height: 8px;
   }
+}
+
+// ============================================
+// Drilldown Highlight Animation
+// ============================================
+.drilldownHighlight {
+  animation: highlightPulse 2s ease-in-out;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba($primary-color, 0);
+  }
+  25% {
+    box-shadow: 0 0 0 4px rgba($primary-color, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba($primary-color, 0.15);
+  }
+  75% {
+    box-shadow: 0 0 0 4px rgba($primary-color, 0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drilldownHighlight {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba($primary-color, 0.3);
+  }
+}
+
+// ============================================
+// Settings Section
+// ============================================
+.settingsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settingsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settingsTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.settingsActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }

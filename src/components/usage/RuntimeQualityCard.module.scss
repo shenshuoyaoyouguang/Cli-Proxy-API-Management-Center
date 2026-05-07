@@ -2,9 +2,18 @@
 @use '../../styles/mixins' as *;
 
 .card {
+  @include card-base;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.cardHeader {
+  @include card-header;
+}
+
+.cardIcon {
+  @include card-icon;
 }
 
 .title {
@@ -81,7 +90,7 @@
   padding: 14px;
   border: 1px solid var(--border-color);
   border-radius: $radius-md;
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
 }
 
 .metricLabel,
@@ -109,7 +118,7 @@
 
 .primaryIncidentCard {
   gap: 8px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)), var(--bg-secondary);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)), var(--bg-primary);
 }
 
 .primaryIncidentValue {

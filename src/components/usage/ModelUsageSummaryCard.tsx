@@ -5,8 +5,7 @@ import { formatPercent } from '@/utils/numberFormat';
 import { formatCompactNumber, formatUsd } from '@/utils/usage';
 import { SUCCESS_RATE_COLORS, MODEL_USAGE_SUMMARY } from '@/constants/colors';
 import { type ModelStat } from './ModelStatsCard';
-import styles from '@/pages/UsagePage.module.scss';
-import cardStyles from './StatCards.module.scss';
+import styles from './ModelUsageSummaryCard.module.scss';
 
 export interface ModelUsageSummaryCardProps {
   modelStats: ModelStat[];
@@ -69,7 +68,7 @@ export const ModelUsageSummaryCard = memo(function ModelUsageSummaryCard({
 
   return (
     <div
-      className={`${styles.statCard} ${cardStyles.healthScoreCard}`}
+      className={styles.card}
       style={
         {
           '--accent': accentColor,
@@ -78,104 +77,106 @@ export const ModelUsageSummaryCard = memo(function ModelUsageSummaryCard({
         } as CSSProperties
       }
     >
-      <div className={styles.statCardHeader}>
-        <div className={styles.statLabelGroup}>
-          <span className={styles.statLabel}>{t('model_usage_summary.title')}</span>
-          <div className={cardStyles.cardHeaderMeta}>
-            <span className={cardStyles.cardBadge}>{t('model_usage_summary.active_models')}</span>
+      <div className={styles.cardHeader}>
+        <div>
+          <div className={styles.cardTitle}>
+            <span className={styles.cardIcon}>
+              <IconModelCluster size={16} />
+            </span>
+            {t('model_usage_summary.title')}
+          </div>
+          <div className={styles.cardHeaderMeta}>
+            <span className={styles.cardBadge}>{t('model_usage_summary.active_models')}</span>
           </div>
         </div>
-        <span className={styles.statIconBadge}>
-          <IconModelCluster size={16} />
-        </span>
       </div>
 
       {loading ? (
-        <div className={cardStyles.placeholderBody}>
-          <span className={cardStyles.placeholderTitle}>{t('common.loading')}</span>
-          <span className={cardStyles.placeholderText}>
+        <div className={styles.placeholderBody}>
+          <span className={styles.placeholderTitle}>{t('common.loading')}</span>
+          <span className={styles.placeholderText}>
             {t('model_usage_summary.no_data_desc')}
           </span>
         </div>
       ) : !summary ? (
-        <div className={cardStyles.placeholderBody}>
-          <span className={cardStyles.placeholderTitle}>
+        <div className={styles.placeholderBody}>
+          <span className={styles.placeholderTitle}>
             {t('model_usage_summary.no_data_title')}
           </span>
-          <span className={cardStyles.placeholderText}>
+          <span className={styles.placeholderText}>
             {t('model_usage_summary.no_data_desc')}
           </span>
         </div>
       ) : (
-        <div className={cardStyles.healthScoreContent}>
+        <div className={styles.healthScoreContent}>
           {/* Active Models Count */}
-          <div className={cardStyles.scoreSection}>
-            <div className={cardStyles.scoreInfo}>
-              <span className={cardStyles.scoreValue}>{summary.activeModels}</span>
-              <span className={cardStyles.scoreTrend}>
+          <div className={styles.scoreSection}>
+            <div className={styles.scoreInfo}>
+              <span className={styles.scoreValue}>{summary.activeModels}</span>
+              <span className={styles.scoreTrend}>
                 {t('model_usage_summary.active_models')}
               </span>
             </div>
           </div>
 
           {/* Metrics Section */}
-          <div className={cardStyles.metricsSection}>
+          <div className={styles.metricsSection}>
             {/* Top by Requests */}
-            <div className={cardStyles.metricRow}>
-              <div className={cardStyles.metricInfo}>
-                <span className={cardStyles.metricLabel}>
+            <div className={styles.metricRow}>
+              <div className={styles.metricInfo}>
+                <span className={styles.metricLabel}>
                   {t('model_usage_summary.top_by_requests')}
                 </span>
-                <span className={cardStyles.metricValue}>{summary.topByRequests.model}</span>
+                <span className={styles.metricValue}>{summary.topByRequests.model}</span>
               </div>
-              <div className={cardStyles.metricBar}>
+              <div className={styles.metricBar}>
                 <div
-                  className={cardStyles.metricBarFill}
+                  className={styles.metricBarFill}
                   style={{
                     width: `${(summary.topByRequests.requests / summary.maxRequests) * 100}%`,
                     backgroundColor: accentColor,
                   }}
                 />
               </div>
-              <span className={cardStyles.metricEvidence}>
+              <span className={styles.metricEvidence}>
                 {formatCompactNumber(summary.topByRequests.requests)}
               </span>
             </div>
 
             {/* Top by Cost (if hasPrices) */}
             {hasPrices && summary.topByCost && summary.topByCost.cost > 0 && (
-              <div className={cardStyles.metricRow}>
-                <div className={cardStyles.metricInfo}>
-                  <span className={cardStyles.metricLabel}>
+              <div className={styles.metricRow}>
+                <div className={styles.metricInfo}>
+                  <span className={styles.metricLabel}>
                     {t('model_usage_summary.top_by_cost')}
                   </span>
-                  <span className={cardStyles.metricValue}>{summary.topByCost.model}</span>
+                  <span className={styles.metricValue}>{summary.topByCost.model}</span>
                 </div>
-                <div className={cardStyles.metricBar}>
+                <div className={styles.metricBar}>
                   <div
-                    className={cardStyles.metricBarFill}
+                    className={styles.metricBarFill}
                     style={{
                       width: `${(summary.topByCost.cost / summary.maxCost) * 100}%`,
                       backgroundColor: accentColor,
                     }}
                   />
                 </div>
-                <span className={cardStyles.metricEvidence}>
+                <span className={styles.metricEvidence}>
                   {formatUsd(summary.topByCost.cost)}
                 </span>
               </div>
             )}
 
             {/* Overall Success Rate */}
-            <div className={cardStyles.metricRow}>
-              <div className={cardStyles.metricInfo}>
-                <span className={cardStyles.metricLabel}>
+            <div className={styles.metricRow}>
+              <div className={styles.metricInfo}>
+                <span className={styles.metricLabel}>
                   {t('model_usage_summary.overall_success_rate')}
                 </span>
               </div>
-              <div className={cardStyles.metricBar}>
+              <div className={styles.metricBar}>
                 <div
-                  className={cardStyles.metricBarFill}
+                  className={styles.metricBarFill}
                   style={{
                     width: `${summary.overallSuccessRate}%`,
                     backgroundColor: getSuccessRateColor(summary.overallSuccessRate),
@@ -183,7 +184,7 @@ export const ModelUsageSummaryCard = memo(function ModelUsageSummaryCard({
                 />
               </div>
               <span
-                className={cardStyles.metricGrade}
+                className={styles.metricGrade}
                 style={{ color: getSuccessRateColor(summary.overallSuccessRate) }}
               >
                 {formatPercent(summary.overallSuccessRate / 100)}

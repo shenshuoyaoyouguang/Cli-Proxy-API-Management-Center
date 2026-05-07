@@ -9,8 +9,7 @@ import {
   type SLAMetrics
 } from '@/utils/usage/slaCalculator';
 import { formatPercent } from '@/utils/numberFormat';
-import styles from '@/pages/UsagePage.module.scss';
-import cardStyles from './StatCards.module.scss';
+import styles from './SLAMonitorCard.module.scss';
 
 interface SLAMonitorCardProps {
   assessment: SLAMetrics;
@@ -91,23 +90,23 @@ function SLAMetricRow({
   const progress = showProgress ? Math.min((commitment.current! / commitment.target!) * 100, 100) : 0;
 
   return (
-    <div className={cardStyles.slaMetricRow}>
-      <div className={cardStyles.slaMetricHeader}>
-        <span className={cardStyles.slaMetricLabel}>{label}</span>
-        <span className={cardStyles.cardBadge} style={{ color, borderColor: `${color}40` }}>
+    <div className={styles.slaMetricRow}>
+      <div className={styles.slaMetricHeader}>
+        <span className={styles.slaMetricLabel}>{label}</span>
+        <span className={styles.cardBadge} style={{ color, borderColor: `${color}40` }}>
           {statusLabel}
         </span>
       </div>
-      <div className={cardStyles.slaMetricValues}>
-        <span className={cardStyles.slaMetricCurrent}>{formatCommitmentValue(commitment, t)}</span>
+      <div className={styles.slaMetricValues}>
+        <span className={styles.slaMetricCurrent}>{formatCommitmentValue(commitment, t)}</span>
         {commitment.target !== null && (
-          <span className={cardStyles.slaMetricTarget}>/ {formatCommitmentTarget(commitment, t)}</span>
+          <span className={styles.slaMetricTarget}>/ {formatCommitmentTarget(commitment, t)}</span>
         )}
       </div>
       {showProgress && (
-        <div className={cardStyles.slaProgressBar}>
+        <div className={styles.slaProgressBar}>
           <div
-            className={cardStyles.slaProgressFill}
+            className={styles.slaProgressFill}
             style={{ width: `${progress}%`, backgroundColor: color }}
           />
         </div>
@@ -123,7 +122,7 @@ export function SLAMonitorCard({ assessment, loading }: SLAMonitorCardProps) {
 
   return (
     <div
-      className={`${styles.statCard} ${cardStyles.slaMonitorCard}`}
+      className={styles.card}
       style={
         {
           '--accent': overallColor,
@@ -132,74 +131,78 @@ export function SLAMonitorCard({ assessment, loading }: SLAMonitorCardProps) {
         } as CSSProperties
       }
     >
-      <div className={styles.statCardHeader}>
-        <div className={styles.statLabelGroup}>
-          <span className={styles.statLabel}>{t('sla.title')}</span>
-          <div className={cardStyles.cardHeaderMeta}>
-            <span className={cardStyles.cardBadge}>{t('sla.window_30d')}</span>
-            <span className={cardStyles.cardBadge}>{getStatusLabel(assessment.overallStatus, t)}</span>
+      <div className={styles.cardHeader}>
+        <div>
+          <div className={styles.cardTitle}>
+            <span className={styles.cardIcon}>
+              <IconTarget size={16} />
+            </span>
+            {t('sla.title')}
+          </div>
+          <div className={styles.cardHeaderMeta}>
+            <span className={styles.cardBadge}>{t('sla.window_30d')}</span>
+            <span className={styles.cardBadge}>{getStatusLabel(assessment.overallStatus, t)}</span>
           </div>
         </div>
-        <span className={styles.statIconBadge}><IconTarget size={16} /></span>
       </div>
 
       {loading ? (
-        <div className={cardStyles.placeholderBody}>
-          <span className={cardStyles.placeholderTitle}>{t('common.loading')}</span>
-          <span className={cardStyles.placeholderText}>{t('sla.no_data_desc')}</span>
+        <div className={styles.placeholderBody}>
+          <span className={styles.placeholderTitle}>{t('common.loading')}</span>
+          <span className={styles.placeholderText}>{t('sla.no_data_desc')}</span>
         </div>
       ) : !assessment.hasData ? (
-        <div className={cardStyles.placeholderBody}>
-          <span className={cardStyles.placeholderTitle}>{t('sla.no_data_title')}</span>
-          <span className={cardStyles.placeholderText}>{t('sla.no_data_desc')}</span>
+        <div className={styles.placeholderBody}>
+          <span className={styles.placeholderTitle}>{t('sla.no_data_title')}</span>
+          <span className={styles.placeholderText}>{t('sla.no_data_desc')}</span>
         </div>
       ) : (
-        <div className={cardStyles.slaContent}>
-          <div className={cardStyles.tierSection}>
-            <span className={cardStyles.tierLabel}>{t('sla.tier')}</span>
-            <span className={cardStyles.tierValue}>{tierLabel}</span>
+        <div className={styles.slaContent}>
+          <div className={styles.tierSection}>
+            <span className={styles.tierLabel}>{t('sla.tier')}</span>
+            <span className={styles.tierValue}>{tierLabel}</span>
           </div>
 
           {assessment.tier === 'free' && (
-            <div className={cardStyles.slaNote}>{t('sla.note_free_tier')}</div>
+            <div className={styles.slaNote}>{t('sla.note_free_tier')}</div>
           )}
 
           {assessment.missingTelemetry.length > 0 && (
-            <div className={cardStyles.slaNote}>
+            <div className={styles.slaNote}>
               {t('sla.missing_telemetry', { metrics: formatMissingTelemetry(assessment.missingTelemetry, t) })}
             </div>
           )}
 
-          <div className={cardStyles.slaMetricsSection}>
+          <div className={styles.slaMetricsSection}>
             <SLAMetricRow label={t('sla.availability')} commitment={assessment.commitments.availability} t={t} />
             <SLAMetricRow label={t('sla.success_rate')} commitment={assessment.commitments.successRate} t={t} />
             <SLAMetricRow label={t('sla.response_time')} commitment={assessment.commitments.responseTime} t={t} />
             <SLAMetricRow label={t('sla.recovery_time')} commitment={assessment.commitments.recoveryTime} t={t} />
           </div>
 
-          <div className={cardStyles.slaFooter}>
-            <div className={cardStyles.budgetSection}>
-              <span className={cardStyles.budgetLabel}>{t('sla.remaining_budget')}</span>
-              <div className={cardStyles.budgetValues}>
-                <span className={cardStyles.budgetItem}>
+          <div className={styles.slaFooter}>
+            <div className={styles.budgetSection}>
+              <span className={styles.budgetLabel}>{t('sla.remaining_budget')}</span>
+              <div className={styles.budgetValues}>
+                <span className={styles.budgetItem}>
                   {t('sla.downtime')}: {assessment.remainingBudget.downtime} {t('sla.minutes')}
                 </span>
-                <span className={cardStyles.budgetItem}>
+                <span className={styles.budgetItem}>
                   {t('sla.errors')}: {assessment.remainingBudget.errors}
                 </span>
               </div>
             </div>
 
             {assessment.compensation.eligible && (
-              <div className={cardStyles.compensationSection}>
-                <span className={cardStyles.compensationLabel}>{t('sla.compensation')}</span>
-                <span className={cardStyles.compensationValue}>
+              <div className={styles.compensationSection}>
+                <span className={styles.compensationLabel}>{t('sla.compensation')}</span>
+                <span className={styles.compensationValue}>
                   ${assessment.compensation.amount.toFixed(2)} ({assessment.compensation.percentage}%)
                 </span>
               </div>
             )}
 
-            <div className={cardStyles.overallStatus} style={{ color: overallColor }}>
+            <div className={styles.overallStatus} style={{ color: overallColor }}>
               {t('sla.overall_status')}: {getStatusLabel(assessment.overallStatus, t)}
             </div>
           </div>

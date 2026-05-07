@@ -4,14 +4,21 @@ interface CardProps {
   title?: ReactNode;
   extra?: ReactNode;
   className?: string;
+  icon?: ReactNode;
+  variant?: 'default' | 'glass';
 }
 
-export function Card({ title, extra, children, className }: PropsWithChildren<CardProps>) {
+export function Card({ title, extra, children, className, icon, variant = 'default' }: PropsWithChildren<CardProps>) {
+  const variantClass = variant === 'glass' ? 'card-glass' : '';
+
   return (
-    <div className={className ? `card ${className}` : 'card'}>
+    <div className={['card', className, variantClass].filter(Boolean).join(' ')}>
       {(title || extra) && (
         <div className="card-header">
-          <div className="title">{title}</div>
+          <div className="title">
+            {icon && <span className="card-icon">{icon}</span>}
+            {title}
+          </div>
           {extra}
         </div>
       )}

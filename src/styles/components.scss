@@ -58,6 +58,26 @@
     }
   }
 
+  &.btn-icon {
+    padding: 8px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: $radius-md;
+    background: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+
+    &:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-icon {
+      margin: 0;
+    }
+  }
+
   &.btn-full {
     width: 100%;
   }
@@ -65,11 +85,24 @@
   &.btn-sm {
     padding: 8px 10px;
     font-size: 14px;
+
+    &.btn-icon {
+      padding: 6px;
+      min-width: 32px;
+      min-height: 32px;
+    }
   }
 
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
   }
 }
 
@@ -124,6 +157,18 @@ textarea {
   border-radius: $radius-lg;
   box-shadow: var(--shadow);
   padding: $spacing-lg;
+  transition: box-shadow $transition-fast, border-color $transition-fast;
+
+  &:hover {
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+.card-glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-backdrop-filter);
+  -webkit-backdrop-filter: var(--glass-backdrop-filter);
+  border: 1px solid var(--glass-border);
 }
 
 .card-header {
@@ -144,6 +189,21 @@ textarea {
     font-size: 18px;
     font-weight: 700;
     color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+  }
+
+  .card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: $radius-md;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 14px;
   }
 }
 

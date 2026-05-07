@@ -20,6 +20,11 @@ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useUsageSSE } from '@/hooks/useUsageSSE';
 import { useThemeStore, useConfigStore } from '@/stores';
 import {
+  IconRefreshCw,
+  IconDownload,
+  IconUpload,
+} from '@/components/ui/icons';
+import {
   StatCards,
   RuntimeQualityCard,
   TokenEfficiencyCenter,
@@ -148,7 +153,6 @@ export function UsagePage() {
 
   const { authFileMap, authFiles } = useAuthFilesMap();
 
-  // 获取 OAuth 模型别名反向映射，用于将 usage 中的别名解析为原始模型名
   const { aliasReverseMap } = useModelAliasReverseMap();
 
   useHeaderRefresh(loadUsage);
@@ -290,12 +294,22 @@ export function UsagePage() {
     }
   }, [efficiencyDrilldown]);
 
+  const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
+
   const scrollToSection = useCallback((sectionId: string) => {
     if (typeof document === 'undefined') {
       return;
     }
 
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Add highlight animation
+      setHighlightedSection(sectionId);
+      setTimeout(() => {
+        setHighlightedSection((current) => (current === sectionId ? null : current));
+      }, 2000);
+    }
   }, []);
 
   const handleAvailabilityDrillDown = useCallback(() => {
@@ -326,6 +340,21 @@ export function UsagePage() {
     ? healthRequestEventRows
     : requestEventRows;
 
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return t('usage_stats.sse_realtime');
+      case 'degraded':
+        return t('usage_stats.sse_polling');
+      case 'connecting':
+        return t('usage_stats.sse_connecting');
+      case 'disconnected':
+        return t('usage_stats.sse_disconnected');
+      default:
+        return '';
+    }
+  };
+
   return (
     <div className={styles.container}>
       {loading && !usage && (
@@ -337,9 +366,10 @@ export function UsagePage() {
         </div>
       )}
 
+      {/* Header */}
       <div className={styles.header}>
-        <h1 className={styles.pageTitle}>{t('usage_stats.title')}</h1>
-        <div className={styles.headerActions}>
+        <div className={styles.headerLeft}>
+          <h1 className={styles.pageTitle}>{t('usage_stats.title')}</h1>
           <div className={styles.timeRangeGroup}>
             <span className={styles.timeRangeLabel}>{t('usage_stats.range_filter')}</span>
             <Select
@@ -351,168 +381,199 @@ export function UsagePage() {
               fullWidth={false}
             />
           </div>
+        </div>
+        <div className={styles.headerRight}>
           <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleExport}
-            loading={exporting}
-            disabled={loading || importing}
-          >
-            {t('usage_stats.export')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleImport}
-            loading={importing}
-            disabled={loading || exporting}
-          >
-            {t('usage_stats.import')}
-          </Button>
-          <Button
-            variant="secondary"
+            variant="icon"
             size="sm"
             onClick={() => void loadUsage().catch(() => {})}
             disabled={loading || exporting || importing}
-          >
-            {loading ? t('common.loading') : t('usage_stats.refresh')}
-          </Button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json,application/json"
-            style={{ display: 'none' }}
-            onChange={handleImportChange}
+            icon={<IconRefreshCw size={16} />}
+            title={loading ? t('common.loading') : t('usage_stats.refresh')}
           />
           {lastRefreshedAt && (
             <span className={styles.lastRefreshed}>
-              {t('usage_stats.last_updated')}: {lastRefreshedAt.toLocaleTimeString()}
-              <span className={`${styles.connectionStatus} ${styles[connectionStatus] ?? ''}`}>
-                {connectionStatus === 'connected' && `● ${t('usage_stats.sse_realtime')}`}
-                {connectionStatus === 'degraded' && `● ${t('usage_stats.sse_polling')}`}
-                {connectionStatus === 'connecting' && `● ${t('usage_stats.sse_connecting')}`}
-                {connectionStatus === 'disconnected' && `● ${t('usage_stats.sse_disconnected')}`}
-              </span>
+              {lastRefreshedAt.toLocaleTimeString()}
             </span>
           )}
+          <span className={`${styles.connectionStatus} ${styles[connectionStatus] ?? ''}`}>
+            <span className={styles.statusDot} />
+            {getConnectionStatusText()}
+          </span>
         </div>
       </div>
 
       {error && <div className={styles.errorBox}>{error}</div>}
 
-      <StatCards
-        usage={filteredUsage}
-        loading={loading || subscriptionTierLoading}
-        hasPrices={hasPrices}
-        modelStats={modelStats}
-        usageSummary={usageSummary}
-        healthAssessment={healthAssessment}
-        slaAssessment={slaAssessment}
-        onAvailabilityDrillDown={handleAvailabilityDrillDown}
-        onSuccessRateDrillDown={handleSuccessRateDrillDown}
-        sparklines={{
-          requests: requestsSparkline,
-          tokens: tokensSparkline,
-          rpm: rpmSparkline,
-          tpm: tpmSparkline,
-          cost: costSparkline,
-        }}
-      />
-
-      <RuntimeQualityCard summary={runtimeQualitySummary} loading={loading} />
-
-      <div id={SERVICE_HEALTH_SECTION_ID}>
-        <ServiceHealthCard details={usageDetails} loading={loading} healthData={serviceHealth} />
-      </div>
-
-      <div className={styles.detailsGrid}>
-        <CredentialStatsCard rows={credentialRows} loading={loading} />
-        <ApiDetailsCard apiStats={apiStats} loading={loading} hasPrices={hasPrices} />
-      </div>
-
-      <ModelStatsCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
-
-      <TokenEfficiencyCenter
-        overview={efficiencyOverview}
-        modelRows={modelEfficiencyRows}
-        credentialRows={credentialEfficiencyRows}
-        loading={loading}
-        onDrilldownChange={handleEfficiencyDrilldown}
-      />
-
-      <div id={REQUEST_EVENTS_SECTION_ID}>
-        <RequestEventsDetailsCard
-          rows={requestEventsRowsForDisplay}
-          loading={loading}
-          error={error}
-          externalModelFilter={externalModelFilter}
-          externalSourceFilter={credentialDrilldown.source}
-          externalSourceRawFilter={credentialDrilldown.sourceRaw}
-          externalAuthIndexFilter={credentialDrilldown.authIndex}
-          externalResultFilter={requestEventsResultFilter}
-          onClearExternalFilters={handleClearRequestEventDrillDown}
+      {/* Overview Section */}
+      <section className={styles.section}>
+        <StatCards
+          usage={filteredUsage}
+          loading={loading || subscriptionTierLoading}
+          hasPrices={hasPrices}
+          modelStats={modelStats}
+          usageSummary={usageSummary}
+          healthAssessment={healthAssessment}
+          slaAssessment={slaAssessment}
+          onAvailabilityDrillDown={handleAvailabilityDrillDown}
+          onSuccessRateDrillDown={handleSuccessRateDrillDown}
+          sparklines={{
+            requests: requestsSparkline,
+            tokens: tokensSparkline,
+            rpm: rpmSparkline,
+            tpm: tpmSparkline,
+            cost: costSparkline,
+          }}
         />
-      </div>
 
-      <ChartLineSelector
-        chartLines={chartLines}
-        modelNames={modelNames}
-        maxLines={MAX_CHART_LINES}
-        onChange={handleChartLinesChange}
-      />
+        <RuntimeQualityCard summary={runtimeQualitySummary} loading={loading} />
+      </section>
 
-      <div className={styles.chartsGrid}>
-        <UsageChart
-          title={t('usage_stats.requests_trend')}
-          period={requestsPeriod}
-          onPeriodChange={setRequestsPeriod}
-          chartData={requestsChartData}
-          chartOptions={requestsChartOptions}
-          loading={loading}
-          isMobile={isMobile}
-          emptyText={t('usage_stats.no_data')}
-        />
-        <UsageChart
-          title={t('usage_stats.tokens_trend')}
-          period={tokensPeriod}
-          onPeriodChange={setTokensPeriod}
-          chartData={tokensChartData}
-          chartOptions={tokensChartOptions}
-          loading={loading}
-          isMobile={isMobile}
-          emptyText={t('usage_stats.no_data')}
-        />
-      </div>
+      {/* Health Section */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>{t('usage_stats.health_section_title')}</h2>
+        <div
+          id={SERVICE_HEALTH_SECTION_ID}
+          className={highlightedSection === SERVICE_HEALTH_SECTION_ID ? styles.drilldownHighlight : ''}
+        >
+          <ServiceHealthCard details={usageDetails} loading={loading} healthData={serviceHealth} />
+        </div>
 
-      <div className={styles.chartsGrid}>
-        <TokenDistributionChart
-          distribution={tokenDistribution}
+        <TokenEfficiencyCenter
+          overview={efficiencyOverview}
+          modelRows={modelEfficiencyRows}
+          credentialRows={credentialEfficiencyRows}
           loading={loading}
-          isDark={isDark}
+          onDrilldownChange={handleEfficiencyDrilldown}
         />
-        <TokenBreakdownChart
+      </section>
+
+      {/* Details Section */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>{t('usage_stats.details_section_title')}</h2>
+        <div className={styles.detailsGrid}>
+          <CredentialStatsCard rows={credentialRows} loading={loading} />
+          <ApiDetailsCard apiStats={apiStats} loading={loading} hasPrices={hasPrices} />
+        </div>
+
+        <ModelStatsCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
+
+        <div
+          id={REQUEST_EVENTS_SECTION_ID}
+          className={highlightedSection === REQUEST_EVENTS_SECTION_ID ? styles.drilldownHighlight : ''}
+        >
+          <RequestEventsDetailsCard
+            rows={requestEventsRowsForDisplay}
+            loading={loading}
+            error={error}
+            externalModelFilter={externalModelFilter}
+            externalSourceFilter={credentialDrilldown.source}
+            externalSourceRawFilter={credentialDrilldown.sourceRaw}
+            externalAuthIndexFilter={credentialDrilldown.authIndex}
+            externalResultFilter={requestEventsResultFilter}
+            onClearExternalFilters={handleClearRequestEventDrillDown}
+          />
+        </div>
+      </section>
+
+      {/* Trends Section */}
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>{t('usage_stats.trends_section_title')}</h2>
+        <ChartLineSelector
+          chartLines={chartLines}
+          modelNames={modelNames}
+          maxLines={MAX_CHART_LINES}
+          onChange={handleChartLinesChange}
+        />
+
+        <div className={styles.chartsGrid}>
+          <UsageChart
+            title={t('usage_stats.requests_trend')}
+            period={requestsPeriod}
+            onPeriodChange={setRequestsPeriod}
+            chartData={requestsChartData}
+            chartOptions={requestsChartOptions}
+            loading={loading}
+            isMobile={isMobile}
+            emptyText={t('usage_stats.no_data')}
+          />
+          <UsageChart
+            title={t('usage_stats.tokens_trend')}
+            period={tokensPeriod}
+            onPeriodChange={setTokensPeriod}
+            chartData={tokensChartData}
+            chartOptions={tokensChartOptions}
+            loading={loading}
+            isMobile={isMobile}
+            emptyText={t('usage_stats.no_data')}
+          />
+        </div>
+
+        <div className={styles.chartsGrid}>
+          <TokenDistributionChart
+            distribution={tokenDistribution}
+            loading={loading}
+            isDark={isDark}
+          />
+          <TokenBreakdownChart
+            usage={filteredUsage}
+            loading={loading}
+            isDark={isDark}
+            isMobile={isMobile}
+            hourWindowHours={hourWindowHours}
+          />
+        </div>
+
+        <CostTrendChart
           usage={filteredUsage}
           loading={loading}
           isDark={isDark}
           isMobile={isMobile}
+          modelPrices={modelPrices}
           hourWindowHours={hourWindowHours}
         />
-      </div>
+      </section>
 
-      <CostTrendChart
-        usage={filteredUsage}
-        loading={loading}
-        isDark={isDark}
-        isMobile={isMobile}
-        modelPrices={modelPrices}
-        hourWindowHours={hourWindowHours}
-      />
-
-      <PriceSettingsCard
-        modelNames={modelNames}
-        modelPrices={modelPrices}
-        onPricesChange={setModelPrices}
-      />
+      {/* Settings Section */}
+      <section className={styles.settingsSection}>
+        <div className={styles.settingsHeader}>
+          <h2 className={styles.settingsTitle}>{t('usage_stats.settings_title')}</h2>
+          <div className={styles.settingsActions}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExport}
+              loading={exporting}
+              disabled={loading || importing}
+              icon={<IconDownload size={16} />}
+            >
+              {t('usage_stats.export')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleImport}
+              loading={importing}
+              disabled={loading || exporting}
+              icon={<IconUpload size={16} />}
+            >
+              {t('usage_stats.import')}
+            </Button>
+          </div>
+        </div>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: 'none' }}
+          onChange={handleImportChange}
+        />
+        <PriceSettingsCard
+          modelNames={modelNames}
+          modelPrices={modelPrices}
+          onPricesChange={setModelPrices}
+        />
+      </section>
     </div>
   );
 }

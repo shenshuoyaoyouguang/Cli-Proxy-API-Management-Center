@@ -12,8 +12,7 @@ import {
   type MetricScore
 } from '@/utils/usage/healthScore';
 import { formatPercent } from '@/utils/numberFormat';
-import styles from '@/pages/UsagePage.module.scss';
-import cardStyles from './StatCards.module.scss';
+import styles from './HealthScoreCard.module.scss';
 
 interface HealthScoreCardProps {
   assessment: HealthScore;
@@ -27,10 +26,10 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
   const strokeDashoffset = circumference - (score / 100) * circumference;
 
   return (
-    <div className={cardStyles.scoreRingContainer}>
-      <svg className={cardStyles.scoreRingSvg} viewBox="0 0 80 80">
+    <div className={styles.scoreRingContainer}>
+      <svg className={styles.scoreRingSvg} viewBox="0 0 80 80">
         <circle
-          className={cardStyles.scoreRingBg}
+          className={styles.scoreRingBg}
           cx="40"
           cy="40"
           r="36"
@@ -38,7 +37,7 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
           strokeWidth="6"
         />
         <circle
-          className={cardStyles.scoreRingProgress}
+          className={styles.scoreRingProgress}
           cx="40"
           cy="40"
           r="36"
@@ -51,8 +50,8 @@ function ScoreRing({ score, color }: { score: number; color: string }) {
           transform="rotate(-90 40 40)"
         />
       </svg>
-      <div className={cardStyles.scoreRingText}>
-        <span className={cardStyles.scoreValue}>{score}</span>
+      <div className={styles.scoreRingText}>
+        <span className={styles.scoreValue}>{score}</span>
       </div>
     </div>
   );
@@ -99,25 +98,25 @@ function MetricRow({
   const statusLabel = getMetricStatusLabel(metric.status, t);
 
   return (
-    <div className={cardStyles.metricRow}>
-      <div className={cardStyles.metricInfo}>
-        <span className={cardStyles.metricLabel}>{label}</span>
-        <span className={cardStyles.metricValue}>{formatMetricValue(metricId, metric)}</span>
+    <div className={styles.metricRow}>
+      <div className={styles.metricInfo}>
+        <span className={styles.metricLabel}>{label}</span>
+        <span className={styles.metricValue}>{formatMetricValue(metricId, metric)}</span>
       </div>
-      <div className={cardStyles.metricBar}>
+      <div className={styles.metricBar}>
         <div
-          className={cardStyles.metricBarFill}
+          className={styles.metricBarFill}
           style={{ width: `${metric.score}%`, backgroundColor: color }}
         />
       </div>
-      <div className={cardStyles.metricMeta}>
-        <span className={cardStyles.metricGrade} style={{ color }}>
+      <div className={styles.metricMeta}>
+        <span className={styles.metricGrade} style={{ color }}>
           {gradeLabel}
         </span>
-        <span className={cardStyles.metricEvidence}>
+        <span className={styles.metricEvidence}>
           {statusLabel} · {Math.round(metric.weight * 100)}%
         </span>
-        <span className={cardStyles.metricEvidence}>{getMetricNote(metricId, t)}</span>
+        <span className={styles.metricEvidence}>{getMetricNote(metricId, t)}</span>
       </div>
     </div>
   );
@@ -145,7 +144,7 @@ export function HealthScoreCard({
 
   return (
     <div
-      className={`${styles.statCard} ${cardStyles.healthScoreCard}`}
+      className={styles.card}
       style={
         {
           '--accent': color,
@@ -154,42 +153,46 @@ export function HealthScoreCard({
         } as CSSProperties
       }
     >
-      <div className={styles.statCardHeader}>
-        <div className={styles.statLabelGroup}>
-          <span className={styles.statLabel}>{t('health.title')}</span>
-          <div className={cardStyles.cardHeaderMeta}>
-            <span className={cardStyles.cardBadge}>{t('health.window_24h')}</span>
-            <span className={cardStyles.cardBadge}>{dataQualityLabel}</span>
+      <div className={styles.cardHeader}>
+        <div>
+          <div className={styles.cardTitle}>
+            <span className={styles.cardIcon}>
+              <IconHeart size={16} />
+            </span>
+            {t('health.title')}
+          </div>
+          <div className={styles.cardHeaderMeta}>
+            <span className={styles.cardBadge}>{t('health.window_24h')}</span>
+            <span className={styles.cardBadge}>{dataQualityLabel}</span>
           </div>
         </div>
-        <span className={styles.statIconBadge}><IconHeart size={16} /></span>
       </div>
 
       {loading ? (
-        <div className={cardStyles.placeholderBody}>
-          <span className={cardStyles.placeholderTitle}>{t('common.loading')}</span>
-          <span className={cardStyles.placeholderText}>{t('health.summary_no_data')}</span>
+        <div className={styles.placeholderBody}>
+          <span className={styles.placeholderTitle}>{t('common.loading')}</span>
+          <span className={styles.placeholderText}>{t('health.summary_no_data')}</span>
         </div>
       ) : !assessment.hasData ? (
-        <div className={cardStyles.placeholderBody}>
-          <span className={cardStyles.placeholderTitle}>{t('health.no_data_title')}</span>
-          <span className={cardStyles.placeholderText}>{t('health.no_data_desc')}</span>
+        <div className={styles.placeholderBody}>
+          <span className={styles.placeholderTitle}>{t('health.no_data_title')}</span>
+          <span className={styles.placeholderText}>{t('health.no_data_desc')}</span>
         </div>
       ) : (
-        <div className={cardStyles.healthScoreContent}>
-          <div className={cardStyles.scoreSection}>
+        <div className={styles.healthScoreContent}>
+          <div className={styles.scoreSection}>
             <ScoreRing score={assessment.overall} color={color} />
-            <div className={cardStyles.scoreInfo}>
-              <span className={cardStyles.scoreGrade} style={{ color }}>
+            <div className={styles.scoreInfo}>
+              <span className={styles.scoreGrade} style={{ color }}>
                 {gradeLabel}
               </span>
-              <span className={cardStyles.scoreTrend}>{trendLabel}</span>
+              <span className={styles.scoreTrend}>{trendLabel}</span>
             </div>
           </div>
 
-          <div className={cardStyles.summaryText}>{getHealthSummary(assessment, t)}</div>
+          <div className={styles.summaryText}>{getHealthSummary(assessment, t)}</div>
 
-          <div className={cardStyles.metricsSection}>
+          <div className={styles.metricsSection}>
             <MetricRow
               label={t('health.success_rate')}
               metricId="successRate"
@@ -210,13 +213,13 @@ export function HealthScoreCard({
             />
           </div>
 
-          <div className={cardStyles.healthFooter}>
-            <div className={cardStyles.metricEvidence}>
+          <div className={styles.healthFooter}>
+            <div className={styles.metricEvidence}>
               {assessment.healthyDayStreak > 0
                 ? t('health.healthy_day_streak', { days: assessment.healthyDayStreak })
                 : t('health.trend_stable')}
             </div>
-            <div className={cardStyles.actionRow}>
+            <div className={styles.actionRow}>
               <Button variant="ghost" size="sm" onClick={onAvailabilityDrillDown} disabled={!onAvailabilityDrillDown}>
                 {t('health.action_service_health')}
               </Button>

@@ -10,7 +10,7 @@ import type {
   EfficiencySignal,
   ModelEfficiencyRow
 } from './hooks/usageAnalyticsSnapshot';
-import styles from '@/pages/UsagePage.module.scss';
+import styles from './TokenEfficiencyCenter.module.scss';
 
 export interface EfficiencyDrilldown {
   type: 'model' | 'credential' | 'none';
@@ -94,7 +94,17 @@ export function TokenEfficiencyCenter({
 
   return (
     <div className={styles.tokenEfficiencySection}>
-      <Card title={t('usage_stats.token_efficiency_center')}>
+      <Card
+        className={styles.card}
+        title={
+          <span className={styles.cardHeader}>
+            <span className={styles.cardIcon}>
+              <IconZap size={16} />
+            </span>
+            {t('usage_stats.token_efficiency_center')}
+          </span>
+        }
+      >
         <div className={styles.tokenEfficiencyOverview}>
           <div className={styles.tokenEfficiencyHero}>
             <div>
@@ -158,7 +168,11 @@ export function TokenEfficiencyCenter({
       </Card>
 
       <div className={styles.detailsGrid}>
-        <Card title={t('usage_stats.model_efficiency_ranking')} extra={rankingHint} className={styles.detailsFixedCard}>
+        <Card
+          className={styles.detailsFixedCard}
+          title={t('usage_stats.model_efficiency_ranking')}
+          extra={rankingHint}
+        >
           {topModelRows.length > 0 ? (
             <div className={styles.detailsScroll}>
               <div className={styles.tableWrapper}>
@@ -202,7 +216,11 @@ export function TokenEfficiencyCenter({
           )}
         </Card>
 
-        <Card title={t('usage_stats.credential_efficiency_ranking')} extra={rankingHint} className={styles.detailsFixedCard}>
+        <Card
+          className={styles.detailsFixedCard}
+          title={t('usage_stats.credential_efficiency_ranking')}
+          extra={rankingHint}
+        >
           {topCredentialRows.length > 0 ? (
             <div className={styles.detailsScroll}>
               <div className={styles.tableWrapper}>

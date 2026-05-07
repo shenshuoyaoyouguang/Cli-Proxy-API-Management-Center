@@ -1,0 +1,302 @@
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.card {
+  @include card-base;
+}
+
+.cardHeader {
+  @include card-header;
+}
+
+.cardIcon {
+  @include card-icon;
+}
+
+.tokenEfficiencySection {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tokenEfficiencyOverview {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.tokenEfficiencyHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.tokenEfficiencyScoreLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.tokenEfficiencyScoreRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.tokenEfficiencyScoreValue {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.tokenEfficiencyGrade {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.tokenEfficiencySubtle {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.tokenEfficiencySignals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tokenEfficiencySignal {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: $radius-full;
+  font-size: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+}
+
+.tokenEfficiencyHint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.tokenEfficiencyTableHint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.tokenEfficiencyMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+
+  @include tablet {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tokenEfficiencyMetricCard {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform $transition-fast, border-color $transition-fast, box-shadow $transition-fast;
+
+  &:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-hover, var(--border-color));
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+.tokenEfficiencyMetricHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.tokenEfficiencyMetricValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.detailsGrid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+
+  > * {
+    min-width: 0;
+  }
+
+  @include desktop {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.detailsFixedCard {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-radius: $radius-lg;
+  border: 1px solid var(--border-color);
+
+  @include mobile {
+    height: 420px;
+  }
+}
+
+.detailsScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: $radius-md;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+
+  th,
+  td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  th {
+    font-weight: 600;
+    color: var(--text-tertiary);
+    background-color: var(--bg-secondary);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  td {
+    color: var(--text-primary);
+    height: 44px;
+  }
+
+  tbody tr {
+    transition: background-color 0.15s ease;
+    position: relative;
+
+    &:hover {
+      background-color: var(--bg-tertiary);
+
+      &::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--primary-color);
+        border-radius: 0 2px 2px 0;
+      }
+    }
+  }
+}
+
+.tokenEfficiencyClickableRow {
+  cursor: pointer;
+  transition: background-color $transition-fast, transform $transition-fast;
+}
+
+.tokenEfficiencyClickableRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.tokenEfficiencyClickableRow:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+  background: var(--bg-tertiary);
+}
+
+.tokenEfficiencyScoreCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.tokenEfficiencyAction {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.modelCell {
+  font-weight: 500;
+  max-width: 240px;
+  word-break: break-all;
+}
+
+.credentialType {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: $radius-full;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+}
+
+.statSuccess {
+  color: var(--success-color);
+}
+
+.statNeutral {
+  color: var(--warning-color);
+}
+
+.statFailure {
+  color: var(--error-color);
+}
+
+.statSubtle {
+  color: var(--text-tertiary);
+}

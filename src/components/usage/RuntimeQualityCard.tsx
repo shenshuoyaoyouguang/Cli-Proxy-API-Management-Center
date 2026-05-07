@@ -65,8 +65,10 @@ export function RuntimeQualityCard({ summary, loading }: RuntimeQualityCardProps
     <Card
       className={styles.card}
       title={
-        <span className={styles.title}>
-          <IconShield size={18} className={styles.titleIcon} />
+        <span className={styles.cardHeader}>
+          <span className={styles.cardIcon}>
+            <IconShield size={16} />
+          </span>
           {t('usage_quality.title')}
         </span>
       }

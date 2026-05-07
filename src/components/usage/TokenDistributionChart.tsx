@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Doughnut } from 'react-chartjs-2';
+
+const MemoizedDoughnut = memo(Doughnut);
 import { Card } from '@/components/ui/Card';
 import { TokenNumber } from '@/components/ui/SmartNumber';
 import type { TokenDistribution } from './hooks/usageAnalyticsSnapshot';
@@ -107,7 +109,7 @@ export function TokenDistributionChart({
         <div className={styles.container}>
           <div className={styles.chartWrapper}>
             <div className={styles.chart}>
-              <Doughnut data={chartData} options={chartOptions} />
+              <MemoizedDoughnut data={chartData} options={chartOptions} />
               <div className={styles.centerText}>
                 <span className={styles.centerLabel}>{t('usage_stats.total')}</span>
                 <span className={styles.centerValue}><TokenNumber value={total} /></span>

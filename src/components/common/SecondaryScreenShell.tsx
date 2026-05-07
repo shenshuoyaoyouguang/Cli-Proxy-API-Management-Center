@@ -1,5 +1,6 @@
 import { forwardRef, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { throttle } from 'lodash-es';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { IconChevronLeft } from '@/components/ui/icons';
@@ -56,20 +57,27 @@ export const SecondaryScreenShell = forwardRef<HTMLDivElement, SecondaryScreenSh
     const shouldRenderFloatingAction = Boolean(floatingAction) && isCurrentLayer;
     const floatingActionRef = useRef<HTMLDivElement | null>(null);
 
+    const updateHeightRef = useRef<ReturnType<typeof throttle> | null>(null);
+
     useLayoutEffect(() => {
       if (!shouldRenderFloatingAction) return;
 
       const element = floatingActionRef.current;
       if (!element) return;
 
-      const updateHeight = () => {
-        const height = element.getBoundingClientRect().height;
-        document.documentElement.style.setProperty(
-          '--secondary-shell-floating-action-height',
-          `${height}px`
-        );
-      };
+      if (!updateHeightRef.current) {
+        updateHeightRef.current = throttle(() => {
+          const currentElement = floatingActionRef.current;
+          if (!currentElement) return;
+          const height = currentElement.getBoundingClientRect().height;
+          document.documentElement.style.setProperty(
+            '--secondary-shell-floating-action-height',
+            `${height}px`
+          );
+        }, 100);
+      }
 
+      const updateHeight = updateHeightRef.current;
       updateHeight();
       window.addEventListener('resize', updateHeight);
 
@@ -81,6 +89,7 @@ export const SecondaryScreenShell = forwardRef<HTMLDivElement, SecondaryScreenSh
         resizeObserver?.disconnect();
         window.removeEventListener('resize', updateHeight);
         document.documentElement.style.removeProperty('--secondary-shell-floating-action-height');
+        updateHeightRef.current?.cancel();
       };
     }, [shouldRenderFloatingAction]);
 

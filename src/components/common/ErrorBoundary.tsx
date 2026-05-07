@@ -1,50 +1,56 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
+import type { ErrorInfo, ReactNode } from 'react';
+import { Component } from 'react';
 import { logger } from '@/utils/logger';
-import styles from './ErrorBoundary.module.scss';
 
-interface Props {
+/**
+ * ErrorBoundary 组件 Props 类型定义
+ */
+interface ErrorBoundaryProps {
+  /** 子组件 */
   children: ReactNode;
+  /** 错误发生时展示的 fallback UI */
+  fallback: ReactNode;
 }
 
-interface State {
+/**
+ * ErrorBoundary 组件 State 类型定义
+ */
+interface ErrorBoundaryState {
+  /** 是否发生错误 */
   hasError: boolean;
-  error: Error | null;
 }
 
-interface ErrorFallbackProps {
-  error: Error | null;
-  onReload: () => void;
-}
-
-function ErrorFallback({ error, onReload }: ErrorFallbackProps) {
-  const { t } = useTranslation();
-  const isDevelopment = import.meta.env.DEV;
-
-  return (
-    <div className={styles.container}>
-      <h1 className={styles.title}>{t('common.error_boundary_title')}</h1>
-      <p className={styles.message}>{t('common.error_boundary_message')}</p>
-      {isDevelopment && error?.message && (
-        <pre className={styles.errorDetails}>{error.message}</pre>
-      )}
-      <button onClick={onReload} className={styles.reloadButton}>
-        {t('common.reload_page')}
-      </button>
-    </div>
-  );
-}
-
-class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
+/**
+ * ErrorBoundary 错误边界组件
+ *
+ * 用于捕获子组件树中的 JavaScript 错误，防止整个应用崩溃。
+ * 必须使用 Class Component 实现，因为 ErrorBoundary 需要生命周期方法。
+ *
+ * @example
+ * ```tsx
+ * <ErrorBoundary fallback={<ErrorPage />}>
+ *   <MyComponent />
+ * </ErrorBoundary>
+ * ```
+ */
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  /**
+   * 静态方法：从错误中派生状态
+   * 当子组件抛出错误时，此方法会被调用，返回新的 state 使组件重新渲染
+   */
+  static getDerivedStateFromError(_error: Error): ErrorBoundaryState {
+    return { hasError: true };
   }
 
+  /**
+   * 生命周期方法：捕获错误信息
+   * 用于记录错误日志等副作用操作
+   */
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     logger.error('ErrorBoundary caught an error', {
       message: error.message,
@@ -53,13 +59,9 @@ class ErrorBoundary extends Component<Props, State> {
     });
   }
 
-  handleReload = (): void => {
-    window.location.reload();
-  };
-
   render(): ReactNode {
     if (this.state.hasError) {
-      return <ErrorFallback error={this.state.error} onReload={this.handleReload} />;
+      return this.props.fallback;
     }
 
     return this.props.children;
@@ -67,3 +69,4 @@ class ErrorBoundary extends Component<Props, State> {
 }
 
 export { ErrorBoundary };
+export type { ErrorBoundaryProps, ErrorBoundaryState };

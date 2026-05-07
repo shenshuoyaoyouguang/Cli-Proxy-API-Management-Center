@@ -9,6 +9,7 @@ import {
   type CSSProperties
 } from 'react';
 import { createPortal } from 'react-dom';
+import { throttle } from 'lodash-es';
 import { IconChevronDown } from './icons';
 import styles from './Select.module.scss';
 
@@ -138,9 +139,9 @@ export function Select({
 
     updateDropdownStyle();
 
-    const handleViewportChange = () => {
+    const handleViewportChange = throttle(() => {
       scheduleDropdownStyleUpdate();
-    };
+    }, 100);
 
     const resizeObserver =
       typeof ResizeObserver !== 'undefined' && wrapRef.current
@@ -176,13 +177,14 @@ export function Select({
 
   const commitSelection = useCallback(
     (nextIndex: number) => {
-      const nextOption = options[nextIndex];
+      const actualIndex = nextIndex >= 0 ? nextIndex : resolvedHighlightedIndex;
+      const nextOption = options[actualIndex];
       if (!nextOption) return;
       onChange(nextOption.value);
       setOpen(false);
-      setHighlightedIndex(nextIndex);
+      setHighlightedIndex(actualIndex);
     },
-    [onChange, options]
+    [onChange, options, resolvedHighlightedIndex]
   );
 
   const moveHighlight = useCallback(

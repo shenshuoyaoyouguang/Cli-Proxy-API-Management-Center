@@ -1,6 +1,9 @@
 import { useTranslation } from 'react-i18next';
+import { memo } from 'react';
 import type { ChartOptions } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+
+const MemoizedLine = memo(Line);
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import type { ChartData } from '@/utils/usage';
@@ -78,7 +81,7 @@ export function UsageChart({
                     : undefined
                 }
               >
-                <Line data={chartData} options={chartOptions} />
+                <MemoizedLine data={chartData} options={chartOptions} />
               </div>
             </div>
           </div>

@@ -1,7 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ScriptableContext } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+
+const MemoizedLine = memo(Line);
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
@@ -133,7 +135,7 @@ export function CostTrendChart({
                     : undefined
                 }
               >
-                <Line data={chartData} options={chartOptions} />
+                <MemoizedLine data={chartData} options={chartOptions} />
               </div>
             </div>
           </div>

@@ -1,6 +1,8 @@
 import { type ReactNode, memo, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
+
+const MemoizedLine = memo(Line);
 import {
   IconDiamond,
   IconDollarSign,
@@ -235,7 +237,7 @@ export const StatCards = memo(function StatCards({
           {card.meta && <div className={styles.statMetaRow}>{card.meta}</div>}
           <div className={styles.statTrend}>
             {card.trend ? (
-              <Line
+              <MemoizedLine
                 className={styles.sparkline}
                 data={card.trend.data}
                 options={sparklineOptions}

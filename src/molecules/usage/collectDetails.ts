@@ -5,6 +5,11 @@ import { normalizeUsageDetailTokens } from '@/atoms/usage/tokens';
 import { parseTimestampMs } from '@/utils/timestamp';
 import type { UsageEvent } from '@/services/api/usage';
 
+// Safari 不支持 requestIdleCallback，提供降级处理
+const requestIdle = typeof requestIdleCallback !== 'undefined'
+  ? requestIdleCallback
+  : (cb: IdleRequestCallback) => setTimeout(cb, 1);
+
 const USAGE_ENDPOINT_METHOD_REGEX = /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(\S+)/i;
 
 const usageDetailsCache = new WeakMap<object, UsageDetail[]>();
@@ -88,6 +93,15 @@ function writeCachedDetails<T>(
   }
 }
 
+export function collectUsageDetailsAsync(usageData: unknown): Promise<UsageDetail[]> {
+  return new Promise((resolve) => {
+    requestIdle(() => {
+      const result = collectUsageDetails(usageData);
+      resolve(result);
+    });
+  });
+}
+
 export function collectUsageDetails(usageData: unknown): UsageDetail[] {
   const apis = getApisWithFallback(usageData);
   const cached = readCachedDetails(usageDetailsCache, usageData, apis);
@@ -101,39 +115,65 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
     }
     return [];
   }
-  const details: UsageDetail[] = [];
+  let details: UsageDetail[] = [];
   const normalizeSource = createNormalizeSource();
 
-  Object.values(apis).forEach((apiEntry) => {
-    if (!isRecord(apiEntry)) return;
+  // Pre-allocate array if possible for better performance
+  let estimatedSize = 0;
+  for (const apiEntry of Object.values(apis)) {
+    if (!isRecord(apiEntry)) continue;
     const modelsRaw = apiEntry.models;
     const models = isRecord(modelsRaw) ? modelsRaw : null;
-    if (!models) return;
+    if (!models) continue;
 
-    Object.entries(models).forEach(([modelName, modelEntry]) => {
-      if (!isRecord(modelEntry)) return;
+    for (const [modelName, modelEntry] of Object.entries(models)) {
+      if (!isRecord(modelEntry)) continue;
       const modelDetailsRaw = modelEntry.details;
       const modelDetails = Array.isArray(modelDetailsRaw) ? modelDetailsRaw : [];
+      estimatedSize += modelDetails.length;
+      // modelName is used in the second loop
+      void modelName;
+    }
+  }
 
-      modelDetails.forEach((detailRaw) => {
-        if (!isRecord(detailRaw) || typeof detailRaw.timestamp !== 'string') return;
-        const timestamp = detailRaw.timestamp;
-        const timestampMs = parseTimestampMs(detailRaw.timestamp);
-        const tokens = normalizeUsageDetailTokens(detailRaw);
-        const authIndex = normalizeAuthIndex(detailRaw.auth_index);
+  if (estimatedSize > 0) {
+    details = new Array(estimatedSize);
+    let index = 0;
 
-        details.push({
-          timestamp,
-          source: normalizeSource(detailRaw.source),
-          auth_index: authIndex,
-          tokens,
-          failed: detailRaw.failed === true,
-          __modelName: modelName,
-          __timestampMs: timestampMs,
-        });
-      });
-    });
-  });
+    for (const apiEntry of Object.values(apis)) {
+      if (!isRecord(apiEntry)) continue;
+      const modelsRaw = apiEntry.models;
+      const models = isRecord(modelsRaw) ? modelsRaw : null;
+      if (!models) continue;
+
+    for (const [modelName, modelEntry] of Object.entries(models)) {
+        if (!isRecord(modelEntry)) continue;
+        const modelDetailsRaw = modelEntry.details;
+        const modelDetails = Array.isArray(modelDetailsRaw) ? modelDetailsRaw : [];
+
+        for (const detailRaw of modelDetails) {
+          if (!isRecord(detailRaw) || typeof detailRaw.timestamp !== 'string') continue;
+          const timestamp = detailRaw.timestamp;
+          const timestampMs = parseTimestampMs(detailRaw.timestamp);
+          const tokens = normalizeUsageDetailTokens(detailRaw);
+          const authIndex = normalizeAuthIndex(detailRaw.auth_index);
+
+          details[index++] = {
+            timestamp,
+            source: normalizeSource(detailRaw.source),
+            auth_index: authIndex,
+            tokens,
+            failed: detailRaw.failed === true,
+            __modelName: modelName,
+            __timestampMs: timestampMs,
+          };
+        }
+      }
+    }
+
+    // Trim the array to actual size
+    details.length = index;
+  }
 
   writeCachedDetails(usageDetailsCache, usageData, apis, details);
   return details;

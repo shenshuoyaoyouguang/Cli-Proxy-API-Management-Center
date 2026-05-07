@@ -9,6 +9,7 @@ import {
   type ChangeEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { throttle } from 'lodash-es';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { animate } from 'motion/mini';
@@ -647,10 +648,10 @@ export function AuthFilesPage() {
       return;
     }
 
-    const updatePadding = () => {
+    const updatePadding = throttle(() => {
       const height = actionsEl.getBoundingClientRect().height;
       document.documentElement.style.setProperty('--auth-files-action-bar-height', `${height}px`);
-    };
+    }, 100);
 
     updatePadding();
     window.addEventListener('resize', updatePadding);

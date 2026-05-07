@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { NavLink, useLocation } from 'react-router';
+import { throttle } from 'lodash-es';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
@@ -235,15 +236,20 @@ export function MainLayout() {
   const abbrBrandName = t('title.abbr');
   const isLogsPage = location.pathname.startsWith('/logs');
 
+  const updateHeaderHeightRef = useRef<ReturnType<typeof throttle> | null>(null);
+
   // 将顶栏高度写入 CSS 变量，确保侧栏/内容区计算一致，防止滚动时抖动
   useLayoutEffect(() => {
-    const updateHeaderHeight = () => {
-      const height = headerRef.current?.offsetHeight;
-      if (height) {
-        document.documentElement.style.setProperty('--header-height', `${height}px`);
-      }
-    };
+    if (!updateHeaderHeightRef.current) {
+      updateHeaderHeightRef.current = throttle(() => {
+        const height = headerRef.current?.offsetHeight;
+        if (height) {
+          document.documentElement.style.setProperty('--header-height', `${height}px`);
+        }
+      }, 100);
+    }
 
+    const updateHeaderHeight = updateHeaderHeightRef.current;
     updateHeaderHeight();
 
     const resizeObserver =
@@ -261,19 +267,25 @@ export function MainLayout() {
         resizeObserver.disconnect();
       }
       window.removeEventListener('resize', updateHeaderHeight);
+      updateHeaderHeightRef.current?.cancel();
     };
   }, []);
 
+  const updateContentCenterRef = useRef<ReturnType<typeof throttle> | null>(null);
+
   // 将主内容区的中心点写入 CSS 变量，供底部浮层（配置面板操作栏、提供商导航）对齐到内容区
   useLayoutEffect(() => {
-    const updateContentCenter = () => {
-      const el = contentRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      document.documentElement.style.setProperty('--content-center-x', `${centerX}px`);
-    };
+    if (!updateContentCenterRef.current) {
+      updateContentCenterRef.current = throttle(() => {
+        const el = contentRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        document.documentElement.style.setProperty('--content-center-x', `${centerX}px`);
+      }, 100);
+    }
 
+    const updateContentCenter = updateContentCenterRef.current;
     updateContentCenter();
 
     const resizeObserver =
@@ -293,6 +305,7 @@ export function MainLayout() {
       }
       window.removeEventListener('resize', updateContentCenter);
       document.documentElement.style.removeProperty('--content-center-x');
+      updateContentCenterRef.current?.cancel();
     };
   }, []);
 

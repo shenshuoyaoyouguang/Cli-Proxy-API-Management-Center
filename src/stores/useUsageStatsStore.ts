@@ -18,6 +18,7 @@ import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
 import { parseTimestampMs } from '@/utils/timestamp';
+import { logger } from '@/utils/logger';
 import type {
   UsageDeltaDetailItem,
   UsageDeltaEvent,
@@ -552,7 +553,11 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       try {
         const [usageResponse, eventsResponse] = await Promise.all([
           usageApi.getUsage({ signal: activeAbortController.signal }),
-          usageApi.getUsageEvents({ signal: activeAbortController.signal }).catch(() => undefined),
+          usageApi.getUsageEvents({ signal: activeAbortController.signal }).catch((error) => {
+            if (error && isCanceledRequestError(error)) return undefined;
+            logger.warn('Failed to fetch usage events', { error });
+            return undefined;
+          }),
         ]);
 
         const rawUsage = usageResponse?.usage ?? usageResponse;
@@ -600,7 +605,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         });
       } catch (error: unknown) {
         // Ignore AbortError — it means the request was intentionally cancelled (StrictMode or logout)
-        if (isCanceledRequestError(error)) {
+        if (error && isCanceledRequestError(error)) {
           if (requestId === usageRequestToken) {
             set({
               loading: false,

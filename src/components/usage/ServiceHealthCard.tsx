@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { throttle } from 'lodash-es';
 import { useTranslation } from 'react-i18next';
 import {
   calculateServiceHealthData,
@@ -126,13 +127,13 @@ export function ServiceHealthCard({ details, loading, healthData: providedHealth
   useEffect(() => {
     if (!activeTooltip) return;
 
-    const updateTooltipPosition = () => {
+    const updateTooltipPosition = throttle(() => {
       if (!document.body.contains(activeTooltip.anchorEl)) {
         setActiveTooltip(null);
         return;
       }
       setActiveTooltip(buildTooltipState(activeTooltip.idx, activeTooltip.anchorEl));
-    };
+    }, 100);
 
     window.addEventListener('resize', updateTooltipPosition);
     window.addEventListener('scroll', updateTooltipPosition, true);

@@ -1,5 +1,6 @@
 import { CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { throttle } from 'lodash-es';
 import { useLocation } from 'react-router';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { useThemeStore } from '@/stores';
@@ -126,20 +127,38 @@ export function ProviderNav() {
     setActiveProvider(currentActive);
   }, [getHeaderHeight, getScrollContainer]);
 
+  // 使用 ref 存储 throttle 实例，避免重复创建
+  // eslint-disable-next-line react-hooks/refs
+  const throttledScrollRef = useRef(throttle(handleScroll, 16));
+  // eslint-disable-next-line react-hooks/refs
+  const throttledResizeRef = useRef(throttle(handleScroll, 16));
+
+  // 当 handleScroll 变化时，更新 throttle 包装的函数
+  useEffect(() => {
+    throttledScrollRef.current.cancel();
+    throttledResizeRef.current.cancel();
+    throttledScrollRef.current = throttle(handleScroll, 16);
+    throttledResizeRef.current = throttle(handleScroll, 16);
+  }, [handleScroll]);
+
   useEffect(() => {
     if (!shouldShow) return;
     const contentScroller = getContentScroller();
+    const throttledScroll = throttledScrollRef.current;
+    const throttledResize = throttledResizeRef.current;
 
     // Listen to both: desktop scroll happens on `.content`; mobile uses `window`.
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    contentScroller?.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', handleScroll);
+    window.addEventListener('scroll', throttledScroll, { passive: true });
+    contentScroller?.addEventListener('scroll', throttledScroll, { passive: true });
+    window.addEventListener('resize', throttledResize);
     const raf = requestAnimationFrame(handleScroll);
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-      contentScroller?.removeEventListener('scroll', handleScroll);
+      throttledScroll.cancel();
+      throttledResize.cancel();
+      window.removeEventListener('scroll', throttledScroll);
+      window.removeEventListener('resize', throttledResize);
+      contentScroller?.removeEventListener('scroll', throttledScroll);
     };
   }, [getContentScroller, handleScroll, shouldShow]);
 
@@ -179,10 +198,10 @@ export function ProviderNav() {
     const el = navContainerRef.current;
     if (!el) return;
 
-    const updateHeight = () => {
+    const updateHeight = throttle(() => {
       const height = el.getBoundingClientRect().height;
       document.documentElement.style.setProperty('--provider-nav-height', `${height}px`);
-    };
+    }, 100);
 
     updateHeight();
     window.addEventListener('resize', updateHeight);
@@ -192,6 +211,7 @@ export function ProviderNav() {
 
     return () => {
       ro?.disconnect();
+      updateHeight.cancel();
       window.removeEventListener('resize', updateHeight);
       document.documentElement.style.removeProperty('--provider-nav-height');
     };
@@ -223,9 +243,10 @@ export function ProviderNav() {
 
   useEffect(() => {
     if (!shouldShow) return;
-    const handleResize = () => updateIndicator(activeProvider);
+    const handleResize = throttle(() => updateIndicator(activeProvider), 100);
     window.addEventListener('resize', handleResize);
     return () => {
+      handleResize.cancel();
       window.removeEventListener('resize', handleResize);
     };
   }, [activeProvider, shouldShow, updateIndicator]);

@@ -56,7 +56,10 @@
     "model_alias_placeholder": "模型別名（選填）",
     "invalid_provider_index": "無效的供應商索引。",
     "unsaved_changes_title": "未儲存的變更",
-    "unsaved_changes_message": "你有未儲存的變更，離開後將遺失這些變更。確定要離開嗎？"
+    "unsaved_changes_message": "你有未儲存的變更，離開後將遺失這些變更。確定要離開嗎？",
+    "error_boundary_title": "出錯了",
+    "error_boundary_message": "發生了意外錯誤，請嘗試重新載入頁面。",
+    "reload_page": "重新載入頁面"
   },
   "title": {
     "main": "CLI Proxy API Management Center",

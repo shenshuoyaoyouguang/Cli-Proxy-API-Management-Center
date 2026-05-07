@@ -10,6 +10,7 @@ import {
   type DragEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
+import { throttle } from 'lodash-es';
 import { useTranslation } from 'react-i18next';
 import type { OAuthModelAliasEntry } from '@/types';
 import { useThemeStore } from '@/stores';
@@ -299,10 +300,11 @@ export const ModelMappingDiagram = forwardRef<ModelMappingDiagramRef, ModelMappi
     useLayoutEffect(() => {
       // updateLines is called after layout is calculated, ensuring elements are in place.
       const raf = requestAnimationFrame(updateLines);
-      window.addEventListener('resize', updateLines);
+      const throttledUpdateLines = throttle(updateLines, 100);
+      window.addEventListener('resize', throttledUpdateLines);
       return () => {
         cancelAnimationFrame(raf);
-        window.removeEventListener('resize', updateLines);
+        window.removeEventListener('resize', throttledUpdateLines);
       };
     }, [updateLines, aliasNodes]);
 

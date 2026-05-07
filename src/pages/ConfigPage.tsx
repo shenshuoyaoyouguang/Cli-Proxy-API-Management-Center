@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { throttle } from 'lodash-es';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import type { ReactCodeMirrorRef } from '@uiw/react-codemirror';
@@ -41,6 +42,7 @@ function readCommercialModeFromYaml(yamlContent: string): boolean {
 export function ConfigPage() {
   const { t } = useTranslation();
   const pageTransitionLayer = usePageTransitionLayer();
+  const updatePaddingRef = useRef<ReturnType<typeof throttle> | null>(null);
   const isCurrentLayer = pageTransitionLayer ? pageTransitionLayer.isCurrentLayer : true;
   const showNotification = useNotificationStore((state) => state.showNotification);
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
@@ -381,11 +383,15 @@ export function ConfigPage() {
     const actionsEl = floatingActionsRef.current;
     if (!actionsEl) return;
 
-    const updatePadding = () => {
-      const height = actionsEl.getBoundingClientRect().height;
-      document.documentElement.style.setProperty('--config-action-bar-height', `${height}px`);
-    };
+    if (!updatePaddingRef.current) {
+      updatePaddingRef.current = throttle(() => {
+        if (!actionsEl) return;
+        const height = actionsEl.getBoundingClientRect().height;
+        document.documentElement.style.setProperty('--config-action-bar-height', `${height}px`);
+      }, 100);
+    }
 
+    const updatePadding = updatePaddingRef.current;
     updatePadding();
     window.addEventListener('resize', updatePadding);
 

@@ -9,6 +9,7 @@ import {
   type CSSProperties,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { throttle } from 'lodash-es';
 import { IconCheck, IconChevronDown } from './icons';
 import { type SelectOption } from './Select';
 import styles from './Select.module.scss';
@@ -144,9 +145,9 @@ export function MultiSelect({
 
     updateDropdownStyle();
 
-    const handleViewportChange = () => {
+    const handleViewportChange = throttle(() => {
       scheduleDropdownStyleUpdate();
-    };
+    }, 100);
 
     const resizeObserver =
       typeof ResizeObserver !== 'undefined' && wrapRef.current

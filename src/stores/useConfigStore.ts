@@ -208,7 +208,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       return section ? extractSectionValue(data, section) : data;
     } catch (error: unknown) {
       // Ignore AbortError — it means the request was intentionally cancelled (e.g., StrictMode double-invoke or logout)
-      if (isCanceledRequestError(error)) {
+      if (error && isCanceledRequestError(error)) {
         return section
           ? get().config
             ? extractSectionValue(get().config, section)

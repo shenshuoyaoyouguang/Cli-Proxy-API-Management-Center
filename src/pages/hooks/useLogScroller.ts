@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { throttle } from 'lodash-es';
 import type { Dispatch, RefObject, SetStateAction, UIEvent } from 'react';
 import type { LogState } from './logTypes';
 
@@ -137,15 +138,16 @@ export function useLogScroller(options: UseLogScrollerOptions): UseLogScrollerRe
   ]);
 
   useEffect(() => {
-    const onResize = () => {
+    const onResize = throttle(() => {
       window.requestAnimationFrame(() => {
         tryAutoLoadMoreUntilScrollable();
       });
-    };
+    }, 100);
 
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
+      onResize.cancel();
     };
   }, [tryAutoLoadMoreUntilScrollable]);
 

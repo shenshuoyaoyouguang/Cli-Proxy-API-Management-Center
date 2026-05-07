@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { throttle } from 'lodash-es';
 import { useTranslation } from 'react-i18next';
 import { usePageTransitionLayer } from '@/components/common/PageTransitionLayer';
 import { Input } from '@/components/ui/Input';
@@ -449,16 +450,16 @@ export function VisualConfigEditor({
       floatingElement.style.pointerEvents = isVisible ? 'auto' : 'none';
     };
 
-    const requestPositionUpdate = () => {
+    const requestPositionUpdate = throttle(() => {
       if (frameId) cancelAnimationFrame(frameId);
       frameId = requestAnimationFrame(updateFloatingPosition);
-    };
+    }, 16); // ~60fps
 
-    const handleResize = () => {
+    const handleResize = throttle(() => {
       headerHeight = computeHeaderHeight();
       cachedFloatingHeight = floatingElement.getBoundingClientRect().height || cachedFloatingHeight;
       requestPositionUpdate();
-    };
+    }, 100);
 
     requestPositionUpdate();
 

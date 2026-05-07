@@ -54,6 +54,63 @@ const shouldIgnoreFailureForHealth = (status: number | undefined, message: strin
 const createStorageKey = (scopeKey: string) =>
   `${ACCOUNT_HEALTH_STORAGE_PREFIX}:${encodeURIComponent(scopeKey)}`;
 
+const VALID_DEGRADED_REASONS = new Set<DegradedReason>([
+  '401_unauthorized',
+  '403_forbidden',
+  '429_rate_limited',
+  'server_error',
+  'timeout',
+  'manual',
+]);
+
+const normalizeAccountHealthStateEntry = (state: unknown): AccountHealthState | null => {
+  if (!state || typeof state !== 'object') return null;
+  const s = state as Record<string, unknown>;
+
+  const degraded = s.degraded === true;
+  const degradedReason =
+    typeof s.degradedReason === 'string' && VALID_DEGRADED_REASONS.has(s.degradedReason as DegradedReason)
+      ? (s.degradedReason as DegradedReason)
+      : undefined;
+  const degradedStatus =
+    typeof s.degradedStatus === 'number' && Number.isFinite(s.degradedStatus)
+      ? s.degradedStatus
+      : undefined;
+  const degradedMessage =
+    typeof s.degradedMessage === 'string' ? s.degradedMessage : undefined;
+  const consecutiveFailures =
+    typeof s.consecutiveFailures === 'number' && Number.isFinite(s.consecutiveFailures)
+      ? Math.max(0, Math.floor(s.consecutiveFailures))
+      : 0;
+  const failureStatuses =
+    Array.isArray(s.failureStatuses)
+      ? s.failureStatuses.filter((v: unknown) => typeof v === 'number' && Number.isFinite(v))
+      : [];
+  const degradedAt =
+    typeof s.degradedAt === 'number' && Number.isFinite(s.degradedAt) ? s.degradedAt : undefined;
+  const cooldownUntil =
+    s.cooldownUntil === null
+      ? null
+      : typeof s.cooldownUntil === 'number' && Number.isFinite(s.cooldownUntil)
+        ? s.cooldownUntil
+        : undefined;
+  const manualDegraded = s.manualDegraded === true;
+  const stale = s.stale === true;
+
+  return {
+    degraded,
+    degradedReason,
+    degradedStatus,
+    degradedMessage,
+    consecutiveFailures,
+    failureStatuses,
+    degradedAt,
+    cooldownUntil,
+    manualDegraded,
+    stale,
+  };
+};
+
 const normalizeHealthMap = (value: unknown): AccountHealthMap => {
   if (!value || typeof value !== 'object') {
     return {};
@@ -62,11 +119,14 @@ const normalizeHealthMap = (value: unknown): AccountHealthMap => {
   return Object.entries(value as Record<string, unknown>).reduce<AccountHealthMap>((result, entry) => {
     const [name, state] = entry;
     const normalizedName = String(name ?? '').trim();
-    if (!normalizedName || !state || typeof state !== 'object') {
+    if (!normalizedName) {
       return result;
     }
 
-    result[normalizedName] = state as AccountHealthState;
+    const normalized = normalizeAccountHealthStateEntry(state);
+    if (normalized) {
+      result[normalizedName] = normalized;
+    }
     return result;
   }, {});
 };

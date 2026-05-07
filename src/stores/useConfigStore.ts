@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import type { Config } from '@/types';
 import type { RawConfigSection } from '@/types/config';
 import { configApi } from '@/services/api/config';
+import { normalizeConfigResponse } from '@/services/api/transformers';
 import { CACHE_EXPIRY_MS } from '@/utils/constants';
 import { CacheLayer } from '@/services/cache';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
@@ -355,11 +356,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   restoreFromPersistence: (scopeKey: string) => {
     if (!scopeKey) return;
 
-    const entry = CacheLayer.get<Config>('config', scopeKey);
+    const entry = CacheLayer.get<unknown>('config', scopeKey);
     if (!entry) return;
 
+    const data = normalizeConfigResponse(entry.data);
     const now = Date.now();
-    const data = entry.data;
     const newCache = new Map<string, ConfigCache>();
 
     newCache.set('__full__', { data, timestamp: now });

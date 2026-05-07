@@ -92,6 +92,7 @@
     "error_invalid": "Connection failed, please check address and key",
     "error_network": "Network connection failed, please check your network or server address",
     "error_timeout": "Connection timed out, server not responding",
+    "error_bad_request": "Bad request, please check your input",
     "error_unauthorized": "Authentication failed, invalid management key",
     "error_forbidden": "Access denied, insufficient permissions",
     "error_not_found": "Server address invalid or management API not enabled",

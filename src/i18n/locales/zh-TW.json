@@ -91,6 +91,7 @@
     "error_invalid": "連線失敗，請檢查位址和金鑰",
     "error_network": "網路連線失敗，請檢查網路或伺服器位址",
     "error_timeout": "連線逾時，伺服器無回應",
+    "error_bad_request": "請求參數錯誤，請檢查輸入",
     "error_unauthorized": "驗證失敗，管理金鑰無效",
     "error_forbidden": "存取被拒絕，權限不足",
     "error_not_found": "伺服器位址無效或管理介面未啟用",

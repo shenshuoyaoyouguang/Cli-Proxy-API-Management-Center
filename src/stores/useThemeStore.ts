@@ -109,6 +109,17 @@ export const useThemeStore = create<ThemeState>()(
     }),
     {
       name: STORAGE_KEY_THEME,
+      merge: (persistedState, currentState) => {
+        const VALID_THEMES: Theme[] = ['light', 'white', 'dark', 'auto'];
+        const persistedTheme = (persistedState as Partial<ThemeState>)?.theme;
+        if (typeof persistedTheme === 'string' && VALID_THEMES.includes(persistedTheme as Theme)) {
+          return {
+            ...currentState,
+            theme: persistedTheme as Theme,
+          };
+        }
+        return currentState;
+      },
     }
   )
 );

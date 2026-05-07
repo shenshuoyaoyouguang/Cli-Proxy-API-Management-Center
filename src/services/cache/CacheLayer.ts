@@ -181,6 +181,10 @@ class CacheLayerImpl {
 
       // TTL 过期检查
       if (entry.maxAgeMs > 0 && now - entry.timestamp > entry.maxAgeMs) {
+        const removedSize = (entry as CacheEntry<unknown> & { _size?: number })._size ?? estimateBytes(raw);
+        if (this.estimatedTotalBytes !== null) {
+          this.estimatedTotalBytes = Math.max(0, this.estimatedTotalBytes - removedSize);
+        }
         localStorage.removeItem(fullKey);
         if (import.meta.env.DEV) {
           console.debug(`[CacheLayer] EXPIRED: ${debugKey}`);
@@ -258,20 +262,29 @@ class CacheLayerImpl {
    */
   invalidate(key: string, scopeKey?: string): void {
     if (scopeKey !== undefined) {
-      localStorage.removeItem(buildKey(scopeKey, key));
+      const fullKey = buildKey(scopeKey, key);
+      const raw = localStorage.getItem(fullKey);
+      if (raw && this.estimatedTotalBytes !== null) {
+        this.estimatedTotalBytes = Math.max(0, this.estimatedTotalBytes - estimateBytes(raw));
+      }
+      localStorage.removeItem(fullKey);
     } else {
-      // 全局匹配：遍历所有缓存 key，删除 dataKey 匹配的条目
       const prefix = `${CACHE_PREFIX}:`;
-      const toRemove: string[] = [];
+      const toRemove: Array<{ fullKey: string; size: number }> = [];
       for (let i = 0; i < localStorage.length; i++) {
         const fullKey = localStorage.key(i);
         if (!fullKey || !fullKey.startsWith(prefix)) continue;
         const parsed = parseFullKey(fullKey);
         if (parsed && parsed.dataKey === key) {
-          toRemove.push(fullKey);
+          const raw = localStorage.getItem(fullKey);
+          toRemove.push({ fullKey, size: raw ? estimateBytes(raw) : 0 });
         }
       }
-      toRemove.forEach((k) => localStorage.removeItem(k));
+      if (this.estimatedTotalBytes !== null) {
+        const totalRemoved = toRemove.reduce((sum, e) => sum + e.size, 0);
+        this.estimatedTotalBytes = Math.max(0, this.estimatedTotalBytes - totalRemoved);
+      }
+      toRemove.forEach((e) => localStorage.removeItem(e.fullKey));
     }
   }
 
@@ -279,7 +292,16 @@ class CacheLayerImpl {
    * 失效整个 scope 域（换账号时调用）
    */
   invalidateScope(scopeKey: string): void {
-    collectScopeKeys(scopeKey).forEach((k) => localStorage.removeItem(k));
+    const keys = collectScopeKeys(scopeKey);
+    if (keys.length > 0 && this.estimatedTotalBytes !== null) {
+      let totalRemoved = 0;
+      for (const k of keys) {
+        const raw = localStorage.getItem(k);
+        if (raw) totalRemoved += estimateBytes(raw);
+      }
+      this.estimatedTotalBytes = Math.max(0, this.estimatedTotalBytes - totalRemoved);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
   }
 
   /**

@@ -33,6 +33,9 @@ function getLocalizedErrorMessage(error: unknown, t: (key: string) => string): s
           : '';
 
   // 根据 HTTP 状态码判断
+  if (status === 400) {
+    return t('login.error_bad_request');
+  }
   if (status === 401) {
     return t('login.error_unauthorized');
   }

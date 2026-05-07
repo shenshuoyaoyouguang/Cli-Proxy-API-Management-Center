@@ -33,6 +33,17 @@ let inFlightModelsRequest: { id: number; apiBase: string; promise: Promise<Model
 // 5分钟缓存，模型列表相对稳定
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 
+const isValidModelInfo = (item: unknown): item is ModelInfo => {
+  if (!item || typeof item !== 'object') return false;
+  const obj = item as Record<string, unknown>;
+  return typeof obj.name === 'string' && obj.name.trim() !== '';
+};
+
+const normalizeModelInfoArray = (data: unknown): ModelInfo[] => {
+  if (!Array.isArray(data)) return [];
+  return data.filter(isValidModelInfo);
+};
+
 export const useModelsStore = create<ModelsState>((set, get) => ({
   models: [],
   loading: false,
@@ -44,9 +55,10 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     if (!authBase || !managementKey) return null;
 
     const scopeKey = `${authBase}::${managementKey}`;
-    const entry = CacheLayer.get<ModelInfo[]>('models', scopeKey);
+    const entry = CacheLayer.get<unknown>('models', scopeKey);
     if (entry) {
-      const cached = entry.data;
+      const cached = normalizeModelInfoArray(entry.data);
+      if (cached.length === 0) return null;
       const cacheEntry: ModelsCache = { data: cached, timestamp: Date.now(), apiBase };
       set((state) => {
         const nextCache = new Map(state.cache);

@@ -2,6 +2,7 @@
  * AI 提供商相关 API
  */
 
+import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
 import {
   normalizeGeminiKeyConfig,
@@ -15,7 +16,7 @@ import type {
   ApiKeyEntry,
   ModelAlias
 } from '@/types';
-import { isRecord } from '@/atoms/usage/guards';
+import { isRecord } from '@/utils/usageRecord';
 
 const serializeHeaders = (headers?: Record<string, string>) => (headers && Object.keys(headers).length ? headers : undefined);
 
@@ -144,8 +145,8 @@ const serializeOpenAIProvider = (provider: OpenAIProviderConfig) => {
 };
 
 export const providersApi = {
-  async getGeminiKeys(): Promise<GeminiKeyConfig[]> {
-    const data = await apiClient.get('/gemini-api-key');
+  async getGeminiKeys(config?: AxiosRequestConfig): Promise<GeminiKeyConfig[]> {
+    const data = await apiClient.get('/gemini-api-key', config);
     const list = extractArrayPayload(data, 'gemini-api-key');
     return list.map((item) => normalizeGeminiKeyConfig(item)).filter(Boolean) as GeminiKeyConfig[];
   },
@@ -159,8 +160,8 @@ export const providersApi = {
   deleteGeminiKey: (apiKey: string, baseUrl?: string) =>
     apiClient.delete('/gemini-api-key', { data: buildProviderDeletePayload(apiKey, baseUrl) }),
 
-  async getCodexConfigs(): Promise<ProviderKeyConfig[]> {
-    const data = await apiClient.get('/codex-api-key');
+  async getCodexConfigs(config?: AxiosRequestConfig): Promise<ProviderKeyConfig[]> {
+    const data = await apiClient.get('/codex-api-key', config);
     const list = extractArrayPayload(data, 'codex-api-key');
     return list.map((item) => normalizeProviderKeyConfig(item)).filter(Boolean) as ProviderKeyConfig[];
   },
@@ -174,8 +175,8 @@ export const providersApi = {
   deleteCodexConfig: (apiKey: string, baseUrl?: string) =>
     apiClient.delete('/codex-api-key', { data: buildProviderDeletePayload(apiKey, baseUrl) }),
 
-  async getClaudeConfigs(): Promise<ProviderKeyConfig[]> {
-    const data = await apiClient.get('/claude-api-key');
+  async getClaudeConfigs(config?: AxiosRequestConfig): Promise<ProviderKeyConfig[]> {
+    const data = await apiClient.get('/claude-api-key', config);
     const list = extractArrayPayload(data, 'claude-api-key');
     return list.map((item) => normalizeProviderKeyConfig(item)).filter(Boolean) as ProviderKeyConfig[];
   },
@@ -189,8 +190,8 @@ export const providersApi = {
   deleteClaudeConfig: (apiKey: string, baseUrl?: string) =>
     apiClient.delete('/claude-api-key', { data: buildProviderDeletePayload(apiKey, baseUrl) }),
 
-  async getVertexConfigs(): Promise<ProviderKeyConfig[]> {
-    const data = await apiClient.get('/vertex-api-key');
+  async getVertexConfigs(config?: AxiosRequestConfig): Promise<ProviderKeyConfig[]> {
+    const data = await apiClient.get('/vertex-api-key', config);
     const list = extractArrayPayload(data, 'vertex-api-key');
     return list.map((item) => normalizeProviderKeyConfig(item)).filter(Boolean) as ProviderKeyConfig[];
   },
@@ -204,8 +205,8 @@ export const providersApi = {
   deleteVertexConfig: (apiKey: string, baseUrl?: string) =>
     apiClient.delete('/vertex-api-key', { data: buildProviderDeletePayload(apiKey, baseUrl) }),
 
-  async getOpenAIProviders(): Promise<OpenAIProviderConfig[]> {
-    const data = await apiClient.get('/openai-compatibility');
+  async getOpenAIProviders(config?: AxiosRequestConfig): Promise<OpenAIProviderConfig[]> {
+    const data = await apiClient.get('/openai-compatibility', config);
     const list = extractArrayPayload(data, 'openai-compatibility');
     return list.map((item) => normalizeOpenAIProvider(item)).filter(Boolean) as OpenAIProviderConfig[];
   },

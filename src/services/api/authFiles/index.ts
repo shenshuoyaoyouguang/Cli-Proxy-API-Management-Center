@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from '../client';
 import type { AuthFilesResponse } from '@/types/authFile';
 import type { OAuthModelAliasEntry } from '@/types';
@@ -59,7 +60,8 @@ const saveAuthFileText = async (name: string, text: string) => {
 const OAUTH_MODEL_ALIAS_ENDPOINT = '/oauth-model-alias';
 
 export const authFilesApi = {
-  list: async () => dedupeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/auth-files')),
+  list: async (config?: AxiosRequestConfig) =>
+    dedupeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/auth-files', config)),
 
   setStatus: (name: string, options: boolean | AuthFileStatusOptions) =>
     apiClient.patch<AuthFileStatusResponse>('/auth-files/status', {

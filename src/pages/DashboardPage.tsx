@@ -60,18 +60,25 @@ export function DashboardPage() {
   }, [connectionStatus, config, fetchConfig]);
 
   useEffect(() => {
+    const abortController = new AbortController();
+    let active = true;
+
     const fetchStats = async () => {
       setLoading(true);
       try {
         const [keysRes, filesRes, geminiRes, codexRes, claudeRes, openaiRes] =
           await Promise.allSettled([
-            apiKeysApi.list(),
-            authFilesApi.list(),
-            providersApi.getGeminiKeys(),
-            providersApi.getCodexConfigs(),
-            providersApi.getClaudeConfigs(),
-            providersApi.getOpenAIProviders(),
+            apiKeysApi.list({ signal: abortController.signal }),
+            authFilesApi.list({ signal: abortController.signal }),
+            providersApi.getGeminiKeys({ signal: abortController.signal }),
+            providersApi.getCodexConfigs({ signal: abortController.signal }),
+            providersApi.getClaudeConfigs({ signal: abortController.signal }),
+            providersApi.getOpenAIProviders({ signal: abortController.signal }),
           ]);
+
+        if (!active || abortController.signal.aborted) {
+          return;
+        }
 
         setStats({
           apiKeys: keysRes.status === 'fulfilled' ? keysRes.value.length : null,
@@ -85,15 +92,22 @@ export function DashboardPage() {
           openai: openaiRes.status === 'fulfilled' ? openaiRes.value.length : null,
         });
       } finally {
-        setLoading(false);
+        if (active && !abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     if (connectionStatus === 'connected') {
-      fetchStats();
+      void fetchStats();
     } else {
       setLoading(false);
     }
+
+    return () => {
+      active = false;
+      abortController.abort();
+    };
   }, [connectionStatus]);
 
   // Calculate total provider keys only when all provider stats are available.

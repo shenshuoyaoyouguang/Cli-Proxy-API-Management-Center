@@ -27,6 +27,20 @@ function createMockStreamResponse(chunks: string[], options?: { status?: number;
   });
 }
 
+function createOpenStreamResponse(chunk: string): Response {
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(chunk));
+    },
+  });
+
+  return new Response(readable, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+}
+
 const createHandler = (): UsageSSEHandler => ({
   onDelta: vi.fn(),
   onFull: vi.fn(),
@@ -51,7 +65,7 @@ describe('UsageSSEService', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends token via URL query parameter instead of Authorization header', async () => {
+  it('sends token via Authorization header by default', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
 
@@ -61,11 +75,10 @@ describe('UsageSSEService', () => {
     await vi.runOnlyPendingTimersAsync();
 
     const calledUrl = fetchSpy.mock.calls[0][0] as string;
-    expect(calledUrl).toContain('token=management-key');
     expect(calledUrl).toContain('/v0/management/usage/stream');
-    expect(calledUrl).not.toContain('Authorization');
+    expect(calledUrl).not.toContain('token=management-key');
     const fetchOptions = fetchSpy.mock.calls[0][1] as RequestInit;
-    expect(fetchOptions.headers).not.toHaveProperty('Authorization');
+    expect(fetchOptions.headers).toHaveProperty('Authorization', 'Bearer management-key');
   });
 
   it('sends Last-Event-ID query parameter when reconnecting with cached event id', async () => {
@@ -93,31 +106,43 @@ describe('UsageSSEService', () => {
     service.disconnect();
   });
 
-  it('triggers onAuthError on 401 response', async () => {
+  it('falls back to query auth when header auth is rejected once', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
 
-    fetchSpy.mockResolvedValue(createMockStreamResponse([], { status: 401, statusText: 'Unauthorized' }));
+    fetchSpy
+      .mockResolvedValueOnce(createMockStreamResponse([], { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(createOpenStreamResponse('event:usage:heartbeat\ndata:{}\n\n'));
     service.connect('http://localhost:3000', 'bad-key', handler);
 
     await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const firstRequestOptions = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(firstRequestOptions.headers).toHaveProperty('Authorization', 'Bearer bad-key');
+    expect(String(fetchSpy.mock.calls[0][0])).not.toContain('token=bad-key');
+    expect(String(fetchSpy.mock.calls[1][0])).toContain('token=bad-key');
+    expect(handler.onAuthError).not.toHaveBeenCalled();
+    service.disconnect();
+  });
+
+  it('triggers onAuthError when both header and query auth fail', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy
+      .mockResolvedValueOnce(createMockStreamResponse([], { status: 401, statusText: 'Unauthorized' }))
+      .mockResolvedValueOnce(createMockStreamResponse([], { status: 403, statusText: 'Forbidden' }));
+    service.connect('http://localhost:3000', 'bad-key', handler);
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(handler.onAuthError).toHaveBeenCalledTimes(1);
     expect(service.getConnectionStatus()).toBe('degraded');
-  });
-
-  it('triggers onAuthError on 403 response', async () => {
-    const service = new UsageSSEServiceImpl();
-    const handler = createHandler();
-
-    fetchSpy.mockResolvedValue(createMockStreamResponse([], { status: 403, statusText: 'Forbidden' }));
-    service.connect('http://localhost:3000', 'bad-key', handler);
-
-    await vi.runOnlyPendingTimersAsync();
-    await Promise.resolve();
-
-    expect(handler.onAuthError).toHaveBeenCalledTimes(1);
   });
 
   it('disconnects and aborts the fetch stream', async () => {
@@ -565,8 +590,9 @@ describe('UsageSSEService', () => {
     await vi.runOnlyPendingTimersAsync();
 
     const calledUrl = fetchSpy.mock.calls[1][0] as string;
-    expect(calledUrl).toContain('token=new-key');
-    expect(calledUrl).not.toContain('test-key');
+    const fetchOptions = fetchSpy.mock.calls[1][1] as RequestInit;
+    expect(calledUrl).not.toContain('token=new-key');
+    expect(fetchOptions.headers).toHaveProperty('Authorization', 'Bearer new-key');
     service.disconnect();
   });
 

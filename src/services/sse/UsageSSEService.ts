@@ -17,6 +17,8 @@ type UsageSSEConnectOptions = {
   resetRetryState?: boolean;
 };
 
+type UsageSSEAuthMode = 'header' | 'query';
+
 type ParsedSSEEvent = {
   eventType: string;
   id: string;
@@ -200,6 +202,8 @@ export class UsageSSEServiceImpl {
   private sseBuffer = { value: '' };
   private isConnecting = false;
   private lastEventId = '';
+  private authMode: UsageSSEAuthMode = 'header';
+  private hasTriedQueryFallback = false;
 
   connect(
     baseUrl: string,
@@ -208,12 +212,14 @@ export class UsageSSEServiceImpl {
     options: UsageSSEConnectOptions = {}
   ): void {
     const { resetRetryState = true } = options;
-    this.disconnect();
+    this.abortStream();
     this.handler = handler;
     this.baseUrl = baseUrl;
     this.token = token;
     if (resetRetryState) {
       this.resetRetryState();
+      this.authMode = 'header';
+      this.hasTriedQueryFallback = false;
     }
 
     this.connectionStatus = 'connecting';
@@ -226,6 +232,8 @@ export class UsageSSEServiceImpl {
     this.baseUrl = '';
     this.token = '';
     this.connectionStatus = 'disconnected';
+    this.authMode = 'header';
+    this.hasTriedQueryFallback = false;
   }
 
   private abortStream(): void {
@@ -257,21 +265,33 @@ export class UsageSSEServiceImpl {
     this.abortController = new AbortController();
 
     const url = new URL(`${this.baseUrl}${MANAGEMENT_API_PREFIX}/usage/stream`);
-    url.searchParams.set('token', this.token);
+    if (this.authMode === 'query') {
+      url.searchParams.set('token', this.token);
+    }
     if (this.lastEventId) {
       url.searchParams.set('Last-Event-ID', this.lastEventId);
     }
 
+    const headers: Record<string, string> = {
+      Accept: 'text/event-stream',
+    };
+    if (this.authMode === 'header') {
+      headers.Authorization = `Bearer ${this.token}`;
+    }
+
     fetch(url.toString(), {
-      headers: {
-        Accept: 'text/event-stream',
-      },
+      headers,
       signal: this.abortController.signal,
     })
       .then((response) => {
         this.isConnecting = false;
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) {
+            if (this.shouldRetryWithLegacyQueryAuth()) {
+              this.connectionStatus = 'connecting';
+              this.startFetchStream();
+              return;
+            }
             this.handleAuthErrorEvent();
             return;
           }
@@ -280,6 +300,7 @@ export class UsageSSEServiceImpl {
         }
 
         this.resetRetryState();
+        this.hasTriedQueryFallback = false;
         this.connectionStatus = 'connected';
 
         const reader = response.body?.getReader();
@@ -395,6 +416,16 @@ export class UsageSSEServiceImpl {
     if (this.connectionStatus === 'disconnected') return;
     this.connectionStatus = 'connecting';
     this.scheduleReconnect();
+  }
+
+  private shouldRetryWithLegacyQueryAuth(): boolean {
+    if (this.authMode !== 'header' || this.hasTriedQueryFallback) {
+      return false;
+    }
+
+    this.hasTriedQueryFallback = true;
+    this.authMode = 'query';
+    return true;
   }
 
   private scheduleReconnect(): void {

@@ -1,4 +1,5 @@
 import type { UsageDetail, ModelPrice } from './types';
+import { normalizeUsageTokens } from '@/utils/usageTokenNormalizer';
 
 const TOKENS_PER_PRICE_UNIT = 1_000_000;
 const RPM_TPM_PER_PRICE_UNIT = 1_000;
@@ -16,19 +17,10 @@ export function calculateCost(
   if (!tokens) {
     return 0;
   }
-  const rawInputTokens = Number(tokens.input_tokens);
-  const rawCompletionTokens = Number(tokens.output_tokens);
-  const rawCachedTokensPrimary = Number(tokens.cached_tokens);
-  const rawCachedTokensAlternate = Number(tokens.cache_tokens);
-
-  const inputTokens = Number.isFinite(rawInputTokens) ? Math.max(rawInputTokens, 0) : 0;
-  const completionTokens = Number.isFinite(rawCompletionTokens)
-    ? Math.max(rawCompletionTokens, 0)
-    : 0;
-  const cachedTokens = Math.max(
-    Number.isFinite(rawCachedTokensPrimary) ? Math.max(rawCachedTokensPrimary, 0) : 0,
-    Number.isFinite(rawCachedTokensAlternate) ? Math.max(rawCachedTokensAlternate, 0) : 0
-  );
+  const normalizedTokens = normalizeUsageTokens(tokens);
+  const inputTokens = normalizedTokens.input_tokens;
+  const completionTokens = normalizedTokens.output_tokens;
+  const cachedTokens = normalizedTokens.cached_tokens;
   const promptTokens = Math.max(inputTokens - cachedTokens, 0);
 
   const promptCost = (promptTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.prompt) || 0);

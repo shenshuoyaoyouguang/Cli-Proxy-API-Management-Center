@@ -1,0 +1,74 @@
+@use '../../styles/variables' as *;
+@use '../../styles/mixins' as *;
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: $radius-full;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  white-space: nowrap;
+
+  &.interactive {
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.85;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 1px;
+    }
+  }
+
+  &.up {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.3);
+  }
+
+  &.down {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  &.neutral {
+    color: var(--text-tertiary);
+    background: var(--bg-tertiary);
+    border-color: var(--border-color);
+  }
+
+  &.loading {
+    padding: 4px 12px;
+  }
+}
+
+.arrow {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.value {
+  line-height: 1;
+}
+
+.period {
+  font-size: 10px;
+  opacity: 0.75;
+  margin-left: 1px;
+}
+
+.skeleton {
+  display: block;
+  width: 48px;
+  height: 14px;
+  border-radius: $radius-full;
+  background: var(--bg-tertiary);
+}

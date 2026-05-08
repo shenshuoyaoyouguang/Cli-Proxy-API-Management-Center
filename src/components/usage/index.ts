@@ -11,9 +11,24 @@ export { useSparklines } from './hooks/useSparklines';
 export type {
   SparklineData,
   SparklineBundle,
+  DaySparklineBundle,
+  PeriodSparklineBundle,
+  TrendPeriod,
   UseSparklinesOptions,
   UseSparklinesReturn,
 } from './hooks/useSparklines';
+
+export { useMetricTrend } from './hooks/useMetricTrend';
+export type { MetricTrend, MetricType } from './hooks/useMetricTrend';
+
+export { useQuotaStatus } from './hooks/useQuotaStatus';
+export type { QuotaStatusItem } from './hooks/useQuotaStatus';
+
+export { QuotaRing } from './QuotaRing';
+export type { QuotaAlertLevel } from './types';
+
+export { useMetricCorrelation } from './hooks/useMetricCorrelation';
+export type { MetricCorrelation } from './hooks/useMetricCorrelation';
 
 export { useUsageAnalyticsSnapshot } from './hooks/useUsageAnalyticsSnapshot';
 export type {
@@ -42,6 +57,14 @@ export type {
 // Components
 export { StatCards } from './StatCards';
 export type { StatCardsProps } from './StatCards';
+
+export { TrendBadge } from './TrendBadge';
+
+export { RateMetricCard } from './RateMetricCard';
+
+export { CostMetricCard } from './CostMetricCard';
+
+export { MetricSummaryBanner } from './MetricSummaryBanner';
 
 export { RuntimeQualityCard } from './RuntimeQualityCard';
 export type { RuntimeQualityCardProps } from './RuntimeQualityCard';

@@ -136,7 +136,15 @@ export function UsagePage() {
     }
   }, [timeRange]);
 
-  const nowMs = lastRefreshedAt?.getTime() ?? 0;
+  const [nowMsTick, setNowMsTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMsTick((prev) => prev + 1);
+    }, 5000);
+    return () => clearInterval(id);
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- nowMsTick intentionally drives re-evaluation
+  const nowMs = useMemo(() => Date.now(), [nowMsTick]);
 
   const includeHealthRequestEventRows = requestEventsResultFilter !== null;
 

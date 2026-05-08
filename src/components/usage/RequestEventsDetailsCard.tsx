@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -59,6 +59,8 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   const [resultFilter, setResultFilter] = useState<string>(ALL_FILTER);
   const [authIndexFilter, setAuthIndexFilter] = useState<string>(ALL_FILTER);
   const [page, setPage] = useState(1);
+  const [newDataPulse, setNewDataPulse] = useState(false);
+  const prevRowsLengthRef = useRef(rows.length);
 
   const handleModelFilterChange = (value: string) => {
     setModelFilter(value);
@@ -227,6 +229,16 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
     setPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    if (rows.length > prevRowsLengthRef.current && prevRowsLengthRef.current > 0) {
+      const timer = setTimeout(() => setNewDataPulse(false), 1200);
+      queueMicrotask(() => setNewDataPulse(true));
+      prevRowsLengthRef.current = rows.length;
+      return () => clearTimeout(timer);
+    }
+    prevRowsLengthRef.current = rows.length;
+  }, [rows.length]);
 
   const renderedRows = useMemo(() => {
     const safePage = Math.min(page, totalPages);
@@ -470,7 +482,12 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
       ) : (
         <>
           <div className={styles.requestEventsMeta}>
-            <span>{t('usage_stats.request_events_count', { count: filteredRows.length })}</span>
+            <span className={newDataPulse ? styles.requestEventsNewDataPulse : ''}>
+              {t('usage_stats.request_events_count', { count: filteredRows.length })}
+              {newDataPulse && (
+                <span className={styles.requestEventsLiveIndicator}> {t('usage_stats.live')}</span>
+              )}
+            </span>
             {filteredRows.length > REQUEST_EVENTS_PAGE_SIZE && (
               <span className={styles.requestEventsLimitHint}>
                 {currentPage}/{totalPages}

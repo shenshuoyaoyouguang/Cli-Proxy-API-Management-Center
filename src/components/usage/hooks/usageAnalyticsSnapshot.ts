@@ -888,7 +888,7 @@ export function createRequestEventRows(
       const totalTokens = Math.max(toNumber(detail.tokens?.total_tokens), extractTotalTokens(detail));
 
       return {
-        id: `${timestamp}-${model}-${sourceRaw || sourceInfo.displayName}-${authIndex}-${index}`,
+        id: `${timestampMs}-${model}-${sourceRaw || sourceInfo.displayName}-${authIndex}-${inputTokens}-${outputTokens}-${totalTokens}-${index}`,
         timestamp,
         timestampMs,
         timestampLabel: date ? date.toLocaleString(locale) : timestamp || '-',

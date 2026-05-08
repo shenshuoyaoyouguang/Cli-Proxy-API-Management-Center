@@ -113,9 +113,9 @@ export function useUsageAnalyticsSnapshot({
 
   const analyticsSourceDetails = useMemo(
     () =>
-      usageDerivedDetails.length > usageDetails.length
-        ? usageDerivedDetails
-        : usageDetails,
+      usageDetails.length > 0
+        ? usageDetails
+        : usageDerivedDetails,
     [usageDerivedDetails, usageDetails]
   );
 

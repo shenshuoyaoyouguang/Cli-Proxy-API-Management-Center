@@ -1030,6 +1030,7 @@
     "request_events_no_result_desc": "Попробуйте другие фильтры или очистите текущие.",
     "request_events_count": "{{count}} событий",
     "request_events_limit_hint": "Показано {{shown}} из {{total}} событий для стабильной производительности.",
+    "live": "Обновление",
     "input_tokens": "Входные токены",
     "output_tokens": "Выходные токены",
     "last_updated": "Обновлено",

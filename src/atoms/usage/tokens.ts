@@ -4,7 +4,7 @@ import {
   getCanonicalCachedTokens,
   type CanonicalUsageTokens,
 } from '@/utils/usageTokenNormalizer';
-import { isRecord, parseNumber } from './guards';
+import { isRecord, parseNumber } from '@/utils/usageRecord';
 
 export { normalizeUsageTokens, extractCanonicalTotalTokens, getCanonicalCachedTokens };
 

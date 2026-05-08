@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { USAGE_STATS_STALE_TIME_MS, useNotificationStore, useUsageStatsStore } from '@/stores';
 import { usageApi } from '@/services/api/usage';
 import { downloadBlob } from '@/utils/download';
 import { loadModelPrices, saveModelPrices, type ModelPrice, type UsageDetail } from '@/utils/usage';
 import { syncPricesForModels } from '@/molecules/usage/priceAutoSync';
+import { expireFailedDetails } from '@/atoms/usage/expireFailed';
 
 const MODEL_PRICE_SYNC_RETRY_MS = 30_000;
 
@@ -68,8 +69,13 @@ export function useUsageData(): UseUsageDataReturn {
   const loading = useUsageStatsStore((state) => state.loading);
   const storeError = useUsageStatsStore((state) => state.error);
   const lastRefreshedAtTs = useUsageStatsStore((state) => state.lastRefreshedAt);
-  const usageDetails = useUsageStatsStore((state) => state.usageDetails);
+  const rawUsageDetails = useUsageStatsStore((state) => state.usageDetails);
   const loadUsageStats = useUsageStatsStore((state) => state.loadUsageStats);
+
+  const usageDetails = useMemo(
+    () => expireFailedDetails(rawUsageDetails).details,
+    [rawUsageDetails]
+  );
 
   const [modelPrices, setModelPrices] = useState<Record<string, ModelPrice>>({});
   const [exporting, setExporting] = useState(false);

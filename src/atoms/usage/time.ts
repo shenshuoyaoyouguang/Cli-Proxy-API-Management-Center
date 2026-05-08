@@ -1,5 +1,5 @@
 import type { UsageTimeRange } from './types';
-import { parseTimestampMs } from '@/utils/timestamp';
+export { getDetailTimestampMs } from '@/utils/timestamp';
 
 export const USAGE_TIME_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number> = {
   '1d': 1 * 24 * 60 * 60 * 1000,
@@ -30,13 +30,6 @@ export function formatDayLabel(date: Date): string {
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const day = date.getDate().toString().padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-export function getDetailTimestampMs(detail: { timestamp: string; __timestampMs?: number }): number {
-  if (typeof detail.__timestampMs === 'number' && Number.isFinite(detail.__timestampMs)) {
-    return detail.__timestampMs;
-  }
-  return parseTimestampMs(detail.timestamp);
 }
 
 export function resolveHourWindow(hourWindow: number): number {

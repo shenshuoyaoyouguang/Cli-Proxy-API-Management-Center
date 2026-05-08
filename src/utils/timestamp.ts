@@ -60,6 +60,16 @@ export function parseTimestamp(value: unknown): Date | null {
   return new Date(timestampMs);
 }
 
+export function getDetailTimestampMs(detail: {
+  timestamp: string;
+  __timestampMs?: number;
+}): number {
+  if (typeof detail.__timestampMs === 'number' && Number.isFinite(detail.__timestampMs)) {
+    return detail.__timestampMs;
+  }
+  return parseTimestampMs(detail.timestamp);
+}
+
 export function formatTimestamp(d: Date): string {
   return d.toISOString();
 }

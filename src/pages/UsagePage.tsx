@@ -309,15 +309,18 @@ export function UsagePage() {
             variant="icon"
             size="sm"
             onClick={() => void loadUsage().catch(() => {})}
+            loading={loading}
             disabled={loading || exporting || importing}
             icon={<IconRefreshCw size={16} />}
-            title={loading ? t('common.loading') : t('usage_stats.refresh')}
+            title={loading ? t('common.refreshing') : t('usage_stats.refresh')}
           />
-          {lastRefreshedAt && (
+          {loading && usage ? (
+            <span className={styles.lastRefreshed}>{t('common.refreshing')}</span>
+          ) : lastRefreshedAt ? (
             <span className={styles.lastRefreshed}>
               {lastRefreshedAt.toLocaleTimeString()}
             </span>
-          )}
+          ) : null}
           <span className={`${styles.connectionStatus} ${styles[connectionStatus] ?? ''}`}>
             <span className={styles.statusDot} />
             {getConnectionStatusText()}

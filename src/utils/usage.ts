@@ -27,6 +27,7 @@ export { isRecord, getApisRecord, parseAuthIndex, normalizeAuthIndex } from '@/a
 
 // === 时间相关重导出 ===
 export {
+  FUTURE_TIMESTAMP_TOLERANCE_MS,
   USAGE_TIME_RANGE_MS,
   formatHourLabel,
   formatDayLabel,

@@ -6,6 +6,8 @@ import { downloadBlob } from '@/utils/download';
 import { loadModelPrices, saveModelPrices, type ModelPrice, type UsageDetail } from '@/utils/usage';
 import { syncPricesForModels } from '@/molecules/usage/priceAutoSync';
 
+const MODEL_PRICE_SYNC_RETRY_MS = 30_000;
+
 export interface UsagePayload {
   total_requests?: number;
   success_count?: number;
@@ -32,9 +34,36 @@ export interface UseUsageDataReturn {
   importing: boolean;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const isUsageImportPayload = (payload: unknown): payload is Record<string, unknown> => {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  if (payload.version !== undefined && !Number.isFinite(Number(payload.version))) {
+    return false;
+  }
+
+  if (payload.exported_at !== undefined && typeof payload.exported_at !== 'string') {
+    return false;
+  }
+
+  if (payload.usage !== undefined) {
+    return isRecord(payload.usage);
+  }
+
+  if (payload.apis !== undefined) {
+    return isRecord(payload.apis);
+  }
+
+  return false;
+};
+
 export function useUsageData(): UseUsageDataReturn {
   const { t } = useTranslation();
-  const { showNotification } = useNotificationStore();
+  const showNotification = useNotificationStore((state) => state.showNotification);
   const usageSnapshot = useUsageStatsStore((state) => state.usage);
   const loading = useUsageStatsStore((state) => state.loading);
   const storeError = useUsageStatsStore((state) => state.error);
@@ -45,7 +74,20 @@ export function useUsageData(): UseUsageDataReturn {
   const [modelPrices, setModelPrices] = useState<Record<string, ModelPrice>>({});
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [priceSyncRetryNonce, setPriceSyncRetryNonce] = useState(0);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const priceSyncStateRef = useRef<{
+    inFlightSignature: string | null;
+    lastSyncedSignature: string | null;
+  }>({ inFlightSignature: null, lastSyncedSignature: null });
+  const priceSyncRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPriceSyncRetryTimer = () => {
+    if (priceSyncRetryTimerRef.current) {
+      clearTimeout(priceSyncRetryTimerRef.current);
+      priceSyncRetryTimerRef.current = null;
+    }
+  };
 
   const loadUsage = useCallback(async () => {
     await loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
@@ -56,21 +98,48 @@ export function useUsageData(): UseUsageDataReturn {
     setModelPrices(loadModelPrices());
   }, [loadUsageStats]);
 
-  const syncRef = useRef(false);
   useEffect(() => {
-    if (syncRef.current || usageDetails.length === 0) return;
-    const modelNames = [...new Set(usageDetails.map((d) => d.__modelName).filter((n): n is string => Boolean(n)))];
+    const modelNames = [
+      ...new Set(usageDetails.map((d) => d.__modelName).filter((n): n is string => Boolean(n))),
+    ].sort();
     if (modelNames.length === 0) return;
 
-    syncRef.current = true;
+    const signature = modelNames.join('\u0000');
+    if (
+      priceSyncStateRef.current.inFlightSignature === signature ||
+      priceSyncStateRef.current.lastSyncedSignature === signature
+    ) {
+      return;
+    }
+
+    priceSyncStateRef.current.inFlightSignature = signature;
     const currentPrices = loadModelPrices();
-    void syncPricesForModels(modelNames, currentPrices).then((updated) => {
-      if (updated !== currentPrices) {
-        setModelPrices(updated);
-        saveModelPrices(updated);
-      }
-    });
-  }, [usageDetails]);
+    void syncPricesForModels(modelNames, currentPrices)
+      .then((updated) => {
+        priceSyncStateRef.current.inFlightSignature = null;
+        priceSyncStateRef.current.lastSyncedSignature = signature;
+        clearPriceSyncRetryTimer();
+        if (updated !== currentPrices) {
+          setModelPrices(updated);
+          saveModelPrices(updated);
+        }
+      })
+      .catch(() => {
+        priceSyncStateRef.current.inFlightSignature = null;
+        clearPriceSyncRetryTimer();
+        priceSyncRetryTimerRef.current = setTimeout(() => {
+          priceSyncRetryTimerRef.current = null;
+          setPriceSyncRetryNonce((value) => value + 1);
+        }, MODEL_PRICE_SYNC_RETRY_MS);
+      });
+  }, [priceSyncRetryNonce, usageDetails]);
+
+  useEffect(
+    () => () => {
+      clearPriceSyncRetryTimer();
+    },
+    []
+  );
 
   const handleExport = async () => {
     setExporting(true);
@@ -114,6 +183,10 @@ export function useUsageData(): UseUsageDataReturn {
       try {
         payload = JSON.parse(text);
       } catch {
+        showNotification(t('usage_stats.import_invalid'), 'error');
+        return;
+      }
+      if (!isUsageImportPayload(payload)) {
         showNotification(t('usage_stats.import_invalid'), 'error');
         return;
       }

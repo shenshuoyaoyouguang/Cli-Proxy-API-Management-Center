@@ -131,6 +131,7 @@ import { useUsageStatsStore } from './useUsageStatsStore';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
 import { collectUsageDetails, computeKeyStatsFromDetails } from '@/utils/usage';
+import { usageSSEService } from '@/services/sse';
 
 describe('useUsageStatsStore', () => {
   beforeEach(() => {
@@ -485,7 +486,74 @@ describe('useUsageStatsStore', () => {
   });
 
   describe('SSE state updates', () => {
+    it('requests full correction and starts a forced refresh when delta arrives without a base snapshot', () => {
+      const requestFullCorrectionSpy = vi
+        .spyOn(usageSSEService, 'requestFullCorrection')
+        .mockImplementation(() => {});
+
+      vi.mocked(usageApi.getUsage).mockImplementation(() => new Promise(() => {}));
+      vi.mocked(usageApi.getUsageEvents).mockImplementation(() => new Promise(() => {}));
+
+      useUsageStatsStore.getState().applyDelta({
+        seq: 1,
+        timestamp: Date.parse('2026-01-01T00:01:00.000Z'),
+        requestCount: 1,
+        successCount: 1,
+        failureCount: 0,
+        tokenDelta: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+        },
+        details: [],
+      });
+
+      expect(requestFullCorrectionSpy).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(usageApi.getUsage)).toHaveBeenCalledTimes(1);
+      expect(useUsageStatsStore.getState().loading).toBe(true);
+    });
+
+    it('requests full correction and starts a forced refresh when delta sequence gaps are detected', () => {
+      const requestFullCorrectionSpy = vi
+        .spyOn(usageSSEService, 'requestFullCorrection')
+        .mockImplementation(() => {});
+
+      vi.mocked(usageApi.getUsage).mockImplementation(() => new Promise(() => {}));
+      vi.mocked(usageApi.getUsageEvents).mockImplementation(() => new Promise(() => {}));
+
+      useUsageStatsStore.setState({
+        usage: { apis: {} },
+        keyStats: createMockKeyStats(),
+        usageDetails: [],
+        loading: false,
+        error: null,
+        lastRefreshedAt: Date.parse('2026-01-01T00:00:00.000Z'),
+        scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
+        lastSeq: 10,
+      });
+
+      useUsageStatsStore.getState().applyDelta({
+        seq: 12,
+        timestamp: Date.parse('2026-01-01T00:01:00.000Z'),
+        requestCount: 1,
+        successCount: 1,
+        failureCount: 0,
+        tokenDelta: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+        },
+        details: [],
+      });
+
+      expect(requestFullCorrectionSpy).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(usageApi.getUsage)).toHaveBeenCalledTimes(1);
+      expect(useUsageStatsStore.getState().loading).toBe(true);
+    });
+
     it('appends delta details without mutating usage.apis and persists the merged snapshot', () => {
+      const receivedAt = Date.parse('2026-01-01T00:01:30.000Z');
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(receivedAt);
       const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
       const endpoint = 'POST /v1/chat/completions';
       const existingDetail = createMockUsageDetail({
@@ -585,12 +653,14 @@ describe('useUsageStatsStore', () => {
           scopeKey,
           usage: state.usage,
           usageDetails: state.usageDetails,
-          lastRefreshedAt: Date.parse('2026-01-01T00:01:00.000Z'),
+          lastRefreshedAt: receivedAt,
         })
       );
       expect(persisted).not.toBeNull();
       expect(persisted?.detailCount).toBe(2);
       expect(persisted?.usageDetails).toHaveLength(2);
+
+      nowSpy.mockRestore();
     });
 
     it('merges modelBreakdown into usage.apis without mutating the previous snapshot', () => {

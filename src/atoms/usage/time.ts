@@ -10,6 +10,7 @@ export const USAGE_TIME_RANGE_MS: Record<Exclude<UsageTimeRange, 'all'>, number>
 export const MINUTE_MS = 60 * 1000;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
+export const FUTURE_TIMESTAMP_TOLERANCE_MS = 5 * MINUTE_MS;
 
 export function formatHourLabel(date: Date): string {
   if (!(date instanceof Date)) {

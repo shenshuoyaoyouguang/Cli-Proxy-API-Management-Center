@@ -8,6 +8,7 @@ import type {
   StatusBlockDetail,
   StatusBlockState
 } from './types';
+import { FUTURE_TIMESTAMP_TOLERANCE_MS } from '@/atoms/usage/time';
 import { parseTimestampMs } from '@/utils/timestamp';
 
 const EMPTY_COUNTS: ReliabilityCounts = { success: 0, failure: 0, total: 0 };
@@ -30,6 +31,16 @@ const normalizeTimestampMs = (detail: UsageDetail): number => {
     return detail.__timestampMs;
   }
   return parseTimestampMs(detail.timestamp);
+};
+
+const normalizeSnapshotTimestampMs = (timestampMs: number, generatedAtMs: number): number => {
+  if (timestampMs <= generatedAtMs) {
+    return timestampMs;
+  }
+
+  return timestampMs <= generatedAtMs + FUTURE_TIMESTAMP_TOLERANCE_MS
+    ? generatedAtMs
+    : Number.NaN;
 };
 
 const normalizeModelName = (detail: UsageDetail): string => {
@@ -263,8 +274,9 @@ export function buildReliabilitySnapshot(
 
   const details = usageDetails
     .map((detail) => {
-      const timestampMs = normalizeTimestampMs(detail);
-      if (!Number.isFinite(timestampMs) || timestampMs < windowStart || timestampMs > safeNowMs) {
+      const rawTimestampMs = normalizeTimestampMs(detail);
+      const timestampMs = normalizeSnapshotTimestampMs(rawTimestampMs, safeNowMs);
+      if (!Number.isFinite(timestampMs) || timestampMs < windowStart) {
         return null;
       }
 

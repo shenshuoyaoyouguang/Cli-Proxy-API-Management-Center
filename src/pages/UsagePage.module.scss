@@ -461,6 +461,14 @@
   color: var(--text-tertiary);
 }
 
+.statWarning {
+  color: var(--warning-text, #92400e);
+  background: var(--warning-bg, rgba(251, 191, 36, 0.18));
+  border: 1px solid var(--warning-border, rgba(251, 191, 36, 0.3));
+  border-radius: $radius-full;
+  padding: 2px 8px;
+}
+
 .statTrend {
   margin-top: auto;
   background: var(--bg-tertiary);

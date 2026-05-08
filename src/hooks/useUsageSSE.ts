@@ -28,6 +28,22 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
     }
   }, []);
 
+  const loadFreshUsageSnapshot = useCallback(() => {
+    return useUsageStatsStore
+      .getState()
+      .loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
+  }, []);
+
+  const enterDegradedMode = useCallback(() => {
+    if (fallenBackRef.current) {
+      return;
+    }
+    fallenBackRef.current = true;
+    connectionStatusRef.current = 'degraded';
+    setConnectionStatus('degraded');
+    void loadFreshUsageSnapshot().catch(() => {});
+  }, [loadFreshUsageSnapshot]);
+
   useEffect(() => {
     if (!enabled || !apiBase || !managementKey) return;
 
@@ -44,20 +60,11 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
       onError: () => {
         const currentStatus = usageSSEService.getConnectionStatus();
         if (currentStatus === 'degraded' && !fallenBackRef.current) {
-          fallenBackRef.current = true;
-          connectionStatusRef.current = 'degraded';
-          setConnectionStatus('degraded');
-          if (!useUsageStatsStore.getState().usage) {
-            void useUsageStatsStore.getState().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
-          }
+          enterDegradedMode();
         }
       },
       onAuthError: () => {
-        connectionStatusRef.current = 'degraded';
-        setConnectionStatus('degraded');
-        if (!useUsageStatsStore.getState().usage) {
-          void useUsageStatsStore.getState().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
-        }
+        enterDegradedMode();
       },
     };
     handlerRef.current = handler;
@@ -72,7 +79,7 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
       connectionStatusRef.current = 'disconnected';
       setConnectionStatus('disconnected');
     };
-  }, [enabled, apiBase, managementKey, syncStatus]);
+  }, [enabled, apiBase, enterDegradedMode, managementKey, syncStatus]);
 
   useInterval(() => {
     void useUsageStatsStore.getState().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });

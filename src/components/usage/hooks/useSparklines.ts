@@ -7,6 +7,7 @@ import {
   type ModelPrice,
   type UsageDetail,
 } from '@/utils/usage';
+import { FUTURE_TIMESTAMP_TOLERANCE_MS } from '@/atoms/usage/time';
 import type { UsagePayload } from './useUsageData';
 
 export interface SparklineData {
@@ -44,6 +45,27 @@ export interface UseSparklinesReturn {
   costSparkline: SparklineBundle | null;
 }
 
+function buildRollingAverageSeries(values: number[], windowSize: number): number[] {
+  if (!values.length || windowSize <= 0) {
+    return [];
+  }
+
+  const rolling: number[] = new Array(values.length).fill(0);
+  let runningTotal = 0;
+
+  values.forEach((value, index) => {
+    runningTotal += value;
+    if (index >= windowSize) {
+      runningTotal -= values[index - windowSize];
+    }
+
+    const divisor = Math.min(index + 1, windowSize);
+    rolling[index] = runningTotal / divisor;
+  });
+
+  return rolling;
+}
+
 export function useSparklines({
   usage,
   usageDetails = [],
@@ -51,34 +73,39 @@ export function useSparklines({
   modelPrices,
   nowMs,
 }: UseSparklinesOptions): UseSparklinesReturn {
+  const sparklineDetails = useMemo(
+    () => (usageDetails.length > 0 ? usageDetails : usage ? collectUsageDetails(usage) : []),
+    [usage, usageDetails]
+  );
+
   const lastHourSeries = useMemo(() => {
     if (!Number.isFinite(nowMs) || nowMs <= 0) {
-      return { labels: [], requests: [], tokens: [], costs: [] };
+      return { labels: [], requests: [], tokens: [], costs: [], rpm: [], tpm: [] };
     }
-    const usageDerivedDetails = usage ? collectUsageDetails(usage) : [];
-    const details =
-      usageDerivedDetails.length > usageDetails.length
-        ? usageDerivedDetails
-        : usageDetails.length
-          ? usageDetails
-          : usageDerivedDetails;
-    if (!details.length) return { labels: [], requests: [], tokens: [], costs: [] };
+    if (!sparklineDetails.length) {
+      return { labels: [], requests: [], tokens: [], costs: [], rpm: [], tpm: [] };
+    }
 
     const windowMinutes = 60;
+    const rateWindowMinutes = 30;
     const now = nowMs;
     const windowStart = now - windowMinutes * 60 * 1000;
     const requestBuckets = new Array(windowMinutes).fill(0);
     const tokenBuckets = new Array(windowMinutes).fill(0);
     const costBuckets = new Array(windowMinutes).fill(0);
 
-    details.forEach((detail) => {
+    sparklineDetails.forEach((detail) => {
       const timestamp = getDetailTimestampMs(detail);
-      if (!Number.isFinite(timestamp) || timestamp < windowStart || timestamp > now) {
+      if (
+        !Number.isFinite(timestamp) ||
+        timestamp < windowStart ||
+        timestamp > now + FUTURE_TIMESTAMP_TOLERANCE_MS
+      ) {
         return;
       }
       const minuteIndex = Math.min(
         windowMinutes - 1,
-        Math.floor((timestamp - windowStart) / 60000)
+        Math.max(0, Math.floor((timestamp - windowStart) / 60000))
       );
       requestBuckets[minuteIndex] += 1;
       tokenBuckets[minuteIndex] += extractTotalTokens(detail);
@@ -92,8 +119,15 @@ export function useSparklines({
       return `${h}:${m}`;
     });
 
-    return { labels, requests: requestBuckets, tokens: tokenBuckets, costs: costBuckets };
-  }, [modelPrices, nowMs, usage, usageDetails]);
+    return {
+      labels,
+      requests: requestBuckets,
+      tokens: tokenBuckets,
+      costs: costBuckets,
+      rpm: buildRollingAverageSeries(requestBuckets, rateWindowMinutes),
+      tpm: buildRollingAverageSeries(tokenBuckets, rateWindowMinutes),
+    };
+  }, [modelPrices, nowMs, sparklineDetails]);
 
   const buildSparkline = useCallback(
     (
@@ -150,21 +184,21 @@ export function useSparklines({
   const rpmSparkline = useMemo(
     () =>
       buildSparkline(
-        { labels: lastHourSeries.labels, data: lastHourSeries.requests },
+        { labels: lastHourSeries.labels, data: lastHourSeries.rpm },
         '#22c55e',
         'rgba(34, 197, 94, 0.18)'
       ),
-    [buildSparkline, lastHourSeries.labels, lastHourSeries.requests]
+    [buildSparkline, lastHourSeries.labels, lastHourSeries.rpm]
   );
 
   const tpmSparkline = useMemo(
     () =>
       buildSparkline(
-        { labels: lastHourSeries.labels, data: lastHourSeries.tokens },
+        { labels: lastHourSeries.labels, data: lastHourSeries.tpm },
         '#f97316',
         'rgba(249, 115, 22, 0.18)'
       ),
-    [buildSparkline, lastHourSeries.labels, lastHourSeries.tokens]
+    [buildSparkline, lastHourSeries.labels, lastHourSeries.tpm]
   );
 
   const costSparkline = useMemo(

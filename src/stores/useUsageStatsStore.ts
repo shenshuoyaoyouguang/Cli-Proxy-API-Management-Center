@@ -683,14 +683,19 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
   applyDelta: (delta) => {
     const state = get();
+    const requestDeltaRecovery = () => {
+      set({ loading: true, error: null });
+      usageSSEService.requestFullCorrection();
+      void get().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS }).catch(() => {});
+    };
 
     if (state.usage === null) {
-      usageSSEService.requestFullCorrection();
+      requestDeltaRecovery();
       return;
     }
 
     if (state.lastSeq !== null && delta.seq !== state.lastSeq + 1) {
-      usageSSEService.requestFullCorrection();
+      requestDeltaRecovery();
       return;
     }
 
@@ -703,11 +708,12 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       ? usageDetails.slice(usageDetails.length - MAX_USAGE_DETAILS_LENGTH)
       : usageDetails;
     const keyStats = computeKeyStatsFromDetails(trimmedDetails);
+    const receivedAt = Date.now();
     const nextSnapshot = {
       usage: mergedUsage,
       keyStats,
       usageDetails: trimmedDetails,
-      lastRefreshedAt: delta.timestamp,
+      lastRefreshedAt: receivedAt,
       detailCount: usageDetails.length,
       scopeKey: state.scopeKey,
     };
@@ -717,7 +723,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       usage: mergedUsage,
       keyStats,
       usageDetails: trimmedDetails,
-      lastRefreshedAt: delta.timestamp,
+      lastRefreshedAt: receivedAt,
     });
 
     writePersistedUsageStats(nextSnapshot);
@@ -726,7 +732,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       usage: mergedUsage,
       usageDetails: trimmedDetails,
       keyStats,
-      lastRefreshedAt: delta.timestamp,
+      lastRefreshedAt: receivedAt,
       lastSeq: delta.seq,
       loading: false,
       error: null,
@@ -740,7 +746,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       ? ensureUsageDetailTokens(snapshot.usageDetails)
       : collectUsageDetails(usage);
     const keyStats = computeKeyStatsFromDetails(usageDetails);
-    const lastRefreshedAt = snapshot.timestamp;
+    const lastRefreshedAt = Date.now();
     const nextSnapshot = {
       usage,
       keyStats,

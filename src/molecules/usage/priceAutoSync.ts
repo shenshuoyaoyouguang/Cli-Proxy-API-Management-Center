@@ -25,12 +25,7 @@ export async function syncPricesForModels(
   const missing = usedModelNames.filter((name) => !existingPrices[name.toLowerCase()]);
   if (missing.length === 0) return existingPrices;
 
-  let catalog: Record<string, ModelPrice>;
-  try {
-    catalog = await fetchPriceCatalog();
-  } catch {
-    return existingPrices;
-  }
+  const catalog = await fetchPriceCatalog();
 
   const updated = { ...existingPrices };
   let added = 0;

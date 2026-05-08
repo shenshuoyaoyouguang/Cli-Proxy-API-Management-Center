@@ -53,6 +53,19 @@ describe('usageAnalyticsSnapshot helpers', () => {
     expect(filtered[0].__timestampMs).toBeGreaterThan(filtered[1].__timestampMs!);
   });
 
+  it('keeps slightly future-dated details when evaluating recent ranges', () => {
+    const details = [
+      {
+        ...createDetail({ minutesAgo: 1 }),
+        timestamp: new Date(baseNow + 2 * 60 * 1000).toISOString(),
+        __timestampMs: baseNow + 2 * 60 * 1000,
+      },
+    ];
+
+    const filtered = filterUsageDetailsByTimeRange(details, '1d', baseNow);
+    expect(filtered).toHaveLength(1);
+  });
+
   it('builds request rows with provider/auth-file display resolution and sorting', () => {
     const authFileMap = createAuthFileMap([
       { name: 'Auth File 7', authIndex: '7', type: 'claude' }
@@ -204,6 +217,30 @@ describe('usageAnalyticsSnapshot helpers', () => {
     expect(summary.rateStats.rpm).toBeCloseTo(2 / 30, 5);
     expect(summary.rateStats.tpm).toBeCloseTo(49 / 30, 5);
     expect(summary.totalCost).toBeGreaterThan(0);
+  });
+
+  it('counts slightly future-dated details inside the recent-rate window', () => {
+    const summary = createUsageSummaryMetrics(
+      [
+        {
+          ...createDetail({ minutesAgo: 1, __modelName: 'model-a' }),
+          timestamp: new Date(baseNow + 2 * 60 * 1000).toISOString(),
+          __timestampMs: baseNow + 2 * 60 * 1000,
+          tokens: {
+            input_tokens: 12,
+            output_tokens: 8,
+            cached_tokens: 0,
+            reasoning_tokens: 0,
+            total_tokens: 20,
+          },
+        },
+      ],
+      {},
+      baseNow
+    );
+
+    expect(summary.rateStats.requestCount).toBe(1);
+    expect(summary.rateStats.tokenCount).toBe(20);
   });
 
   it('returns empty usage summary metrics without details or prices', () => {

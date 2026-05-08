@@ -5,14 +5,16 @@ import type { UsageSSEConnectionStatus, UsageSSEHandler } from '@/types/sse';
 
 const mocks = vi.hoisted(() => {
   let connectionStatus: UsageSSEConnectionStatus = 'disconnected';
+  let latestHandler: UsageSSEHandler | null = null;
   const connectSpy = vi.fn((_: string, __: string, ___: UsageSSEHandler) => {
+    latestHandler = ___;
     connectionStatus = 'connecting';
   });
   const disconnectSpy = vi.fn(() => {
     connectionStatus = 'disconnected';
   });
   const getConnectionStatusSpy = vi.fn(() => connectionStatus);
-  const loadUsageStatsSpy = vi.fn();
+  const loadUsageStatsSpy = vi.fn().mockResolvedValue(undefined);
   const applyDeltaSpy = vi.fn();
   const applyFullSnapshotSpy = vi.fn();
 
@@ -25,11 +27,13 @@ const mocks = vi.hoisted(() => {
     connectSpy,
     disconnectSpy,
     getConnectionStatusSpy,
+    getLatestHandler: () => latestHandler,
     setConnectionStatus: (status: UsageSSEConnectionStatus) => {
       connectionStatus = status;
     },
     resetConnectionStatus: () => {
       connectionStatus = 'disconnected';
+      latestHandler = null;
     },
     loadUsageStatsSpy,
     applyDeltaSpy,
@@ -152,6 +156,25 @@ describe('useUsageSSE visibility handling', () => {
     expect(mocks.connectSpy).toHaveBeenCalledTimes(1);
     expect(mocks.loadUsageStatsSpy).not.toHaveBeenCalled();
     expect(harness.getResult().connectionStatus).toBe('connecting');
+
+    await harness.unmount();
+  });
+
+  it('forces an immediate polling refresh the first time the connection degrades', async () => {
+    const harness = await renderUseUsageSSE();
+
+    mocks.loadUsageStatsSpy.mockClear();
+    mocks.setConnectionStatus('degraded');
+
+    await act(async () => {
+      mocks.getLatestHandler()?.onError(new ErrorEvent('error'));
+    });
+
+    expect(mocks.loadUsageStatsSpy).toHaveBeenCalledWith({
+      force: true,
+      staleTimeMs: 120000,
+    });
+    expect(harness.getResult().connectionStatus).toBe('degraded');
 
     await harness.unmount();
   });

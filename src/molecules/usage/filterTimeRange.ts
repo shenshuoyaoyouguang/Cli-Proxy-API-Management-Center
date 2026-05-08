@@ -1,5 +1,5 @@
 import type { UsageTimeRange, UsageDetail } from '@/atoms/usage/types';
-import { USAGE_TIME_RANGE_MS } from '@/atoms/usage/time';
+import { FUTURE_TIMESTAMP_TOLERANCE_MS, USAGE_TIME_RANGE_MS } from '@/atoms/usage/time';
 import { getDetailTimestampMs } from '@/atoms/usage/time';
 import { isRecord, getApisRecord } from '@/atoms/usage/guards';
 import { getUsageDetailTotalTokenCount } from '@/atoms/usage/tokens';
@@ -93,7 +93,11 @@ export function filterUsageByTimeRange<T>(
           return;
         }
         const timestamp = parseTimestampMs(detailRecord.timestamp);
-        if (Number.isNaN(timestamp) || timestamp < windowStart || timestamp > nowMs) {
+        if (
+          Number.isNaN(timestamp) ||
+          timestamp < windowStart ||
+          timestamp > nowMs + FUTURE_TIMESTAMP_TOLERANCE_MS
+        ) {
           return;
         }
 
@@ -164,6 +168,10 @@ export function filterUsageDetailsByTimeRange(
   const windowStart = nowMs - rangeMs;
   return details.filter((detail) => {
     const timestamp = getDetailTimestampMs(detail);
-    return Number.isFinite(timestamp) && timestamp >= windowStart && timestamp <= nowMs;
+    return (
+      Number.isFinite(timestamp) &&
+      timestamp >= windowStart &&
+      timestamp <= nowMs + FUTURE_TIMESTAMP_TOLERANCE_MS
+    );
   });
 }

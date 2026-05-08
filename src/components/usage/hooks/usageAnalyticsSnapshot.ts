@@ -16,7 +16,7 @@ import {
   type SourceInfoMap,
   type SourceInfoMapInput,
 } from '@/utils/sourceResolver';
-import { USAGE_TIME_RANGE_MS } from '@/atoms/usage/time';
+import { FUTURE_TIMESTAMP_TOLERANCE_MS, USAGE_TIME_RANGE_MS } from '@/atoms/usage/time';
 import { parseTimestampMs } from '@/utils/timestamp';
 
 const RUNTIME_QUALITY_HEALTHY_SUCCESS_RATE = 0.99;
@@ -611,7 +611,11 @@ export function filterUsageDetailsByTimeRange(
   const windowStart = nowMs - rangeMs;
   return details.filter((detail) => {
     const timestamp = getDetailTimestampMs(detail);
-    return Number.isFinite(timestamp) && timestamp >= windowStart && timestamp <= nowMs;
+    return (
+      Number.isFinite(timestamp) &&
+      timestamp >= windowStart &&
+      timestamp <= nowMs + FUTURE_TIMESTAMP_TOLERANCE_MS
+    );
   });
 }
 
@@ -694,7 +698,7 @@ export function createUsageSummaryMetrics(
       hasValidNow &&
       Number.isFinite(timestamp) &&
       timestamp >= windowStart &&
-      timestamp <= nowMs
+      timestamp <= nowMs + FUTURE_TIMESTAMP_TOLERANCE_MS
     ) {
       requestCount += 1;
       tokenCount += totalTokens;

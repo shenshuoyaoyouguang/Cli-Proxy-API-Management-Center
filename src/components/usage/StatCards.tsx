@@ -165,7 +165,7 @@ export const StatCards = memo(function StatCards({
       meta: (
         <>
           {!hasPrices && (
-            <span className={`${styles.statMetaItem} ${styles.statSubtle}`}>
+            <span className={`${styles.statMetaItem} ${styles.statWarning}`}>
               {t('usage_stats.cost_need_price')}
             </span>
           )}

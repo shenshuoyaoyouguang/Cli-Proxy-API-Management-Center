@@ -74,4 +74,39 @@ describe('filterUsageByTimeRange', () => {
       usage.apis['POST /v1/chat/completions'].models.minimax.details
     ).toHaveLength(0);
   });
+
+  it('keeps slightly future-dated records when server and client clocks drift a little', () => {
+    const nowMs = Date.parse('2026-01-08T12:00:00.000Z');
+    const usage = filterUsageByTimeRange(
+      {
+        apis: {
+          'POST /v1/chat/completions': {
+            models: {
+              minimax: {
+                details: [
+                  {
+                    timestamp: '2026-01-08T12:03:00.000Z',
+                    usage: {
+                      prompt_tokens: 12,
+                      completion_tokens: 8,
+                      total_tokens: 20,
+                    },
+                    failed: false,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      '1d',
+      nowMs
+    ) as unknown as {
+      total_requests: number;
+      total_tokens: number;
+    };
+
+    expect(usage.total_requests).toBe(1);
+    expect(usage.total_tokens).toBe(20);
+  });
 });

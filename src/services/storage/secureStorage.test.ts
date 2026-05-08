@@ -16,6 +16,11 @@ vi.mock('@/utils/encryption', () => ({
 
 import { secureStorage } from './secureStorage';
 
+const flushMicrotasks = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
 describe('SecureStorageService', () => {
   let storage: Record<string, string>;
 
@@ -44,36 +49,42 @@ describe('SecureStorageService', () => {
 
   describe('setItem', () => {
     it('stores data to localStorage', async () => {
-      await secureStorage.setItem('key', 'value');
+      await secureStorage.setItemAsync('key', 'value');
       expect(localStorage.setItem).toHaveBeenCalled();
     });
 
     it('does not persist any plaintext mirror for encrypted values', async () => {
-      await secureStorage.setItem('key', 'value');
+      await secureStorage.setItemAsync('key', 'value');
       expect(storage['__plain__::key']).toBeUndefined();
       expect(storage['key']).toBe(`enc::v2::${btoa('"value"')}`);
     });
 
     it('stores plaintext when encrypt is false', async () => {
-      await secureStorage.setItem('key', 'value', { encrypt: false });
+      await secureStorage.setItemAsync('key', 'value', { encrypt: false });
       expect(storage['key']).toBe('"value"');
     });
 
     it('removes item when value is null', async () => {
       storage['key'] = 'existing';
-      await secureStorage.setItem('key', null);
+      await secureStorage.setItemAsync('key', null);
       expect(localStorage.removeItem).toHaveBeenCalledWith('key');
     });
 
     it('removes item when value is undefined', async () => {
       storage['key'] = 'existing';
-      await secureStorage.setItem('key', undefined);
+      await secureStorage.setItemAsync('key', undefined);
       expect(localStorage.removeItem).toHaveBeenCalledWith('key');
     });
 
     it('stores objects as JSON when encrypt is false', async () => {
-      await secureStorage.setItem('key', { nested: true }, { encrypt: false });
+      await secureStorage.setItemAsync('key', { nested: true }, { encrypt: false });
       expect(storage['key']).toBe('{"nested":true}');
+    });
+
+    it('keeps fire-and-forget setItem behavior for legacy callers', async () => {
+      secureStorage.setItem('key', 'value');
+      await flushMicrotasks();
+      expect(storage['key']).toBe(`enc::v2::${btoa('"value"')}`);
     });
   });
 
@@ -236,14 +247,16 @@ describe('SecureStorageService', () => {
 
     it('encrypts plaintext keys', async () => {
       storage['key'] = 'plain-value';
-      await secureStorage.migratePlaintextKeys(['key']);
+      secureStorage.migratePlaintextKeys(['key']);
+      await flushMicrotasks();
       // setItem should be called for plaintext keys
       expect(localStorage.setItem).toHaveBeenCalled();
     });
 
     it('handles JSON plaintext values', async () => {
       storage['key'] = JSON.stringify({ data: 'test' });
-      await secureStorage.migratePlaintextKeys(['key']);
+      secureStorage.migratePlaintextKeys(['key']);
+      await flushMicrotasks();
       expect(localStorage.setItem).toHaveBeenCalled();
     });
 
@@ -252,6 +265,17 @@ describe('SecureStorageService', () => {
       await secureStorage.migratePlaintextKeys(['non-existent']);
       const callCountAfter = (localStorage.setItem as ReturnType<typeof vi.fn>).mock.calls.length;
       expect(callCountAfter).toBe(callCountBefore);
+    });
+  });
+
+  describe('migrateEncryptedKeys', () => {
+    it('rewrites v1 encrypted values to v2', async () => {
+      storage.managementKey = `enc::v1::${btoa('"legacy-secret"')}`;
+
+      const migrated = await secureStorage.migrateEncryptedKeys(['managementKey']);
+
+      expect(migrated).toBe(1);
+      expect(storage.managementKey).toBe(`enc::v2::${btoa('"legacy-secret"')}`);
     });
   });
 });

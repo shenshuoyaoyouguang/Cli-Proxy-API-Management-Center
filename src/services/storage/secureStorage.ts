@@ -12,12 +12,33 @@ interface StorageOptions {
 }
 
 class SecureStorageService {
-  private migrateLegacyValue(key: string, value: unknown): void {
-    try {
-      this.setItem(key, value);
-    } catch {
-      // 读取旧值成功时优先保证兼容返回，迁移失败不影响本次恢复流程。
+  private async persistValue(
+    key: string,
+    value: unknown,
+    options: StorageOptions = {}
+  ): Promise<void> {
+    const { encrypt = true } = options;
+
+    if (value === null || value === undefined) {
+      this.removeItem(key);
+      return;
     }
+
+    const stringValue = JSON.stringify(value);
+
+    if (!encrypt) {
+      localStorage.setItem(key, stringValue);
+      return;
+    }
+
+    const encrypted = await encryptData(stringValue);
+    localStorage.setItem(key, encrypted);
+  }
+
+  private migrateLegacyValue(key: string, value: unknown): void {
+    void this.setItemAsync(key, value).catch(() => {
+      // 读取旧值成功时优先保证兼容返回，迁移失败不影响本次恢复流程。
+    });
   }
 
   private decodeStoredValue(
@@ -84,26 +105,13 @@ class SecureStorageService {
    * 该方法不会保留任何明文镜像，敏感值不应依赖同步恢复。
    */
   setItem(key: string, value: unknown, options: StorageOptions = {}): void {
-    const { encrypt = true } = options;
+    void this.setItemAsync(key, value, options).catch((error) => {
+      console.error('Encryption failed, data was NOT persisted securely:', error);
+    });
+  }
 
-    if (value === null || value === undefined) {
-      this.removeItem(key);
-      return;
-    }
-
-    const stringValue = JSON.stringify(value);
-
-    if (encrypt) {
-      void encryptData(stringValue)
-        .then((encrypted) => {
-          localStorage.setItem(key, encrypted);
-        })
-        .catch((error) => {
-          console.error('Encryption failed, data was NOT persisted securely:', error);
-        });
-    } else {
-      localStorage.setItem(key, stringValue);
-    }
+  async setItemAsync(key: string, value: unknown, options: StorageOptions = {}): Promise<void> {
+    await this.persistValue(key, value, options);
   }
 
   /**
@@ -211,11 +219,9 @@ class SecureStorageService {
         parsed = raw;
       }
 
-      try {
-        this.setItem(key, parsed);
-      } catch (error) {
+      void this.setItemAsync(key, parsed).catch((error) => {
         console.warn(`Failed to migrate key "${key}":`, error);
-      }
+      });
     });
   }
 

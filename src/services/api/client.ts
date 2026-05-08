@@ -7,7 +7,7 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import type { ApiClientConfig, ApiError } from '@/types';
 import { BUILD_DATE_HEADER_KEYS, REQUEST_TIMEOUT_MS, VERSION_HEADER_KEYS } from '@/utils/constants';
 import { computeApiUrl } from '@/utils/connection';
-import { isRecord } from '@/atoms/usage/guards';
+import { isRecord } from '@/utils/usageRecord';
 
 class ApiClient {
   private instance: AxiosInstance;
@@ -148,6 +148,7 @@ class ApiClient {
 
       // 401 未授权 - 触发登出事件
       if (error.response?.status === 401) {
+        this.managementKey = '';
         window.dispatchEvent(new Event('unauthorized'));
       }
 
@@ -222,10 +223,6 @@ class ApiClient {
   ): Promise<T> {
     const response = await this.instance.post<T>(url, formData, {
       ...config,
-      headers: {
-        ...(config?.headers || {}),
-        'Content-Type': 'multipart/form-data',
-      },
     });
     return response.data;
   }

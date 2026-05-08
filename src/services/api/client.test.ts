@@ -109,7 +109,7 @@ describe('ApiClient', () => {
   });
 
   describe('postForm', () => {
-    it('sends FormData with multipart content type', async () => {
+    it('sends FormData without forcing multipart content type headers', async () => {
       const mockInstance = axios.create();
       (mockInstance.post as ReturnType<typeof vi.fn>).mockResolvedValue({
         data: { uploaded: true },
@@ -122,9 +122,7 @@ describe('ApiClient', () => {
       expect(mockInstance.post).toHaveBeenCalledWith(
         '/upload',
         formData,
-        expect.objectContaining({
-          headers: expect.objectContaining({ 'Content-Type': 'multipart/form-data' }),
-        })
+        {}
       );
     });
   });

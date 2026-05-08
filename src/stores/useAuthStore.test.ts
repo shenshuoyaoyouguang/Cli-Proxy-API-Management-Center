@@ -4,7 +4,9 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('@/services/storage/secureStorage', () => ({
   secureStorage: {
     getItem: vi.fn(),
+    getItemAsync: vi.fn(),
     setItem: vi.fn(),
+    setItemAsync: vi.fn(() => Promise.resolve()),
     removeItem: vi.fn(),
     migratePlaintextKeys: vi.fn(),
   },
@@ -279,10 +281,9 @@ describe('useAuthStore', () => {
         'http://localhost:3000',
         { encrypt: false }
       );
-      expect(vi.mocked(secureStorage.setItem)).not.toHaveBeenCalledWith(
+      expect(vi.mocked(secureStorage.setItemAsync)).toHaveBeenCalledWith(
         'managementKey',
-        expect.anything(),
-        expect.anything()
+        'test-key'
       );
       expect(vi.mocked(sessionStorage.setItem)).not.toHaveBeenCalledWith(
         'sessionManagementKey',
@@ -337,6 +338,7 @@ describe('useAuthStore', () => {
         if (key === 'apiBase') return 'http://custom-server:3000';
         return null;
       });
+      vi.mocked(secureStorage.getItemAsync).mockResolvedValue(null);
 
       const restored = await useAuthStore.getState().restoreSession();
 
@@ -349,6 +351,28 @@ describe('useAuthStore', () => {
         managementKey: '',
       });
       expect(vi.mocked(secureStorage.removeItem)).toHaveBeenCalledWith('managementKey');
+    });
+
+    it('clears restoreSessionPromise after a failed validation attempt', async () => {
+      localStorageMock.rememberConnection = 'true';
+      vi.mocked(secureStorage.getItem).mockImplementation((key: string) => {
+        if (key === 'apiBase') return 'http://custom-server:3000';
+        return null;
+      });
+      vi.mocked(secureStorage.getItemAsync).mockResolvedValue('saved-key');
+
+      const { useConfigStore } = await import('./useConfigStore');
+      const fetchConfig = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('expired'))
+        .mockRejectedValueOnce(new Error('expired-again'));
+      (useConfigStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+        fetchConfig,
+      });
+
+      await expect(useAuthStore.getState().restoreSession()).resolves.toBe(false);
+      await expect(useAuthStore.getState().restoreSession()).resolves.toBe(false);
+      expect(fetchConfig).toHaveBeenCalledTimes(2);
     });
   });
 });

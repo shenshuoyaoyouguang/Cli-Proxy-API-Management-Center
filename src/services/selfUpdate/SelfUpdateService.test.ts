@@ -6,6 +6,14 @@ vi.mock('@/stores', () => ({
   },
 }));
 
+const mockApiClientPut = vi.fn().mockResolvedValue({});
+
+vi.mock('@/services/api/client', () => ({
+  apiClient: {
+    put: mockApiClientPut,
+  },
+}));
+
 vi.mock('@/utils/error', () => ({
   getErrorMessage: (err: unknown) =>
     err instanceof Error ? err.message : String(err ?? ''),
@@ -140,6 +148,7 @@ describe('SelfUpdateService', () => {
     it('sets status to available when newer version exists', async () => {
       mockConfigState(null);
       const service = new SelfUpdateService();
+      (service as unknown as { info: { currentVersion: string } }).info.currentVersion = 'v1.0.0';
 
       const mockFetch = vi.fn().mockResolvedValue(
         new Response(
@@ -157,6 +166,28 @@ describe('SelfUpdateService', () => {
       expect(result.status).toBe('available');
       expect(result.latestVersion).toBe('v999.0.0');
       expect(result.releaseUrl).toBe('https://example.com/management.html');
+    });
+
+    it('marks status as error when versions cannot be compared', async () => {
+      mockConfigState(null);
+      const service = new SelfUpdateService();
+      (service as unknown as { info: { currentVersion: string } }).info.currentVersion = 'unknown-version';
+
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            tag_name: 'v999.0.0',
+            html_url: 'https://github.com/org/repo/releases/tag/v999.0.0',
+            assets: [{ name: 'management.html', browser_download_url: 'https://example.com/management.html' }],
+          }),
+          { status: 200 }
+        )
+      );
+      globalThis.fetch = mockFetch as never;
+
+      const result = await service.checkForUpdates();
+      expect(result.status).toBe('error');
+      expect(result.error).toContain('版本号格式无法比较');
     });
 
     it('sets status to up_to_date when version can be compared and matches', async () => {
@@ -218,6 +249,58 @@ describe('SelfUpdateService', () => {
     it('downloads and applies via the management update endpoint', async () => {
       mockConfigState(null);
       const service = new SelfUpdateService();
+      (service as unknown as { info: { currentVersion: string } }).info.currentVersion = 'v1.0.0';
+
+      const releaseResponse = new Response(
+        JSON.stringify({
+          tag_name: 'v999.0.0',
+          html_url: 'https://github.com/org/repo/releases/tag/v999.0.0',
+          assets: [
+            { name: 'management.html', browser_download_url: 'https://example.com/management.html' },
+            { name: 'management.html.sha256', browser_download_url: 'https://example.com/management.html.sha256' },
+          ],
+        }),
+        { status: 200 }
+      );
+      const content = '<html>updated management page</html>';
+      const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content));
+      const hash = Array.from(new Uint8Array(hashBuffer))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/releases/latest')) {
+          return Promise.resolve(releaseResponse as never);
+        }
+        if (url.endsWith('management.html')) {
+          return Promise.resolve(new Response(content, { status: 200 }) as never);
+        }
+        if (url.endsWith('management.html.sha256')) {
+          return Promise.resolve(new Response(`${hash}  management.html`, { status: 200 }) as never);
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+      });
+
+      await service.checkForUpdates();
+
+      const result = await service.downloadAndApply();
+      expect(result.status).toBe('up_to_date');
+      expect(mockApiClientPut).toHaveBeenCalledWith(
+        '/v0/management/update',
+        content,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Content-Type': 'text/html',
+          }),
+        })
+      );
+    });
+
+    it('rejects update when hash asset is missing', async () => {
+      mockConfigState(null);
+      const service = new SelfUpdateService();
+      (service as unknown as { info: { currentVersion: string } }).info.currentVersion = 'v1.0.0';
 
       const releaseResponse = new Response(
         JSON.stringify({
@@ -227,22 +310,18 @@ describe('SelfUpdateService', () => {
         }),
         { status: 200 }
       );
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue(releaseResponse as never);
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/releases/latest')) {
+          return Promise.resolve(releaseResponse as never);
+        }
+        return Promise.resolve(new Response('<html>updated management page</html>', { status: 200 }) as never);
+      });
 
       await service.checkForUpdates();
-
-      const htmlContent = '<html>updated management page</html>';
-      const downloadResponse = new Response(htmlContent, { status: 200 });
-
-      const mockApiClientPut = vi.fn().mockResolvedValue({});
-      vi.doMock('@/services/api/client', () => ({
-        apiClient: { put: mockApiClientPut },
-      }));
-
-      globalThis.fetch = vi.fn().mockResolvedValue(downloadResponse as never);
-
       const result = await service.downloadAndApply();
-      expect(result.status).toBe('up_to_date');
+      expect(result.status).toBe('error');
+      expect(result.error).toContain('缺少 management.html.sha256');
     });
   });
 

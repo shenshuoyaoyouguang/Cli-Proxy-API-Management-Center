@@ -18,6 +18,11 @@ type ParsedRepo = {
   repo: string;
 };
 
+type ReleaseAsset = {
+  name: string;
+  browser_download_url: string;
+};
+
 const parseGitHubRepo = (raw: string): ParsedRepo | null => {
   const cleaned = raw.trim();
   if (!cleaned) return null;
@@ -74,7 +79,7 @@ export class SelfUpdateService {
   private listeners = new Set<UpdateListener>();
   private autoCheckTimerId: ReturnType<typeof setTimeout> | null = null;
   private abortController: AbortController | null = null;
-  private releaseAssets: { name: string; browser_download_url: string }[] = [];
+  private releaseAssets: ReleaseAsset[] = [];
 
   getUpdateInfo(): UpdateInfo {
     return { ...this.info };
@@ -116,6 +121,24 @@ export class SelfUpdateService {
     } catch {
       return null;
     }
+  }
+
+  private getHashAsset(): ReleaseAsset | null {
+    return this.releaseAssets.find((asset) => asset.name === 'management.html.sha256') ?? null;
+  }
+
+  private async readExpectedHash(hashAsset: ReleaseAsset): Promise<string> {
+    const hashResponse = await fetch(hashAsset.browser_download_url);
+    if (!hashResponse.ok) {
+      throw new Error(`SHA256 文件下载失败 (${hashResponse.status})`);
+    }
+
+    const expectedHash = (await hashResponse.text()).trim().split(/\s+/)[0] ?? '';
+    if (!expectedHash) {
+      throw new Error('SHA256 文件为空或格式无效');
+    }
+
+    return expectedHash;
   }
 
   async checkForUpdates(): Promise<UpdateInfo> {
@@ -174,9 +197,10 @@ export class SelfUpdateService {
 
       if (comparison === null) {
         this.setStatus({
-          status: 'available',
+          status: 'error',
           latestVersion: latest,
           releaseUrl,
+          error: '版本号格式无法比较，已拒绝自动更新',
         });
         return this.getUpdateInfo();
       }
@@ -231,26 +255,32 @@ export class SelfUpdateService {
       const content = await response.text();
 
       const contentHash = await computeSHA256(content);
-      const hashAsset = this.releaseAssets.find(
-        (a) => a.name === 'management.html.sha256'
-      );
-      if (hashAsset) {
-        try {
-          const hashResponse = await fetch(hashAsset.browser_download_url);
-          if (hashResponse.ok) {
-            const expectedHash = (await hashResponse.text()).trim().split(/\s+/)[0];
-            if (expectedHash && contentHash !== expectedHash) {
-              this.setStatus({
-                status: 'error',
-                error: `完整性校验失败: SHA256 不匹配 (期望 ${expectedHash.slice(0, 16)}..., 实际 ${contentHash.slice(0, 16)}...)`,
-              });
-              return this.getUpdateInfo();
-            }
-          }
-        } catch {
-          // hash 文件获取失败时不阻止更新，仅记录警告
-          console.warn('Failed to fetch SHA256 hash file, skipping integrity check');
-        }
+      const hashAsset = this.getHashAsset();
+      if (!hashAsset) {
+        this.setStatus({
+          status: 'error',
+          error: '发布资产缺少 management.html.sha256，已拒绝自动更新',
+        });
+        return this.getUpdateInfo();
+      }
+
+      let expectedHash = '';
+      try {
+        expectedHash = await this.readExpectedHash(hashAsset);
+      } catch (err: unknown) {
+        this.setStatus({
+          status: 'error',
+          error: `无法验证更新完整性: ${getErrorMessage(err)}`,
+        });
+        return this.getUpdateInfo();
+      }
+
+      if (contentHash !== expectedHash) {
+        this.setStatus({
+          status: 'error',
+          error: `完整性校验失败: SHA256 不匹配 (期望 ${expectedHash.slice(0, 16)}..., 实际 ${contentHash.slice(0, 16)}...)`,
+        });
+        return this.getUpdateInfo();
       }
 
       this.setStatus({ status: 'applying' });

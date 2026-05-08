@@ -27,7 +27,7 @@ import {
   resolveCodexPlanType,
   resolveGeminiCliProjectId,
 } from '@/utils/quota';
-import type { SubscriptionTier } from '@/utils/usage/slaCalculator';
+import type { SubscriptionTier } from '@/utils/usage/reliability';
 
 interface ResolveUsageSubscriptionTierOptions {
   authFiles: AuthFileItem[];

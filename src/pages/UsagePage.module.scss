@@ -262,7 +262,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-areas:
     "requests requests tokens tokens"
-    "rpm tpm cost sla";
+    "rpm tpm cost cost";
 
   @include tablet {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -270,7 +270,7 @@
       "requests requests"
       "tokens tokens"
       "rpm tpm"
-      "cost sla";
+      "cost cost";
   }
 
   @include mobile {
@@ -281,7 +281,7 @@
       "rpm"
       "tpm"
       "cost"
-      "sla";
+      "cost";
   }
 }
 

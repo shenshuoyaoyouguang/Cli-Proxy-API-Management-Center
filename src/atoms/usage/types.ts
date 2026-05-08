@@ -1,5 +1,3 @@
-import type { ScriptableContext } from 'chart.js';
-
 export interface KeyStatBucket {
   success: number;
   failure: number;
@@ -77,25 +75,6 @@ export interface UsageSummary {
   totalTokens: number;
 }
 
-export interface ChartDataset {
-  label: string;
-  data: number[];
-  borderColor: string;
-  backgroundColor:
-    | string
-    | CanvasGradient
-    | ((context: ScriptableContext<'line'>) => string | CanvasGradient);
-  pointBackgroundColor?: string;
-  pointBorderColor?: string;
-  fill: boolean;
-  tension: number;
-}
-
-export interface ChartData {
-  labels: string[];
-  datasets: ChartDataset[];
-}
-
 export type StatusBlockState = 'success' | 'failure' | 'mixed' | 'idle';
 
 export interface StatusBlockDetail {
@@ -122,18 +101,4 @@ export interface ServiceHealthData {
   totalFailure: number;
   rows: number;
   cols: number;
-}
-
-export type TokenCategory = 'input' | 'output' | 'cached' | 'reasoning';
-
-export interface TokenBreakdownSeries {
-  labels: string[];
-  dataByCategory: Record<TokenCategory, number[]>;
-  hasData: boolean;
-}
-
-export interface CostSeries {
-  labels: string[];
-  data: number[];
-  hasData: boolean;
 }

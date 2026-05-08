@@ -18,7 +18,7 @@ import { Select } from '@/components/ui/Select';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useUsageSSE } from '@/hooks/useUsageSSE';
-import { useThemeStore, useConfigStore } from '@/stores';
+import { useConfigStore } from '@/stores';
 import {
   IconRefreshCw,
   IconDownload,
@@ -28,21 +28,15 @@ import {
   StatCards,
   RuntimeQualityCard,
   TokenEfficiencyCenter,
-  UsageChart,
-  ChartLineSelector,
   ApiDetailsCard,
   ModelStatsCard,
   PriceSettingsCard,
   CredentialStatsCard,
   RequestEventsDetailsCard,
-  TokenBreakdownChart,
-  TokenDistributionChart,
-  CostTrendChart,
   ServiceHealthCard,
   useUsageData,
   useAuthFilesMap,
   useSparklines,
-  useChartData,
   useUsageAnalyticsSnapshot,
   useUsageReliabilitySnapshot,
   useUsageSubscriptionTier,
@@ -64,11 +58,8 @@ ChartJS.register(
   Filler
 );
 
-const CHART_LINES_STORAGE_KEY = 'cli-proxy-usage-chart-lines-v1';
 const TIME_RANGE_STORAGE_KEY = 'cli-proxy-usage-time-range-v1';
-const DEFAULT_CHART_LINES = ['all'];
 const DEFAULT_TIME_RANGE: UsageTimeRange = '7d';
-const MAX_CHART_LINES = 9;
 const TIME_RANGE_OPTIONS: ReadonlyArray<{ value: UsageTimeRange; labelKey: string }> = [
   { value: 'all', labelKey: 'usage_stats.range_all' },
   { value: '1d', labelKey: 'usage_stats.range_1d' },
@@ -86,35 +77,6 @@ const REQUEST_EVENTS_SECTION_ID = 'usage-request-events-card';
 const isUsageTimeRange = (value: unknown): value is UsageTimeRange =>
   value === '1d' || value === '7d' || value === '30d' || value === 'all';
 
-const normalizeChartLines = (value: unknown, maxLines = MAX_CHART_LINES): string[] => {
-  if (!Array.isArray(value)) {
-    return DEFAULT_CHART_LINES;
-  }
-
-  const filtered = value
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, maxLines);
-
-  return filtered.length ? filtered : DEFAULT_CHART_LINES;
-};
-
-const loadChartLines = (): string[] => {
-  try {
-    if (typeof localStorage === 'undefined') {
-      return DEFAULT_CHART_LINES;
-    }
-    const raw = localStorage.getItem(CHART_LINES_STORAGE_KEY);
-    if (!raw) {
-      return DEFAULT_CHART_LINES;
-    }
-    return normalizeChartLines(JSON.parse(raw));
-  } catch {
-    return DEFAULT_CHART_LINES;
-  }
-};
-
 const loadTimeRange = (): UsageTimeRange => {
   try {
     if (typeof localStorage === 'undefined') {
@@ -130,8 +92,6 @@ const loadTimeRange = (): UsageTimeRange => {
 export function UsagePage() {
   const { t, i18n } = useTranslation();
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
-  const isDark = resolvedTheme === 'dark';
   const config = useConfigStore((state) => state.config);
 
   const {
@@ -159,7 +119,6 @@ export function UsagePage() {
 
   const { connectionStatus } = useUsageSSE({ enabled: true });
 
-  const [chartLines, setChartLines] = useState<string[]>(loadChartLines);
   const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
   const [efficiencyDrilldown, setEfficiencyDrilldown] = useState<EfficiencyDrilldown>({
     type: 'none',
@@ -176,21 +135,6 @@ export function UsagePage() {
       })),
     [t]
   );
-
-  const handleChartLinesChange = useCallback((lines: string[]) => {
-    setChartLines(normalizeChartLines(lines));
-  }, []);
-
-  useEffect(() => {
-    try {
-      if (typeof localStorage === 'undefined') {
-        return;
-      }
-      localStorage.setItem(CHART_LINES_STORAGE_KEY, JSON.stringify(chartLines));
-    } catch {
-      // Ignore storage errors.
-    }
-  }, [chartLines]);
 
   useEffect(() => {
     try {
@@ -210,11 +154,9 @@ export function UsagePage() {
 
   const {
     filteredUsage,
-    canonicalUsage,
     modelNames,
     apiStats,
     modelStats,
-    tokenDistribution,
     usageSummary,
     requestEventRows,
     healthRequestEventRows,
@@ -243,25 +185,13 @@ export function UsagePage() {
   const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
     useSparklines({ usage: filteredUsage, usageDetails, loading, modelPrices, nowMs });
 
-  const { subscriptionTier, loading: subscriptionTierLoading } =
+  const { loading: subscriptionTierLoading } =
     useUsageSubscriptionTier(authFiles);
 
-  const { healthAssessment, slaAssessment, serviceHealth } = useUsageReliabilitySnapshot({
+  const { healthAssessment, serviceHealth } = useUsageReliabilitySnapshot({
     usageDetails,
-    tier: subscriptionTier,
     nowMs,
   });
-
-  const {
-    requestsPeriod,
-    setRequestsPeriod,
-    tokensPeriod,
-    setTokensPeriod,
-    requestsChartData,
-    tokensChartData,
-    requestsChartOptions,
-    tokensChartOptions,
-  } = useChartData({ usage: canonicalUsage, chartLines, isDark, isMobile, hourWindowHours });
 
   const hasPrices = Object.keys(modelPrices).length > 0;
   const externalModelFilter =
@@ -411,10 +341,8 @@ export function UsagePage() {
           usage={filteredUsage}
           loading={loading || subscriptionTierLoading}
           hasPrices={hasPrices}
-          modelStats={modelStats}
           usageSummary={usageSummary}
           healthAssessment={healthAssessment}
-          slaAssessment={slaAssessment}
           onAvailabilityDrillDown={handleAvailabilityDrillDown}
           onSuccessRateDrillDown={handleSuccessRateDrillDown}
           sparklines={{
@@ -474,64 +402,6 @@ export function UsagePage() {
             onClearExternalFilters={handleClearRequestEventDrillDown}
           />
         </div>
-      </section>
-
-      {/* Trends Section */}
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>{t('usage_stats.trends_section_title')}</h2>
-        <ChartLineSelector
-          chartLines={chartLines}
-          modelNames={modelNames}
-          maxLines={MAX_CHART_LINES}
-          onChange={handleChartLinesChange}
-        />
-
-        <div className={styles.chartsGrid}>
-          <UsageChart
-            title={t('usage_stats.requests_trend')}
-            period={requestsPeriod}
-            onPeriodChange={setRequestsPeriod}
-            chartData={requestsChartData}
-            chartOptions={requestsChartOptions}
-            loading={loading}
-            isMobile={isMobile}
-            emptyText={t('usage_stats.no_data')}
-          />
-          <UsageChart
-            title={t('usage_stats.tokens_trend')}
-            period={tokensPeriod}
-            onPeriodChange={setTokensPeriod}
-            chartData={tokensChartData}
-            chartOptions={tokensChartOptions}
-            loading={loading}
-            isMobile={isMobile}
-            emptyText={t('usage_stats.no_data')}
-          />
-        </div>
-
-        <div className={styles.chartsGrid}>
-          <TokenDistributionChart
-            distribution={tokenDistribution}
-            loading={loading}
-            isDark={isDark}
-          />
-          <TokenBreakdownChart
-            usage={filteredUsage}
-            loading={loading}
-            isDark={isDark}
-            isMobile={isMobile}
-            hourWindowHours={hourWindowHours}
-          />
-        </div>
-
-        <CostTrendChart
-          usage={filteredUsage}
-          loading={loading}
-          isDark={isDark}
-          isMobile={isMobile}
-          modelPrices={modelPrices}
-          hourWindowHours={hourWindowHours}
-        />
       </section>
 
       {/* Settings Section */}

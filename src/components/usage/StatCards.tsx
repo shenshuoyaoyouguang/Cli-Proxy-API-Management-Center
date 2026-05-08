@@ -13,15 +13,11 @@ import {
 import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import type { HealthScore } from '@/utils/usage/healthScore';
-import type { SLAMetrics } from '@/utils/usage/slaCalculator';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
 import type { SparklineBundle } from './hooks/useSparklines';
 import type { UsageSummaryMetrics } from './hooks/usageAnalyticsSnapshot';
 import { HealthScoreCard } from './HealthScoreCard';
-import { SLAMonitorCard } from './SLAMonitorCard';
-import { ModelUsageSummaryCard } from './ModelUsageSummaryCard';
-import type { ModelStat } from './ModelStatsCard';
 import { STAT_COLORS, STATUS_COLORS } from '@/constants/colors';
 import styles from '@/pages/UsagePage.module.scss';
 
@@ -42,10 +38,8 @@ export interface StatCardsProps {
   usage: UsagePayload | null;
   loading: boolean;
   hasPrices: boolean;
-  modelStats: ModelStat[];
   usageSummary: UsageSummaryMetrics;
   healthAssessment: HealthScore;
-  slaAssessment: SLAMetrics;
   onAvailabilityDrillDown?: () => void;
   onSuccessRateDrillDown?: () => void;
   sparklines: {
@@ -61,10 +55,8 @@ export const StatCards = memo(function StatCards({
   usage,
   loading,
   hasPrices,
-  modelStats,
   usageSummary,
   healthAssessment,
-  slaAssessment,
   onAvailabilityDrillDown,
   onSuccessRateDrillDown,
   sparklines,
@@ -265,10 +257,6 @@ export const StatCards = memo(function StatCards({
         onAvailabilityDrillDown={onAvailabilityDrillDown}
         onSuccessRateDrillDown={onSuccessRateDrillDown}
       />
-
-      <SLAMonitorCard assessment={slaAssessment} loading={loading} />
-
-      <ModelUsageSummaryCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
     </div>
   );
 });

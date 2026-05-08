@@ -1,4 +1,4 @@
-export { reliabilityConfig, SLA_TIERS, type SLATierConfig } from './config';
+export { reliabilityConfig } from './config';
 export {
   buildReliabilitySnapshot,
   buildServiceHealthData,
@@ -10,7 +10,6 @@ export {
   getDetailTimestampMs
 } from './snapshot';
 export { buildHealthAssessment, getHealthGrade } from './healthAssessment';
-export { buildSlaAssessment, getOverallSLAStatus, getSLAStatus } from './slaAssessment';
 export type {
   DataQuality,
   HealthAssessment,
@@ -22,12 +21,7 @@ export type {
   ReliabilityDetail,
   ReliabilityMetricId,
   ReliabilitySnapshot,
-  SLACompensation,
-  SLARemainingBudget,
-  SLAStatus,
   ServiceHealthData,
-  SlaAssessment,
-  SlaCommitment,
   StatusBlockDetail,
   StatusBlockState,
   SubscriptionTier,

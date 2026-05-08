@@ -13,7 +13,6 @@ export type DataQuality = 'ok' | 'low_sample' | 'no_data' | 'unsupported';
 export type HealthGrade = 'excellent' | 'good' | 'fair' | 'poor' | 'unknown';
 export type HealthTrend = 'up' | 'stable' | 'down' | 'unknown';
 export type SubscriptionTier = 'free' | 'basic' | 'pro' | 'enterprise';
-export type SLAStatus = 'met' | 'at_risk' | 'breached' | 'unknown' | 'unsupported';
 export type StatusBlockState = 'success' | 'failure' | 'mixed' | 'idle';
 
 export interface ReliabilityCounts {
@@ -81,44 +80,6 @@ export interface HealthAssessment {
   trend: TrendResult;
   healthyDayStreak: number;
   primaryMetricId: ReliabilityMetricId | null;
-  hasData: boolean;
-}
-
-export interface SlaCommitment {
-  id: ReliabilityMetricId;
-  target: number | null;
-  current: number | null;
-  unit: 'ratio' | 'milliseconds' | 'minutes';
-  status: SLAStatus;
-  dataQuality: DataQuality;
-  sampleCount: number;
-}
-
-export interface SLARemainingBudget {
-  downtime: number;
-  errors: number;
-}
-
-export interface SLACompensation {
-  eligible: boolean;
-  amount: number;
-  percentage: number;
-  description: string;
-}
-
-export interface SlaAssessment {
-  tier: SubscriptionTier;
-  overallStatus: SLAStatus;
-  dataQuality: DataQuality;
-  commitments: {
-    availability: SlaCommitment;
-    successRate: SlaCommitment;
-    responseTime: SlaCommitment;
-    recoveryTime: SlaCommitment;
-  };
-  remainingBudget: SLARemainingBudget;
-  compensation: SLACompensation;
-  missingTelemetry: ReliabilityMetricId[];
   hasData: boolean;
 }
 

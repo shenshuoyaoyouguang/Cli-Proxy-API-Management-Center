@@ -16,15 +16,10 @@ export type {
   ApiStats,
   UsageTimeRange,
   UsageSummary,
-  ChartDataset,
-  ChartData,
   StatusBlockState,
   StatusBlockDetail,
   StatusBarData,
   ServiceHealthData,
-  TokenCategory,
-  TokenBreakdownSeries,
-  CostSeries,
 } from '@/atoms/usage/types';
 
 // === 守卫与工具重导出 ===
@@ -104,17 +99,6 @@ export {
   calculateRecentPerMinuteRates,
   getModelNamesFromUsage,
 } from './usage/rates';
-
-// === 图表构建重导出 ===
-export {
-  buildHourlySeriesByModel,
-  buildDailySeriesByModel,
-  buildChartData,
-  buildHourlyTokenBreakdown,
-  buildDailyTokenBreakdown,
-  buildHourlyCostSeries,
-  buildDailyCostSeries,
-} from './usage/chartBuilder';
 
 // === 模型名称规范化重导出 ===
 export { normalizeUsageModelNames, resolveModelNameInDetails } from './usage/normalize';

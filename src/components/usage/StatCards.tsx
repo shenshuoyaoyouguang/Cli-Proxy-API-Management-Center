@@ -9,14 +9,12 @@ import {
 } from '@/components/ui/icons';
 import { TokenNumber } from '@/components/ui/SmartNumber';
 import { SkeletonCard } from '@/components/ui/Skeleton';
-import type { HealthScore } from '@/utils/usage/healthScore';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
 import type { SparklineBundle, PeriodSparklineBundle } from './hooks/useSparklines';
 import type { UsageSummaryMetrics } from './hooks/usageAnalyticsSnapshot';
 import { RateMetricCard } from './RateMetricCard';
 import { CostMetricCard } from './CostMetricCard';
-import { HealthScoreCard } from './HealthScoreCard';
 import { MetricSummaryBanner } from './MetricSummaryBanner';
 import { STAT_COLORS, STATUS_COLORS } from '@/constants/colors';
 import { useMetricTrend } from './hooks/useMetricTrend';
@@ -44,12 +42,9 @@ export interface StatCardsProps {
   loading: boolean;
   hasPrices: boolean;
   usageSummary: UsageSummaryMetrics;
-  healthAssessment: HealthScore;
   usageDetails: UsageDetail[];
   modelPrices: Record<string, ModelPrice>;
   nowMs: number;
-  onAvailabilityDrillDown?: () => void;
-  onSuccessRateDrillDown?: () => void;
   onMetricDrillDown?: (metricType: string) => void;
   sparklines: {
     requests: SparklineBundle | null;
@@ -68,12 +63,9 @@ export const StatCards = memo(function StatCards({
   loading,
   hasPrices,
   usageSummary,
-  healthAssessment,
   usageDetails,
   modelPrices,
   nowMs,
-  onAvailabilityDrillDown,
-  onSuccessRateDrillDown,
   onMetricDrillDown,
   sparklines,
 }: StatCardsProps) {
@@ -179,9 +171,6 @@ export const StatCards = memo(function StatCards({
         <div className={styles.cardMedium} style={{ gridColumn: 'span 1' }}>
           <SkeletonCard />
         </div>
-        <div className={styles.cardLarge} style={{ gridColumn: 'span 2' }}>
-          <SkeletonCard />
-        </div>
       </div>
     );
   }
@@ -270,13 +259,6 @@ export const StatCards = memo(function StatCards({
           loading={loading}
         />
       </div>
-
-      <HealthScoreCard
-        assessment={healthAssessment}
-        loading={loading}
-        onAvailabilityDrillDown={onAvailabilityDrillDown}
-        onSuccessRateDrillDown={onSuccessRateDrillDown}
-      />
     </div>
   );
 });

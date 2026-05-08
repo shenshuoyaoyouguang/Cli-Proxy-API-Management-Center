@@ -6,11 +6,9 @@ import {
   LinearScale,
   PointElement,
   LineElement,
-  ArcElement,
   Title,
   Tooltip,
   Legend,
-  Filler,
 } from 'chart.js';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -50,11 +48,9 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
-  ArcElement,
   Title,
   Tooltip,
-  Legend,
-  Filler
+  Legend
 );
 
 const TIME_RANGE_STORAGE_KEY = 'cli-proxy-usage-time-range-v1';
@@ -188,7 +184,7 @@ export function UsagePage() {
   const { loading: subscriptionTierLoading } =
     useUsageSubscriptionTier(authFiles);
 
-  const { healthAssessment, serviceHealth } = useUsageReliabilitySnapshot({
+  const { serviceHealth } = useUsageReliabilitySnapshot({
     usageDetails,
     nowMs,
   });
@@ -241,16 +237,6 @@ export function UsagePage() {
       }, 2000);
     }
   }, []);
-
-  const handleAvailabilityDrillDown = useCallback(() => {
-    scrollToSection(SERVICE_HEALTH_SECTION_ID);
-  }, [scrollToSection]);
-
-  const handleSuccessRateDrillDown = useCallback(() => {
-    setEfficiencyDrilldown({ type: 'none' });
-    setRequestEventsResultFilter('failure');
-    scrollToSection(REQUEST_EVENTS_SECTION_ID);
-  }, [scrollToSection]);
 
   const handleEfficiencyDrilldown = useCallback(
     (drilldown: EfficiencyDrilldown) => {
@@ -345,12 +331,9 @@ export function UsagePage() {
           loading={loading || subscriptionTierLoading}
           hasPrices={hasPrices}
           usageSummary={usageSummary}
-          healthAssessment={healthAssessment}
           usageDetails={usageDetails}
           modelPrices={modelPrices}
           nowMs={nowMs}
-          onAvailabilityDrillDown={handleAvailabilityDrillDown}
-          onSuccessRateDrillDown={handleSuccessRateDrillDown}
           sparklines={{
             requests: requestsSparkline,
             tokens: tokensSparkline,

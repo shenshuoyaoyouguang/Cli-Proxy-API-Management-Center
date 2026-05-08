@@ -8,40 +8,41 @@ export function ProtectedRoute({ children }: { children: ReactElement }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const managementKey = useAuthStore((state) => state.managementKey);
   const apiBase = useAuthStore((state) => state.apiBase);
-  const [checking, setChecking] = useState(false);
+  const [checking, setChecking] = useState(true);
   const hasAttemptedRestore = useRef(false);
 
   useEffect(() => {
+    let active = true;
+
     const tryRestore = async () => {
       if (isAuthenticated) {
-        return;
-      }
-
-      // 情况1：内存中已有凭证，直接验证
-      if (managementKey && apiBase) {
-        setChecking(true);
-        try {
-          await useAuthStore.getState().checkAuth();
-        } finally {
+        if (active) {
           setChecking(false);
         }
         return;
       }
 
-      // 情况2：内存中没有凭证，但可能存储在 localStorage 中
-      // 仅在首次渲染时尝试恢复，避免无限循环
-      if (!hasAttemptedRestore.current) {
-        hasAttemptedRestore.current = true;
-        setChecking(true);
-        try {
+      try {
+        if (managementKey && apiBase) {
+          await useAuthStore.getState().checkAuth();
+          return;
+        }
+
+        if (!hasAttemptedRestore.current) {
+          hasAttemptedRestore.current = true;
           await useAuthStore.getState().restoreSession();
-        } finally {
+        }
+      } finally {
+        if (active) {
           setChecking(false);
         }
       }
     };
 
-    tryRestore();
+    void tryRestore();
+    return () => {
+      active = false;
+    };
   }, [apiBase, isAuthenticated, managementKey]);
 
   if (checking) {

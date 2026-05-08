@@ -87,6 +87,7 @@ export function LogsPage() {
   });
 
   const logScrollerRef = useRef<ReturnType<typeof useLogScroller> | null>(null);
+  const isMountedRef = useRef(true);
   const longPressRef = useRef<{
     timer: number | null;
     startX: number;
@@ -101,9 +102,17 @@ export function LogsPage() {
 
   const disableControls = connectionStatus !== 'connected';
 
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const loadLogs = useCallback(async (incremental = false) => {
     if (connectionStatus !== 'connected') {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
       return;
     }
 
@@ -117,9 +126,13 @@ export function LogsPage() {
     logRequestInFlightRef.current = true;
 
     if (!incremental) {
-      setLoading(true);
+      if (isMountedRef.current) {
+        setLoading(true);
+      }
     }
-    setError('');
+    if (isMountedRef.current) {
+      setError('');
+    }
 
     try {
       const scrollerInstance = logScrollerRef.current;
@@ -142,37 +155,40 @@ export function LogsPage() {
 
       if (incremental && newLines.length > 0) {
         // 增量更新：追加新日志并限制缓冲区大小（避免内存与渲染膨胀）
-        setLogState((prev) => {
-          const prevRenderedCount = prev.buffer.length - prev.visibleFrom;
-          const combined = [...prev.buffer, ...newLines];
-          const dropCount = Math.max(combined.length - MAX_BUFFER_LINES, 0);
-          const buffer = dropCount > 0 ? combined.slice(dropCount) : combined;
-          let visibleFrom = Math.max(prev.visibleFrom - dropCount, 0);
+        if (isMountedRef.current) {
+          setLogState((prev) => {
+            const prevRenderedCount = prev.buffer.length - prev.visibleFrom;
+            const combined = [...prev.buffer, ...newLines];
+            const dropCount = Math.max(combined.length - MAX_BUFFER_LINES, 0);
+            const buffer = dropCount > 0 ? combined.slice(dropCount) : combined;
+            let visibleFrom = Math.max(prev.visibleFrom - dropCount, 0);
 
-          // 若用户停留在底部（跟随最新日志），则保持”渲染窗口”大小不变，避免无限增长
-          if (stickToBottom) {
-            visibleFrom = Math.max(buffer.length - prevRenderedCount, 0);
-          }
+            if (stickToBottom) {
+              visibleFrom = Math.max(buffer.length - prevRenderedCount, 0);
+            }
 
-          return { buffer, visibleFrom };
-        });
+            return { buffer, visibleFrom };
+          });
+        }
       } else if (!incremental) {
         // 全量加载：默认只渲染最后 100 行，向上滚动再展开更多
         const buffer = newLines.slice(-MAX_BUFFER_LINES);
         const visibleFrom = Math.max(buffer.length - INITIAL_DISPLAY_LINES, 0);
-        setLogState({ buffer, visibleFrom });
+        if (isMountedRef.current) {
+          setLogState({ buffer, visibleFrom });
+        }
       }
     } catch (err: unknown) {
       console.error('Failed to load logs:', err);
-      if (!incremental) {
+      if (!incremental && isMountedRef.current) {
         setError(getErrorMessage(err) || t('logs.load_error'));
       }
     } finally {
-      if (!incremental) {
+      if (!incremental && isMountedRef.current) {
         setLoading(false);
       }
       logRequestInFlightRef.current = false;
-      if (pendingFullReloadRef.current) {
+      if (pendingFullReloadRef.current && isMountedRef.current) {
         pendingFullReloadRef.current = false;
         void loadLogs(false);
       }

@@ -1,8 +1,8 @@
 import type { UsageDetail } from '@/atoms/usage/types';
 import { expireFailedDetails, FAILED_DETAIL_TTL_MS } from '@/atoms/usage/expireFailed';
-import { rehydrateUsageAggregatesFromDetails } from '@/molecules/usage/aggregate';
 import { isRecord, getApisRecord } from '@/atoms/usage/guards';
-import { getDetailTimestampMs } from '@/atoms/usage/time';
+import { getDetailTimestampMs } from '@/utils/timestamp';
+import { rehydrateUsageAggregatesFromDetails } from '@/utils/usageAggregation';
 
 export type ExpireUsageFailedResult = {
   usage: Record<string, unknown> | null;

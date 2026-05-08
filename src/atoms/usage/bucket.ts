@@ -1,5 +1,5 @@
 import type { StatusBlockState, StatusBlockDetail, StatusBarData } from './types';
-import { getDetailTimestampMs } from './time';
+import { getDetailTimestampMs } from '@/utils/timestamp';
 
 export interface BucketConfig {
   bucketCount: number;

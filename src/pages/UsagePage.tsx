@@ -174,8 +174,16 @@ export function UsagePage() {
     aliasReverseMap,
   });
 
-  const { requestsSparkline, tokensSparkline, rpmSparkline, tpmSparkline, costSparkline } =
-    useSparklines({ usage: filteredUsage, usageDetails, loading, modelPrices, nowMs });
+  const {
+    requestsSparkline,
+    tokensSparkline,
+    rpmSparkline,
+    tpmSparkline,
+    costSparkline,
+    dayRpmSparkline,
+    dayTpmSparkline,
+    dayCostSparkline,
+  } = useSparklines({ usage: filteredUsage, usageDetails, loading, modelPrices, nowMs });
 
   const { loading: subscriptionTierLoading } =
     useUsageSubscriptionTier(authFiles);
@@ -338,6 +346,9 @@ export function UsagePage() {
           hasPrices={hasPrices}
           usageSummary={usageSummary}
           healthAssessment={healthAssessment}
+          usageDetails={usageDetails}
+          modelPrices={modelPrices}
+          nowMs={nowMs}
           onAvailabilityDrillDown={handleAvailabilityDrillDown}
           onSuccessRateDrillDown={handleSuccessRateDrillDown}
           sparklines={{
@@ -346,6 +357,9 @@ export function UsagePage() {
             rpm: rpmSparkline,
             tpm: tpmSparkline,
             cost: costSparkline,
+            dayRpm: dayRpmSparkline,
+            dayTpm: dayTpmSparkline,
+            dayCost: dayCostSparkline,
           }}
         />
 

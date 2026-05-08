@@ -5,20 +5,25 @@ import { Line } from 'react-chartjs-2';
 const MemoizedLine = memo(Line);
 import {
   IconDiamond,
-  IconDollarSign,
   IconSatellite,
-  IconTimer,
-  IconTrendingUp,
 } from '@/components/ui/icons';
-import { TokenNumber, CostNumber, RateNumber } from '@/components/ui/SmartNumber';
+import { TokenNumber } from '@/components/ui/SmartNumber';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import type { HealthScore } from '@/utils/usage/healthScore';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
 import type { UsagePayload } from './hooks/useUsageData';
-import type { SparklineBundle } from './hooks/useSparklines';
+import type { SparklineBundle, PeriodSparklineBundle } from './hooks/useSparklines';
 import type { UsageSummaryMetrics } from './hooks/usageAnalyticsSnapshot';
+import { RateMetricCard } from './RateMetricCard';
+import { CostMetricCard } from './CostMetricCard';
 import { HealthScoreCard } from './HealthScoreCard';
+import { MetricSummaryBanner } from './MetricSummaryBanner';
 import { STAT_COLORS, STATUS_COLORS } from '@/constants/colors';
+import { useMetricTrend } from './hooks/useMetricTrend';
+import { useQuotaStatus } from './hooks/useQuotaStatus';
+import { useMetricCorrelation } from './hooks/useMetricCorrelation';
+import type { UsageDetail } from '@/atoms/usage/types';
+import type { ModelPrice } from '@/utils/usage';
 import styles from '@/pages/UsagePage.module.scss';
 
 interface StatCardData {
@@ -40,14 +45,21 @@ export interface StatCardsProps {
   hasPrices: boolean;
   usageSummary: UsageSummaryMetrics;
   healthAssessment: HealthScore;
+  usageDetails: UsageDetail[];
+  modelPrices: Record<string, ModelPrice>;
+  nowMs: number;
   onAvailabilityDrillDown?: () => void;
   onSuccessRateDrillDown?: () => void;
+  onMetricDrillDown?: (metricType: string) => void;
   sparklines: {
     requests: SparklineBundle | null;
     tokens: SparklineBundle | null;
     rpm: SparklineBundle | null;
     tpm: SparklineBundle | null;
     cost: SparklineBundle | null;
+    dayRpm: PeriodSparklineBundle;
+    dayTpm: PeriodSparklineBundle;
+    dayCost: PeriodSparklineBundle;
   };
 }
 
@@ -57,13 +69,28 @@ export const StatCards = memo(function StatCards({
   hasPrices,
   usageSummary,
   healthAssessment,
+  usageDetails,
+  modelPrices,
+  nowMs,
   onAvailabilityDrillDown,
   onSuccessRateDrillDown,
+  onMetricDrillDown,
   sparklines,
 }: StatCardsProps) {
   const { t } = useTranslation();
 
   const { totalTokens, tokenBreakdown, rateStats, totalCost } = usageSummary;
+
+  const rpmTrend = useMetricTrend(usageDetails, nowMs, 'rpm', modelPrices);
+  const tpmTrend = useMetricTrend(usageDetails, nowMs, 'tpm', modelPrices);
+  const costTrend = useMetricTrend(usageDetails, nowMs, 'cost', modelPrices);
+  const quotaStatus = useQuotaStatus();
+  const tpmCorrelation = useMetricCorrelation(usageDetails, nowMs, modelPrices);
+  const weeklyCostPoints = sparklines.dayCost['7d']?.data.datasets[0]?.data ?? [];
+  const dailyAvgCost =
+    weeklyCostPoints.length > 0
+      ? weeklyCostPoints.reduce((sum, value) => sum + value, 0) / weeklyCostPoints.length
+      : undefined;
 
   const statsCards: StatCardData[] = [
     {
@@ -118,62 +145,6 @@ export const StatCards = memo(function StatCards({
       trend: sparklines.tokens,
       size: 'large',
     },
-    {
-      key: 'rpm',
-      label: t('usage_stats.rpm_30m'),
-      icon: <IconTimer size={16} />,
-      accent: STAT_COLORS.rpm.accent,
-      accentSoft: STAT_COLORS.rpm.soft,
-      accentBorder: STAT_COLORS.rpm.border,
-      value: loading ? '-' : <RateNumber value={rateStats.rpm} />,
-      meta: (
-        <>
-          <span className={styles.statMetaItem}>
-            {t('usage_stats.peak')}: <RateNumber value={rateStats.peakRpm} />
-          </span>
-        </>
-      ),
-      trend: sparklines.rpm,
-      size: 'small',
-    },
-    {
-      key: 'tpm',
-      label: t('usage_stats.tpm_30m'),
-      icon: <IconTrendingUp size={16} />,
-      accent: STAT_COLORS.tpm.accent,
-      accentSoft: STAT_COLORS.tpm.soft,
-      accentBorder: STAT_COLORS.tpm.border,
-      value: loading ? '-' : <RateNumber value={rateStats.tpm} />,
-      meta: (
-        <>
-          <span className={styles.statMetaItem}>
-            {t('usage_stats.peak')}: <RateNumber value={rateStats.peakTpm} />
-          </span>
-        </>
-      ),
-      trend: sparklines.tpm,
-      size: 'small',
-    },
-    {
-      key: 'cost',
-      label: t('usage_stats.total_cost'),
-      icon: <IconDollarSign size={16} />,
-      accent: STAT_COLORS.cost.accent,
-      accentSoft: STAT_COLORS.cost.soft,
-      accentBorder: STAT_COLORS.cost.border,
-      value: loading ? '-' : hasPrices ? <CostNumber value={totalCost} /> : '--',
-      meta: (
-        <>
-          {!hasPrices && (
-            <span className={`${styles.statMetaItem} ${styles.statWarning}`}>
-              {t('usage_stats.cost_need_price')}
-            </span>
-          )}
-        </>
-      ),
-      trend: hasPrices ? sparklines.cost : null,
-      size: 'small',
-    },
   ];
 
   const getCardSizeClass = (size: StatCardData['size']) => {
@@ -188,7 +159,7 @@ export const StatCards = memo(function StatCards({
     }
   };
 
-  const SKELETON_SIZES: StatCardData['size'][] = ['large', 'large', 'small', 'small', 'small'];
+  const SKELETON_SIZES: StatCardData['size'][] = ['large', 'large'];
 
   if (loading && !usage) {
     return (
@@ -202,11 +173,14 @@ export const StatCards = memo(function StatCards({
             <SkeletonCard />
           </div>
         ))}
-        <div className={styles.cardMedium}>
-          <SkeletonCard rows={2} />
+        <div className={styles.cardMedium} style={{ gridColumn: 'span 1' }}>
+          <SkeletonCard />
         </div>
-        <div className={styles.cardMedium}>
-          <SkeletonCard rows={2} />
+        <div className={styles.cardMedium} style={{ gridColumn: 'span 1' }}>
+          <SkeletonCard />
+        </div>
+        <div className={styles.cardLarge} style={{ gridColumn: 'span 2' }}>
+          <SkeletonCard />
         </div>
       </div>
     );
@@ -214,6 +188,12 @@ export const StatCards = memo(function StatCards({
 
   return (
     <div className={styles.statsGrid}>
+      <MetricSummaryBanner
+        rpmTrend={rpmTrend}
+        tpmTrend={tpmTrend}
+        costTrend={costTrend}
+        loading={loading}
+      />
       {statsCards.map((card, index) => (
         <div
           key={card.key}
@@ -250,6 +230,46 @@ export const StatCards = memo(function StatCards({
           </div>
         </div>
       ))}
+
+      <div className={styles.metricCardRow}>
+        <RateMetricCard
+          metricType="rpm"
+          currentValue={rateStats.rpm}
+          peakValue={rateStats.peakRpm}
+          trend={rpmTrend}
+          sparklineData={sparklines.rpm}
+          daySparklineData={sparklines.dayRpm}
+          quotaStatus={quotaStatus.rpmItem}
+          onDrilldown={onMetricDrillDown}
+          loading={loading}
+        />
+        <RateMetricCard
+          metricType="tpm"
+          currentValue={rateStats.tpm}
+          peakValue={rateStats.peakTpm}
+          trend={tpmTrend}
+          sparklineData={sparklines.tpm}
+          daySparklineData={sparklines.dayTpm}
+          quotaStatus={quotaStatus.tpmItem}
+          onDrilldown={onMetricDrillDown}
+          loading={loading}
+        />
+      </div>
+
+      <div className={styles.costCardWrapper}>
+        <CostMetricCard
+          totalCost={totalCost}
+          hasPrices={hasPrices}
+          trend={costTrend}
+          sparklineData={sparklines.cost}
+          daySparklineData={sparklines.dayCost}
+          quotaStatus={quotaStatus.monthlyItem}
+          tpmCorrelation={tpmCorrelation}
+          dailyAvgCost={dailyAvgCost}
+          onDrilldown={onMetricDrillDown ? () => onMetricDrillDown('cost') : undefined}
+          loading={loading}
+        />
+      </div>
 
       <HealthScoreCard
         assessment={healthAssessment}

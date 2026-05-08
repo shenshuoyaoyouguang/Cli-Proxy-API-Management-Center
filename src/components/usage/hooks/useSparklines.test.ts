@@ -73,4 +73,44 @@ describe('useSparklines', () => {
     rerender({ usage: { apis: { refreshed: {} } } });
     expect(mocks.collectUsageDetailsSpy).not.toHaveBeenCalled();
   });
+
+  it('builds both 7d and 30d daily sparklines for metric cards', () => {
+    const nowMs = Date.parse('2026-02-08T12:00:00.000Z');
+    const usageDetails = Array.from({ length: 14 }, (_, index) => {
+      const timestamp = nowMs - index * 24 * 60 * 60 * 1000;
+      return {
+        timestamp: new Date(timestamp).toISOString(),
+        source: 'tenant-a',
+        auth_index: '1',
+        failed: false,
+        __modelName: 'gpt-4.1',
+        __timestampMs: timestamp,
+        tokens: {
+          input_tokens: 10 + index,
+          output_tokens: 5,
+          reasoning_tokens: 0,
+          cached_tokens: 0,
+          total_tokens: 15 + index,
+        },
+      };
+    });
+
+    const { result } = renderHook(() =>
+      useSparklines({
+        usage: { apis: {} },
+        usageDetails,
+        loading: false,
+        modelPrices: {},
+        nowMs,
+      })
+    );
+
+    expect(result.current.dayRpmSparkline['7d']?.period).toBe('7d');
+    expect(result.current.dayRpmSparkline['30d']?.period).toBe('30d');
+    expect(result.current.dayRpmSparkline['7d']?.data.labels).toHaveLength(7);
+    expect(result.current.dayRpmSparkline['30d']?.data.labels).toHaveLength(30);
+    expect(result.current.dayTpmSparkline['30d']?.data.datasets[0].data.some((value) => value > 0)).toBe(
+      true
+    );
+  });
 });

@@ -8,25 +8,35 @@ import {
   type UsageDetail,
 } from '@/utils/usage';
 import { FUTURE_TIMESTAMP_TOLERANCE_MS } from '@/atoms/usage/time';
+import { STAT_COLORS } from '@/constants/colors';
 import type { UsagePayload } from './useUsageData';
 
 export interface SparklineData {
   labels: string[];
-  datasets: [
-    {
-      data: number[];
-      borderColor: string;
-      backgroundColor: string;
-      fill: boolean;
-      tension: number;
-      pointRadius: number;
-      borderWidth: number;
-    }
-  ];
+  datasets: Array<{
+    data: number[];
+    borderColor: string;
+    backgroundColor: string;
+    fill: boolean;
+    tension: number;
+    pointRadius: number;
+    borderWidth: number;
+  }>;
 }
 
 export interface SparklineBundle {
   data: SparklineData;
+}
+
+export type TrendPeriod = '7d' | '30d';
+
+export interface DaySparklineBundle extends SparklineBundle {
+  period: TrendPeriod;
+}
+
+export interface PeriodSparklineBundle {
+  '7d': DaySparklineBundle | null;
+  '30d': DaySparklineBundle | null;
 }
 
 export interface UseSparklinesOptions {
@@ -43,6 +53,9 @@ export interface UseSparklinesReturn {
   rpmSparkline: SparklineBundle | null;
   tpmSparkline: SparklineBundle | null;
   costSparkline: SparklineBundle | null;
+  dayRpmSparkline: PeriodSparklineBundle;
+  dayTpmSparkline: PeriodSparklineBundle;
+  dayCostSparkline: PeriodSparklineBundle;
 }
 
 function buildRollingAverageSeries(values: number[], windowSize: number): number[] {
@@ -64,6 +77,37 @@ function buildRollingAverageSeries(values: number[], windowSize: number): number
   });
 
   return rolling;
+}
+
+function buildDaySparkline(
+  labels: string[],
+  points: number[],
+  period: TrendPeriod,
+  color: string,
+  backgroundColor: string,
+  loading: boolean
+): DaySparklineBundle | null {
+  if (loading || labels.length === 0 || points.every((value) => value <= 0)) {
+    return null;
+  }
+
+  return {
+    period,
+    data: {
+      labels,
+      datasets: [
+        {
+          data: points,
+          borderColor: color,
+          backgroundColor,
+          fill: true,
+          tension: 0.45,
+          pointRadius: 0,
+          borderWidth: 2,
+        },
+      ],
+    },
+  };
 }
 
 export function useSparklines({
@@ -129,6 +173,80 @@ export function useSparklines({
     };
   }, [modelPrices, nowMs, sparklineDetails]);
 
+  const lastDaysSeries = useMemo(() => {
+    if (!Number.isFinite(nowMs) || nowMs <= 0) {
+      return { labels7d: [], rpm7d: [], tpm7d: [], cost7d: [], labels30d: [], rpm30d: [], tpm30d: [], cost30d: [] };
+    }
+    if (!sparklineDetails.length) {
+      return { labels7d: [], rpm7d: [], tpm7d: [], cost7d: [], labels30d: [], rpm30d: [], tpm30d: [], cost30d: [] };
+    }
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    // 7-day buckets
+    const bucketCount7d = 7;
+    const buckets7d = Array.from({ length: bucketCount7d }, () => ({
+      rpm: 0, tpm: 0, cost: 0,
+    }));
+    const windowStart7d = nowMs - bucketCount7d * DAY_MS;
+
+    // 30-day buckets (6h resolution for efficiency)
+    const bucketCount30d = 30;
+    const buckets30d = Array.from({ length: bucketCount30d }, () => ({
+      rpm: 0, tpm: 0, cost: 0,
+    }));
+    const windowStart30d = nowMs - bucketCount30d * DAY_MS;
+
+    sparklineDetails.forEach((detail) => {
+      const timestamp = getDetailTimestampMs(detail);
+      if (!Number.isFinite(timestamp) || timestamp > nowMs + FUTURE_TIMESTAMP_TOLERANCE_MS) {
+        return;
+      }
+
+      // 7-day bucket
+      if (timestamp >= windowStart7d) {
+        const ageDays = (nowMs - timestamp) / DAY_MS;
+        const idx = bucketCount7d - 1 - Math.floor(ageDays);
+        if (idx >= 0 && idx < bucketCount7d) {
+          buckets7d[idx].rpm += 1;
+          buckets7d[idx].tpm += extractTotalTokens(detail);
+          buckets7d[idx].cost += calculateCost(detail, modelPrices);
+        }
+      }
+
+      // 30-day bucket
+      if (timestamp >= windowStart30d) {
+        const ageDays = (nowMs - timestamp) / DAY_MS;
+        const idx = bucketCount30d - 1 - Math.floor(ageDays);
+        if (idx >= 0 && idx < bucketCount30d) {
+          buckets30d[idx].rpm += 1;
+          buckets30d[idx].tpm += extractTotalTokens(detail);
+          buckets30d[idx].cost += calculateCost(detail, modelPrices);
+        }
+      }
+    });
+
+    const labels7d = buckets7d.map((_, idx) => {
+      const date = new Date(windowStart7d + idx * DAY_MS);
+      return `${date.getMonth() + 1}/${date.getDate()}`;
+    });
+    const labels30d = buckets30d.map((_, idx) => {
+      const date = new Date(windowStart30d + idx * DAY_MS);
+      return `${date.getMonth() + 1}/${date.getDate()}`;
+    });
+
+    return {
+      labels7d,
+      rpm7d: buckets7d.map((b) => b.rpm),
+      tpm7d: buckets7d.map((b) => b.tpm),
+      cost7d: buckets7d.map((b) => b.cost),
+      labels30d,
+      rpm30d: buckets30d.map((b) => b.rpm),
+      tpm30d: buckets30d.map((b) => b.tpm),
+      cost30d: buckets30d.map((b) => b.cost),
+    };
+  }, [modelPrices, nowMs, sparklineDetails]);
+
   const buildSparkline = useCallback(
     (
       series: { labels: string[]; data: number[] },
@@ -165,8 +283,8 @@ export function useSparklines({
     () =>
       buildSparkline(
         { labels: lastHourSeries.labels, data: lastHourSeries.requests },
-        '#8b8680',
-        'rgba(139, 134, 128, 0.18)'
+        STAT_COLORS.requests.accent,
+        STAT_COLORS.requests.soft
       ),
     [buildSparkline, lastHourSeries.labels, lastHourSeries.requests]
   );
@@ -175,8 +293,8 @@ export function useSparklines({
     () =>
       buildSparkline(
         { labels: lastHourSeries.labels, data: lastHourSeries.tokens },
-        '#8b5cf6',
-        'rgba(139, 92, 246, 0.18)'
+        STAT_COLORS.tokens.accent,
+        STAT_COLORS.tokens.soft
       ),
     [buildSparkline, lastHourSeries.labels, lastHourSeries.tokens]
   );
@@ -185,8 +303,8 @@ export function useSparklines({
     () =>
       buildSparkline(
         { labels: lastHourSeries.labels, data: lastHourSeries.rpm },
-        '#22c55e',
-        'rgba(34, 197, 94, 0.18)'
+        STAT_COLORS.rpm.accent,
+        STAT_COLORS.rpm.soft
       ),
     [buildSparkline, lastHourSeries.labels, lastHourSeries.rpm]
   );
@@ -195,8 +313,8 @@ export function useSparklines({
     () =>
       buildSparkline(
         { labels: lastHourSeries.labels, data: lastHourSeries.tpm },
-        '#f97316',
-        'rgba(249, 115, 22, 0.18)'
+        STAT_COLORS.tpm.accent,
+        STAT_COLORS.tpm.soft
       ),
     [buildSparkline, lastHourSeries.labels, lastHourSeries.tpm]
   );
@@ -205,10 +323,76 @@ export function useSparklines({
     () =>
       buildSparkline(
         { labels: lastHourSeries.labels, data: lastHourSeries.costs },
-        '#f59e0b',
-        'rgba(245, 158, 11, 0.18)'
+        STAT_COLORS.cost.accent,
+        STAT_COLORS.cost.soft
       ),
     [buildSparkline, lastHourSeries.costs, lastHourSeries.labels]
+  );
+
+  const dayRpmSparkline = useMemo(
+    (): PeriodSparklineBundle => ({
+      '7d': buildDaySparkline(
+        lastDaysSeries.labels7d,
+        lastDaysSeries.rpm7d,
+        '7d',
+        STAT_COLORS.rpm.accent,
+        STAT_COLORS.rpm.soft,
+        loading
+      ),
+      '30d': buildDaySparkline(
+        lastDaysSeries.labels30d,
+        lastDaysSeries.rpm30d,
+        '30d',
+        STAT_COLORS.rpm.accent,
+        STAT_COLORS.rpm.soft,
+        loading
+      ),
+    }),
+    [lastDaysSeries, loading]
+  );
+
+  const dayTpmSparkline = useMemo(
+    (): PeriodSparklineBundle => ({
+      '7d': buildDaySparkline(
+        lastDaysSeries.labels7d,
+        lastDaysSeries.tpm7d,
+        '7d',
+        STAT_COLORS.tpm.accent,
+        STAT_COLORS.tpm.soft,
+        loading
+      ),
+      '30d': buildDaySparkline(
+        lastDaysSeries.labels30d,
+        lastDaysSeries.tpm30d,
+        '30d',
+        STAT_COLORS.tpm.accent,
+        STAT_COLORS.tpm.soft,
+        loading
+      ),
+    }),
+    [lastDaysSeries, loading]
+  );
+
+  const dayCostSparkline = useMemo(
+    (): PeriodSparklineBundle => ({
+      '7d': buildDaySparkline(
+        lastDaysSeries.labels7d,
+        lastDaysSeries.cost7d,
+        '7d',
+        STAT_COLORS.cost.accent,
+        STAT_COLORS.cost.soft,
+        loading
+      ),
+      '30d': buildDaySparkline(
+        lastDaysSeries.labels30d,
+        lastDaysSeries.cost30d,
+        '30d',
+        STAT_COLORS.cost.accent,
+        STAT_COLORS.cost.soft,
+        loading
+      ),
+    }),
+    [lastDaysSeries, loading]
   );
 
   return {
@@ -216,6 +400,9 @@ export function useSparklines({
     tokensSparkline,
     rpmSparkline,
     tpmSparkline,
-    costSparkline
+    costSparkline,
+    dayRpmSparkline,
+    dayTpmSparkline,
+    dayCostSparkline,
   };
 }

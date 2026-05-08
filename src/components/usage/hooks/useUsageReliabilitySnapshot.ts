@@ -20,18 +20,15 @@ export interface UseUsageReliabilitySnapshotReturn {
   serviceHealth: ReliabilitySnapshot['serviceHealth'];
 }
 
+const FALLBACK_NOW_MS = Date.now();
+
 export function useUsageReliabilitySnapshot({
   usageDetails,
   nowMs,
   snapshot,
 }: UseUsageReliabilitySnapshotOptions): UseUsageReliabilitySnapshotReturn {
-  const fallbackNowRef = { current: 0 };
-  if (fallbackNowRef.current === 0) {
-    fallbackNowRef.current = Date.now();
-  }
-
   return useMemo(() => {
-    const resolvedNowMs = Number.isFinite(nowMs) && nowMs > 0 ? nowMs : fallbackNowRef.current;
+    const resolvedNowMs = Number.isFinite(nowMs) && nowMs > 0 ? nowMs : FALLBACK_NOW_MS;
     const reliabilitySnapshot = snapshot ?? buildReliabilitySnapshot(usageDetails, resolvedNowMs);
     const healthAssessment = createHealthScoreFromAssessment(
       buildHealthAssessment(reliabilitySnapshot)

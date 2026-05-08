@@ -15,7 +15,6 @@ import {
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Select } from '@/components/ui/Select';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useUsageSSE } from '@/hooks/useUsageSSE';
 import { useConfigStore } from '@/stores';
@@ -66,11 +65,6 @@ const TIME_RANGE_OPTIONS: ReadonlyArray<{ value: UsageTimeRange; labelKey: strin
   { value: '7d', labelKey: 'usage_stats.range_7d' },
   { value: '30d', labelKey: 'usage_stats.range_30d' },
 ];
-const HOUR_WINDOW_BY_TIME_RANGE: Record<Exclude<UsageTimeRange, 'all'>, number> = {
-  '1d': 24,
-  '7d': 7 * 24,
-  '30d': 30 * 24,
-};
 const SERVICE_HEALTH_SECTION_ID = 'usage-service-health-card';
 const REQUEST_EVENTS_SECTION_ID = 'usage-request-events-card';
 
@@ -91,7 +85,6 @@ const loadTimeRange = (): UsageTimeRange => {
 
 export function UsagePage() {
   const { t, i18n } = useTranslation();
-  const isMobile = useMediaQuery('(max-width: 768px)');
   const config = useConfigStore((state) => state.config);
 
   const {
@@ -148,7 +141,6 @@ export function UsagePage() {
   }, [timeRange]);
 
   const nowMs = lastRefreshedAt?.getTime() ?? 0;
-  const hourWindowHours = timeRange === 'all' ? undefined : HOUR_WINDOW_BY_TIME_RANGE[timeRange];
 
   const includeHealthRequestEventRows = requestEventsResultFilter !== null;
 

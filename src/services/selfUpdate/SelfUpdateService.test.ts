@@ -77,6 +77,8 @@ describe('SelfUpdateService', () => {
       mockConfigState(null);
       const service = new SelfUpdateService();
 
+      (service as unknown as { info: { currentVersion: string } }).info.currentVersion = 'v0.0.1';
+
       const mockFetch = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ tag_name: 'v1.0.0' }), { status: 200 })
       );

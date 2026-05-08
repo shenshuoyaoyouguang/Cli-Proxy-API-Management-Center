@@ -16,6 +16,7 @@ export function useCountUp(
   const startValueRef = useRef(targetValue);
   const rafRef = useRef<number | null>(null);
   const prevTargetRef = useRef(targetValue);
+  const isAnimatingRef = useRef(false);
 
   const easeOutCubic = useCallback((t: number): number => {
     return 1 - Math.pow(1 - t, 3);
@@ -23,11 +24,16 @@ export function useCountUp(
 
   useEffect(() => {
     if (!enabled) {
+      isAnimatingRef.current = false;
       prevTargetRef.current = targetValue;
-      setDisplayValue(targetValue);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       return;
     }
 
+    isAnimatingRef.current = true;
     const startValue = prevTargetRef.current;
     const endValue = targetValue;
 
@@ -38,6 +44,8 @@ export function useCountUp(
     prevTargetRef.current = targetValue;
 
     const animate = (timestamp: number) => {
+      if (!isAnimatingRef.current) return;
+
       if (startTimeRef.current === null) {
         startTimeRef.current = timestamp;
       }
@@ -49,7 +57,7 @@ export function useCountUp(
       const currentValue = startValue + (endValue - startValue) * easedProgress;
       setDisplayValue(currentValue);
 
-      if (progress < 1) {
+      if (progress < 1 && isAnimatingRef.current) {
         rafRef.current = requestAnimationFrame(animate);
       }
     };
@@ -57,15 +65,19 @@ export function useCountUp(
     rafRef.current = requestAnimationFrame(animate);
 
     return () => {
+      isAnimatingRef.current = false;
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
     };
   }, [targetValue, duration, enabled, easeOutCubic]);
 
-  const formattedValue = decimals > 0
-    ? displayValue.toFixed(decimals)
-    : Math.round(displayValue).toLocaleString();
+  const effectiveDisplayValue = enabled ? displayValue : targetValue;
 
-  return { displayValue, formattedValue };
+  const formattedValue = decimals > 0
+    ? effectiveDisplayValue.toFixed(decimals)
+    : Math.round(effectiveDisplayValue).toLocaleString();
+
+  return { displayValue: effectiveDisplayValue, formattedValue };
 }

@@ -9,7 +9,11 @@ interface ErrorBoundaryProps {
   /** 子组件 */
   children: ReactNode;
   /** 错误发生时展示的 fallback UI */
-  fallback: ReactNode;
+  fallback?: ReactNode;
+  /** 动态 fallback，可接收重置方法 */
+  fallbackRender?: (props: { resetErrorBoundary: () => void }) => ReactNode;
+  /** 发生错误后，任一 key 变化时自动重置 */
+  resetKeys?: unknown[];
 }
 
 /**
@@ -47,6 +51,16 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return { hasError: true };
   }
 
+  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+    if (!this.state.hasError) {
+      return;
+    }
+
+    if (haveResetKeysChanged(prevProps.resetKeys, this.props.resetKeys)) {
+      this.resetErrorBoundary();
+    }
+  }
+
   /**
    * 生命周期方法：捕获错误信息
    * 用于记录错误日志等副作用操作
@@ -59,13 +73,35 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     });
   }
 
+  resetErrorBoundary = (): void => {
+    this.setState({ hasError: false });
+  };
+
   render(): ReactNode {
     if (this.state.hasError) {
-      return this.props.fallback;
+      if (this.props.fallbackRender) {
+        return this.props.fallbackRender({ resetErrorBoundary: this.resetErrorBoundary });
+      }
+      return this.props.fallback ?? null;
     }
 
     return this.props.children;
   }
+}
+
+function haveResetKeysChanged(
+  previous: unknown[] | undefined,
+  current: unknown[] | undefined
+): boolean {
+  if (!previous || !current) {
+    return previous !== current;
+  }
+
+  if (previous.length !== current.length) {
+    return true;
+  }
+
+  return previous.some((value, index) => !Object.is(value, current[index]));
 }
 
 export { ErrorBoundary };

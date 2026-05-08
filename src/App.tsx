@@ -12,7 +12,7 @@ import { useLanguageStore, useThemeStore } from '@/stores';
 /**
  * 全局错误 fallback 组件
  */
-function GlobalErrorFallback() {
+function GlobalErrorFallback({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
 
   return (
@@ -29,16 +29,26 @@ function GlobalErrorFallback() {
     >
       <h1>{t('common.error_boundary_title', '出错了')}</h1>
       <p>{t('common.error_boundary_message', '应用发生错误，请刷新页面重试')}</p>
-      <button
-        onClick={() => window.location.reload()}
-        style={{
-          marginTop: '16px',
-          padding: '8px 16px',
-          cursor: 'pointer',
-        }}
-      >
-        {t('common.reload_page', '刷新页面')}
-      </button>
+      <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+        <button
+          onClick={onRetry}
+          style={{
+            padding: '8px 16px',
+            cursor: 'pointer',
+          }}
+        >
+          {t('common.try_again', '重试')}
+        </button>
+        <button
+          onClick={() => window.location.reload()}
+          style={{
+            padding: '8px 16px',
+            cursor: 'pointer',
+          }}
+        >
+          {t('common.reload_page', '刷新页面')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -73,7 +83,6 @@ const router = createHashRouter([
 function App() {
   const initializeTheme = useThemeStore((state) => state.initializeTheme);
   const language = useLanguageStore((state) => state.language);
-  const setLanguage = useLanguageStore((state) => state.setLanguage);
 
   useEffect(() => {
     const cleanupTheme = initializeTheme();
@@ -81,15 +90,16 @@ function App() {
   }, [initializeTheme]);
 
   useEffect(() => {
-    setLanguage(language);
-  }, [language, setLanguage]);
-
-  useEffect(() => {
     document.documentElement.lang = language;
   }, [language]);
 
   return (
-    <ErrorBoundary fallback={<GlobalErrorFallback />}>
+    <ErrorBoundary
+      fallbackRender={({ resetErrorBoundary }) => (
+        <GlobalErrorFallback onRetry={resetErrorBoundary} />
+      )}
+      resetKeys={[language]}
+    >
       <RouterProvider router={router} />
     </ErrorBoundary>
   );

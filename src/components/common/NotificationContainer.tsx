@@ -15,6 +15,23 @@ export function NotificationContainer() {
   const { notifications, removeNotification } = useNotificationStore();
   const [animatedNotifications, setAnimatedNotifications] = useState<AnimatedNotification[]>([]);
   const prevNotificationsRef = useRef<Notification[]>([]);
+  const timeoutIdsRef = useRef<Set<number>>(new Set());
+
+  const scheduleTimeout = (callback: () => void, delay: number) => {
+    const timeoutId = window.setTimeout(() => {
+      timeoutIdsRef.current.delete(timeoutId);
+      callback();
+    }, delay);
+    timeoutIdsRef.current.add(timeoutId);
+  };
+
+  useEffect(() => {
+    const timeoutIds = timeoutIdsRef.current;
+    return () => {
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      timeoutIds.clear();
+    };
+  }, []);
 
   useEffect(() => {
     const prevNotifications = prevNotificationsRef.current;
@@ -40,7 +57,7 @@ export function NotificationContainer() {
     });
 
     if (removedIds.size > 0) {
-      setTimeout(() => {
+      scheduleTimeout(() => {
         setAnimatedNotifications((prev) => prev.filter((n) => !removedIds.has(n.id)));
       }, ANIMATION_DURATION);
     }
@@ -51,7 +68,7 @@ export function NotificationContainer() {
   const handleClose = (id: string) => {
     setAnimatedNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isExiting: true } : n)));
 
-    setTimeout(() => {
+    scheduleTimeout(() => {
       removeNotification(id);
     }, ANIMATION_DURATION);
   };

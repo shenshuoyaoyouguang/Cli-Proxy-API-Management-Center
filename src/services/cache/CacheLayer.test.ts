@@ -211,4 +211,19 @@ describe('CacheLayer - invalidate across URL-like scope keys', () => {
     expect(CacheLayer.get('models', 'http://server-a:3000::scope-a')).toBeNull();
     expect(CacheLayer.get('models', 'https://server-b:8443::scope-b')).toBeNull();
   });
+
+  it('invalidates exact key when both scopeKey and dataKey contain colons', () => {
+    const scopeA = 'http://server-a:3000::scope-a';
+    const scopeB = 'https://server-b:8443::scope-b';
+
+    CacheLayer.set('models:v2', { data: 'a' }, { scopeKey: scopeA });
+    CacheLayer.set('models:v2', { data: 'b' }, { scopeKey: scopeB });
+    CacheLayer.set('models', { data: 'c' }, { scopeKey: scopeA });
+
+    CacheLayer.invalidate('models:v2');
+
+    expect(CacheLayer.get('models:v2', scopeA)).toBeNull();
+    expect(CacheLayer.get('models:v2', scopeB)).toBeNull();
+    expect(CacheLayer.get('models', scopeA)?.data).toEqual({ data: 'c' });
+  });
 });

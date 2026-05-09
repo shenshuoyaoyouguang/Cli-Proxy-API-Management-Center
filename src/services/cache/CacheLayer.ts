@@ -42,18 +42,6 @@ function estimateBytes(value: unknown): number {
   return new Blob([JSON.stringify(value)]).size;
 }
 
-/** 解析 cache:${scopeKey}:${key} 格式的 key，还原 scopeKey 和 dataKey */
-function parseFullKey(fullKey: string): { scopeKey: string; dataKey: string } | null {
-  const prefix = CACHE_PREFIX + ':';
-  if (!fullKey.startsWith(prefix)) return null;
-  const remainder = fullKey.slice(prefix.length);
-  const lastColon = remainder.lastIndexOf(':');
-  if (lastColon === -1) return null;
-  return {
-    scopeKey: remainder.slice(0, lastColon),
-    dataKey: remainder.slice(lastColon + 1),
-  };
-}
 
 function formatDebugKey(scopeKey: string, key: string): string {
   return scopeKey ? `${key} [scope redacted]` : `${key} [global]`;
@@ -270,15 +258,13 @@ class CacheLayerImpl {
       localStorage.removeItem(fullKey);
     } else {
       const prefix = `${CACHE_PREFIX}:`;
+      const suffix = `:${key}`;
       const toRemove: Array<{ fullKey: string; size: number }> = [];
       for (let i = 0; i < localStorage.length; i++) {
         const fullKey = localStorage.key(i);
-        if (!fullKey || !fullKey.startsWith(prefix)) continue;
-        const parsed = parseFullKey(fullKey);
-        if (parsed && parsed.dataKey === key) {
-          const raw = localStorage.getItem(fullKey);
-          toRemove.push({ fullKey, size: raw ? estimateBytes(raw) : 0 });
-        }
+        if (!fullKey || !fullKey.startsWith(prefix) || !fullKey.endsWith(suffix)) continue;
+        const raw = localStorage.getItem(fullKey);
+        toRemove.push({ fullKey, size: raw ? estimateBytes(raw) : 0 });
       }
       if (this.estimatedTotalBytes !== null) {
         const totalRemoved = toRemove.reduce((sum, e) => sum + e.size, 0);

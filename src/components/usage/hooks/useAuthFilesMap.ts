@@ -77,6 +77,7 @@ export interface UseAuthFilesMapReturn {
 export function useAuthFilesMap(): UseAuthFilesMapReturn {
   const apiBase = useAuthStore((state) => state.apiBase);
   const managementKey = useAuthStore((state) => state.managementKey);
+  // 当 apiBase 或 managementKey 缺失时，scopeKey 为空字符串，表示当前作用域不可用且跳过请求与缓存命中。
   const scopeKey = useMemo(
     () => (apiBase && managementKey ? buildScopeKey(apiBase, managementKey) : ''),
     [apiBase, managementKey]

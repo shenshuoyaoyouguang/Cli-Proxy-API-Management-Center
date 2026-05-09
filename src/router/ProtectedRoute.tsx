@@ -66,13 +66,13 @@ export function ProtectedRoute({ children }: { children: ReactElement }) {
   }, [apiBase, isAuthenticated, managementKey]);
 
   useEffect(() => {
-    if (!isAuthenticated || isInitialRoute) return;
+    if (checking || !isAuthenticated || isInitialRoute) return;
 
     const stored = getStoredRouteState();
     if (stored && Date.now() - stored.timestamp < ROUTE_EXPIRY_MS) {
       setRestoreState({ routeState: stored, isRestored: true });
     }
-  }, [isAuthenticated, isInitialRoute]);
+  }, [checking, isAuthenticated, isInitialRoute]);
 
   useEffect(() => {
     if (!isAuthenticated || isInitialRoute || restoreState.isRestored) return;

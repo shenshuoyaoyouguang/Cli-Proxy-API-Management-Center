@@ -1,6 +1,6 @@
 import React, { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { buildScopeKey } from '@/utils/helpers';
 
 const mocks = vi.hoisted(() => {
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     configState,
     showNotification: vi.fn(),
     showConfirmation: vi.fn(),
+    fetchLogs: vi.fn(),
     useTraceResolverSpy: vi.fn(() => ({
       traceLogLine: null,
       traceLoading: false,
@@ -168,7 +169,7 @@ vi.mock('@/stores', () => ({
 
 vi.mock('@/services/api/logs', () => ({
   logsApi: {
-    fetchLogs: vi.fn(),
+    fetchLogs: mocks.fetchLogs,
     clearLogs: vi.fn(),
     fetchErrorLogs: vi.fn(),
     downloadErrorLog: vi.fn(),
@@ -250,5 +251,37 @@ describe('LogsPage', () => {
         ),
       })
     );
+  });
+
+  it('reloads logs when the refresh button is clicked in the connected state', async () => {
+    mocks.authState.connectionStatus = 'connected';
+    mocks.fetchLogs.mockResolvedValue({
+      lines: ['[info] first line'],
+      'latest-timestamp': 1,
+    });
+
+    render(createElement(LogsPage));
+
+    await waitFor(() => {
+      expect(mocks.fetchLogs).toHaveBeenCalledTimes(1);
+    });
+
+    const initialCount = mocks.fetchLogs.mock.calls.length;
+
+    fireEvent.click(screen.getByText('logs.refresh_button'));
+
+    await waitFor(() => {
+      expect(mocks.fetchLogs).toHaveBeenCalledTimes(initialCount + 1);
+    });
+  });
+
+  it('opens the destructive confirmation flow before clearing logs', () => {
+    mocks.authState.connectionStatus = 'connected';
+
+    render(createElement(LogsPage));
+
+    fireEvent.click(screen.getByText('logs.clear_button'));
+
+    expect(mocks.showConfirmation).toHaveBeenCalledTimes(1);
   });
 });

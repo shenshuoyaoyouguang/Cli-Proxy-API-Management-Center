@@ -110,6 +110,38 @@ describe('useAccountHealthStore', () => {
     expect(useAccountHealthStore.getState().isAccountDegraded('gemini-1.json')).toBe(true);
   });
 
+  it('clears the persisted health map when clearHealthMap is called', async () => {
+    vi.mocked(authFilesApi.getAccountHealth).mockResolvedValue({});
+
+    const scopeKey = buildAccountHealthScopeKey('http://localhost:3000', 'test-key');
+    await useAccountHealthStore.getState().loadHealthMap({
+      apiBase: 'http://localhost:3000',
+      managementKey: 'test-key',
+    });
+
+    localStorage.setItem(
+      `cli-proxy-account-health-v1:${encodeURIComponent(scopeKey)}`,
+      JSON.stringify({
+        'gemini-1.json': {
+          degraded: true,
+          degradedReason: '403_forbidden',
+          degradedStatus: 403,
+          degradedMessage: '403 forbidden',
+          consecutiveFailures: 3,
+          failureStatuses: [403, 403, 403],
+          degradedAt: Date.now(),
+          cooldownUntil: null,
+        },
+      })
+    );
+
+    useAccountHealthStore.getState().clearHealthMap();
+
+    expect(localStorage.getItem(`cli-proxy-account-health-v1:${encodeURIComponent(scopeKey)}`)).toBeNull();
+    expect(useAccountHealthStore.getState().healthMap).toEqual({});
+    expect(useAccountHealthStore.getState().scopeKey).toBe('');
+  });
+
   it('ignores late health responses from a previous scope', async () => {
     let resolveFirstRequest: ((value: Record<string, unknown>) => void) | null = null;
     vi.mocked(authFilesApi.getAccountHealth)

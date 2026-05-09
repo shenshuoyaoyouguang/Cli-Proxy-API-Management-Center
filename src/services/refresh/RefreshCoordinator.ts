@@ -12,6 +12,26 @@ export interface RefreshRegistration {
   scope?: string;
 }
 
+export interface RefreshFailure {
+  id: string;
+  scope?: string;
+  errorMessage: string;
+}
+
+export interface RefreshAggregateResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  failures: RefreshFailure[];
+}
+
+type PendingRefreshGroup = {
+  key: string;
+  filter: (reg: RefreshRegistration) => boolean;
+  resolves: Array<(result: RefreshAggregateResult) => void>;
+  rejects: Array<(error: unknown) => void>;
+};
+
 // ---------------------------------------------------------------------------
 // 优先级顺序
 // ---------------------------------------------------------------------------
@@ -29,8 +49,8 @@ const PRIORITY_ORDER: Record<RefreshPriority, number> = {
 class RefreshCoordinatorImpl {
   private registrations: Map<string, RefreshRegistration> = new Map();
   private isRunning = false;
-  /** 等待中的队列：触发请求在刷新期间入队，刷新完成后执行 */
-  private pendingQueue: (() => void)[] = [];
+  /** 等待中的队列：按调用类型排队，相同 key 在队列中去重 */
+  private pendingQueue: PendingRefreshGroup[] = [];
 
   /**
    * 注册刷新处理器
@@ -66,53 +86,105 @@ class RefreshCoordinatorImpl {
    * 并发保护语义：若当前已有刷新正在执行，后续调用者会等待当前刷新完成后被放行，
    * 而非触发新一轮刷新。调用方不应假设返回时数据已重新加载。
    */
-  async triggerAll(): Promise<void> {
-    return this.triggerByFilter(() => true);
+  async triggerAll(): Promise<RefreshAggregateResult> {
+    return this.triggerByFilter('all', () => true);
   }
 
   /**
    * 按 scope 触发刷新
    */
-  async triggerByScope(scope: string): Promise<void> {
-    return this.triggerByFilter((reg) => reg.scope === scope);
+  async triggerByScope(scope: string): Promise<RefreshAggregateResult> {
+    return this.triggerByFilter(`scope:${scope}`, (reg) => reg.scope === scope);
   }
 
   /**
    * 内部触发器：按过滤器筛选注册项，支持并发保护
    */
-  private async triggerByFilter(filter: (reg: RefreshRegistration) => boolean): Promise<void> {
-    // 正在刷新时，后续触发进入队列
+  private async triggerByFilter(
+    key: string,
+    filter: (reg: RefreshRegistration) => boolean
+  ): Promise<RefreshAggregateResult> {
     if (this.isRunning) {
-      // 队列式：所有等待请求都会在当前刷新完成后执行
-      return new Promise<void>((resolve) => {
-        this.pendingQueue.push(resolve);
+      return new Promise<RefreshAggregateResult>((resolve, reject) => {
+        const existing = this.pendingQueue.find((item) => item.key === key);
+        if (existing) {
+          existing.resolves.push(resolve);
+          existing.rejects.push(reject);
+          return;
+        }
+        this.pendingQueue.push({
+          key,
+          filter,
+          resolves: [resolve],
+          rejects: [reject],
+        });
       });
     }
 
     this.isRunning = true;
-
     try {
-      const targets = this.getRegistrations().filter(filter);
-
-      // 优先级队列顺序执行
-      for (const reg of targets) {
-        try {
-          await reg.handler();
-        } catch {
-          // 单个 handler 失败不影响其他 handler
-        }
-      }
+      return await this.executeFilter(filter);
     } finally {
       this.isRunning = false;
+      this.flushPendingQueue();
+    }
+  }
 
-      // 消费队列中所有等待请求（而非只消费一个）
-      while (this.pendingQueue.length > 0) {
-        const pending = this.pendingQueue.shift();
-        if (pending) {
-          pending();
-        }
+  private async executeFilter(
+    filter: (reg: RefreshRegistration) => boolean
+  ): Promise<RefreshAggregateResult> {
+    const targets = this.getRegistrations().filter(filter);
+    const failures: RefreshFailure[] = [];
+    let succeeded = 0;
+
+    for (const reg of targets) {
+      try {
+        await reg.handler();
+        succeeded += 1;
+      } catch (error: unknown) {
+        failures.push({
+          id: reg.id,
+          scope: reg.scope,
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : 'Unknown refresh error',
+        });
       }
     }
+
+    return {
+      total: targets.length,
+      succeeded,
+      failed: failures.length,
+      failures,
+    };
+  }
+
+  private flushPendingQueue() {
+    if (this.isRunning || this.pendingQueue.length === 0) {
+      return;
+    }
+
+    const next = this.pendingQueue.shift();
+    if (!next) {
+      return;
+    }
+
+    this.isRunning = true;
+    void this.executeFilter(next.filter)
+      .then((result) => {
+        next.resolves.forEach((resolve) => resolve(result));
+      })
+      .catch((error) => {
+        next.rejects.forEach((reject) => reject(error));
+      })
+      .finally(() => {
+        this.isRunning = false;
+        this.flushPendingQueue();
+      });
   }
 }
 

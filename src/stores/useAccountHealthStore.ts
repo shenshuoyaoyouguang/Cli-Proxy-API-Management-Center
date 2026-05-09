@@ -160,6 +160,18 @@ const writePersistedHealthMap = (scopeKey: string, healthMap: AccountHealthMap) 
   }
 };
 
+const removePersistedHealthMap = (scopeKey: string) => {
+  if (typeof localStorage === 'undefined' || !scopeKey) {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(createStorageKey(scopeKey));
+  } catch {
+    // Ignore local fallback persistence failures.
+  }
+};
+
 const updateState = (
   set: (
     partial:
@@ -360,7 +372,9 @@ export const useAccountHealthStore = create<AccountHealthStoreState>((set, get) 
   },
 
   clearHealthMap: () => {
+    const scopeKey = get().scopeKey;
     healthLoadRequestToken += 1;
+    removePersistedHealthMap(scopeKey);
     set((state) => ({
       healthMap: {},
       scopeKey: '',

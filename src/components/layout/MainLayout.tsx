@@ -506,9 +506,11 @@ export function MainLayout() {
       fetchConfig(undefined, true),
       triggerHeaderRefresh(),
     ]);
-    const rejected = results.find((result) => result.status === 'rejected');
-    if (rejected && rejected.status === 'rejected') {
-      const reason = rejected.reason;
+    const configResult = results[0];
+    const refreshResult = results[1];
+
+    if (configResult.status === 'rejected') {
+      const reason = configResult.reason;
       const message =
         typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : '';
       showNotification(
@@ -517,6 +519,25 @@ export function MainLayout() {
       );
       return;
     }
+
+    if (refreshResult.status === 'rejected') {
+      const reason = refreshResult.reason;
+      const message =
+        typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : '';
+      showNotification(
+        `${t('notification.refresh_failed')}${message ? `: ${message}` : ''}`,
+        'error'
+      );
+      return;
+    }
+
+    if (refreshResult.value.failed > 0) {
+      const firstFailure = refreshResult.value.failures[0];
+      const suffix = firstFailure?.errorMessage ? `: ${firstFailure.errorMessage}` : '';
+      showNotification(`${t('notification.refresh_failed')}${suffix}`, 'error');
+      return;
+    }
+
     showNotification(t('notification.data_refreshed'), 'success');
   };
 

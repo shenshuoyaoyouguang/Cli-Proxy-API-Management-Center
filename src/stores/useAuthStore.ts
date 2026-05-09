@@ -15,6 +15,7 @@ import { useAccountHealthStore } from './useAccountHealthStore';
 import { detectApiBaseFromLocation, normalizeApiBase } from '@/utils/connection';
 import { CacheLayer } from '@/services/cache';
 import { clearModelsCache } from '@/features/authFiles/hooks/useAuthFilesModels';
+import { clearRouteState } from '@/hooks/useRouteRestore';
 import { buildScopeKey } from '@/utils/helpers';
 
 interface AuthStoreState extends AuthState {
@@ -259,6 +260,7 @@ export const useAuthStore = create<AuthStoreState>()((set, get) => ({
       'config-management:tab',
     ];
     pageLevelKeys.forEach((key) => localStorage.removeItem(key));
+    clearRouteState();
   },
 
   // 检查认证状态

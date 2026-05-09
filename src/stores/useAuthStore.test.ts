@@ -49,9 +49,14 @@ vi.mock('@/utils/connection', () => ({
   normalizeApiBase: vi.fn((base: string) => base.replace(/\/+$/, '')),
 }));
 
+vi.mock('@/hooks/useRouteRestore', () => ({
+  clearRouteState: vi.fn(),
+}));
+
 import { useAuthStore } from './useAuthStore';
 import { apiClient } from '@/services/api/client';
 import { secureStorage } from '@/services/storage/secureStorage';
+import { clearRouteState } from '@/hooks/useRouteRestore';
 
 describe('useAuthStore', () => {
   let localStorageMock: Record<string, string>;
@@ -189,6 +194,7 @@ describe('useAuthStore', () => {
       expect(localStorageRemove).toHaveBeenCalledWith('isLoggedIn');
       expect(sessionStorageRemove).toHaveBeenCalledWith('sessionManagementKey');
       expect(vi.mocked(secureStorage.removeItem)).toHaveBeenCalledWith('managementKey');
+      expect(vi.mocked(clearRouteState)).toHaveBeenCalledTimes(1);
     });
 
     it('keeps remembered connection info but removes sensitive data', () => {

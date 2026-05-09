@@ -3,7 +3,10 @@ import { createRoot } from 'react-dom/client';
 import '@/styles/global.scss';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import { secureStorage } from '@/services/storage/secureStorage';
+import { registerChartJSComponents } from '@/atoms/chart/register';
 import App from './App.tsx';
+
+registerChartJSComponents();
 
 document.title = 'CLI Proxy API Management Center';
 document.documentElement.setAttribute('translate', 'no');

@@ -42,6 +42,21 @@ function estimateBytes(value: unknown): number {
   return new Blob([JSON.stringify(value)]).size;
 }
 
+/** 安全地估算缓存条目大小，返回保守值 */
+function estimateCacheEntrySize(raw: string): number {
+  try {
+    const parsed = JSON.parse(raw) as { _size?: number; data?: unknown };
+    if (parsed._size !== undefined) {
+      return parsed._size;
+    }
+    if (parsed.data !== undefined) {
+      return estimateBytes(parsed.data);
+    }
+  } catch {
+    // 解析失败时使用字符串大小作为近似
+  }
+  return estimateBytes(raw);
+}
 
 function formatDebugKey(scopeKey: string, key: string): string {
   return scopeKey ? `${key} [scope redacted]` : `${key} [global]`;
@@ -208,7 +223,13 @@ class CacheLayerImpl {
       _size: estimateBytes(data),
     };
 
+    // 如果 key 已存在，先减去旧值的大小以避免重复计算
     if (this.estimatedTotalBytes !== null) {
+      const existingRaw = localStorage.getItem(fullKey);
+      if (existingRaw) {
+        const existingSize = estimateCacheEntrySize(existingRaw);
+        this.estimatedTotalBytes = Math.max(0, this.estimatedTotalBytes - existingSize);
+      }
       this.estimatedTotalBytes += entry._size;
     }
 

@@ -1,15 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Select } from '@/components/ui/Select';
@@ -42,16 +32,6 @@ import {
 } from '@/components/usage';
 import { type UsageTimeRange } from '@/utils/usage';
 import styles from './UsagePage.module.scss';
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
 
 const TIME_RANGE_STORAGE_KEY = 'cli-proxy-usage-time-range-v1';
 const DEFAULT_TIME_RANGE: UsageTimeRange = '7d';
@@ -136,15 +116,13 @@ export function UsagePage() {
     }
   }, [timeRange]);
 
-  const [nowMsTick, setNowMsTick] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => {
-      setNowMsTick((prev) => prev + 1);
-    }, 5000);
+      setNowMs(Date.now());
+    }, 30000);
     return () => clearInterval(id);
   }, []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- nowMsTick intentionally drives re-evaluation
-  const nowMs = useMemo(() => Date.now(), [nowMsTick]);
 
   const includeHealthRequestEventRows = requestEventsResultFilter !== null;
 

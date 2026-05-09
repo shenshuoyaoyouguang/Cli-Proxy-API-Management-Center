@@ -227,3 +227,149 @@ describe('CacheLayer - invalidate across URL-like scope keys', () => {
     expect(CacheLayer.get('models', scopeA)?.data).toEqual({ data: 'c' });
   });
 });
+
+describe('CacheLayer - invalidateScope', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('removes all entries for a specific scope', () => {
+    const scopeA = 'scope-a';
+    const scopeB = 'scope-b';
+
+    CacheLayer.set('key1', { data: 'a1' }, { scopeKey: scopeA });
+    CacheLayer.set('key2', { data: 'a2' }, { scopeKey: scopeA });
+    CacheLayer.set('key1', { data: 'b1' }, { scopeKey: scopeB });
+
+    CacheLayer.invalidateScope(scopeA);
+
+    expect(CacheLayer.get('key1', scopeA)).toBeNull();
+    expect(CacheLayer.get('key2', scopeA)).toBeNull();
+    expect(CacheLayer.get('key1', scopeB)?.data).toEqual({ data: 'b1' });
+  });
+
+  it('handles non-existent scope gracefully', () => {
+    CacheLayer.set('key', { data: 'test' }, { scopeKey: 'existing-scope' });
+
+    // 不应该抛出异常
+    expect(() => CacheLayer.invalidateScope('non-existent-scope')).not.toThrow();
+
+    // 现有数据应该不受影响
+    expect(CacheLayer.get('key', 'existing-scope')?.data).toEqual({ data: 'test' });
+  });
+
+  it('handles URL-like scope keys', () => {
+    const scopeUrl = 'http://server:3000::management-key';
+
+    CacheLayer.set('config', { data: 'test' }, { scopeKey: scopeUrl });
+    CacheLayer.set('settings', { data: 'test2' }, { scopeKey: scopeUrl });
+
+    CacheLayer.invalidateScope(scopeUrl);
+
+    expect(CacheLayer.get('config', scopeUrl)).toBeNull();
+    expect(CacheLayer.get('settings', scopeUrl)).toBeNull();
+  });
+});
+
+describe('CacheLayer - quota exceeded handling', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('handles localStorage quota exceeded gracefully', () => {
+    let callCount = 0;
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      callCount++;
+      if (callCount <= 2) {
+        const error = new Error('QuotaExceededError: The quota has been exceeded');
+        (error as Error & { code?: number }).code = 22;
+        throw error;
+      }
+      // 第三次调用成功
+    });
+
+    // 不应该抛出异常
+    expect(() => CacheLayer.set('key', { data: 'test' })).not.toThrow();
+
+    // 应该尝试写入至少一次
+    expect(setItemSpy).toHaveBeenCalled();
+
+    setItemSpy.mockRestore();
+  });
+
+  it('triggers prune when quota is exceeded', () => {
+    const pruneSpy = vi.spyOn(CacheLayer, 'prune');
+    let shouldThrow = true;
+
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      if (shouldThrow) {
+        shouldThrow = false;
+        throw new Error('QuotaExceededError');
+      }
+    });
+
+    CacheLayer.set('key', { data: 'test' });
+
+    // prune 应该被调用以清理空间
+    expect(pruneSpy).toHaveBeenCalled();
+
+    pruneSpy.mockRestore();
+  });
+});
+
+describe('CacheLayer - estimatedTotalBytes accuracy', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('updates estimatedTotalBytes correctly when overwriting existing key', () => {
+    // 设置初始值
+    CacheLayer.set('key', { data: 'small' });
+    const entry1 = CacheLayer.get('key');
+    expect(entry1).not.toBeNull();
+
+    // 更新为更大的值
+    CacheLayer.set('key', { data: 'x'.repeat(1000) });
+    const entry2 = CacheLayer.get('key');
+    expect(entry2).not.toBeNull();
+
+    // 再更新为更小的值
+    CacheLayer.set('key', { data: 'tiny' });
+    const entry3 = CacheLayer.get('key');
+    expect(entry3).not.toBeNull();
+
+    // 验证最终值正确
+    expect(entry3?.data).toEqual({ data: 'tiny' });
+  });
+
+  it('maintains accurate size estimation across multiple updates', () => {
+    const scope = 'test-scope';
+
+    // 多次更新同一个 key
+    for (let i = 0; i < 10; i++) {
+      CacheLayer.set('counter', { value: i, padding: 'x'.repeat(i * 10) }, { scopeKey: scope });
+    }
+
+    // 验证最终值正确
+    const finalEntry = CacheLayer.get('counter', scope);
+    expect(finalEntry?.data).toEqual({ value: 9, padding: 'x'.repeat(90) });
+  });
+});

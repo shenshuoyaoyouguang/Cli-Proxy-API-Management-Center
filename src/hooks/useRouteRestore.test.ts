@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { saveRouteState, getStoredRouteState, clearRouteState, type RouteState } from './useRouteRestore';
+import { saveRouteState, getStoredRouteState, clearRouteState } from './useRouteRestore';
 
 const ROUTE_STATE_KEY = 'cli-proxy-last-route-v1';
 
@@ -130,8 +130,8 @@ describe('useRouteRestore', () => {
     });
 
     it('should handle clearRouteState when storage is undefined', () => {
-      const originalLocalStorage = global.localStorage;
-      Object.defineProperty(global, 'localStorage', {
+      const originalLocalStorage = globalThis.localStorage;
+      Object.defineProperty(globalThis, 'localStorage', {
         value: undefined,
         writable: true,
         configurable: true,
@@ -139,7 +139,7 @@ describe('useRouteRestore', () => {
 
       expect(() => clearRouteState()).not.toThrow();
 
-      Object.defineProperty(global, 'localStorage', {
+      Object.defineProperty(globalThis, 'localStorage', {
         value: originalLocalStorage,
         writable: true,
         configurable: true,
@@ -147,8 +147,8 @@ describe('useRouteRestore', () => {
     });
 
     it('should handle saveRouteState when storage is undefined', () => {
-      const originalLocalStorage = global.localStorage;
-      Object.defineProperty(global, 'localStorage', {
+      const originalLocalStorage = globalThis.localStorage;
+      Object.defineProperty(globalThis, 'localStorage', {
         value: undefined,
         writable: true,
         configurable: true,
@@ -156,7 +156,7 @@ describe('useRouteRestore', () => {
 
       expect(() => saveRouteState('/usage', '', '')).not.toThrow();
 
-      Object.defineProperty(global, 'localStorage', {
+      Object.defineProperty(globalThis, 'localStorage', {
         value: originalLocalStorage,
         writable: true,
         configurable: true,
@@ -164,8 +164,8 @@ describe('useRouteRestore', () => {
     });
 
     it('should handle getStoredRouteState when storage is undefined', () => {
-      const originalLocalStorage = global.localStorage;
-      Object.defineProperty(global, 'localStorage', {
+      const originalLocalStorage = globalThis.localStorage;
+      Object.defineProperty(globalThis, 'localStorage', {
         value: undefined,
         writable: true,
         configurable: true,
@@ -174,7 +174,7 @@ describe('useRouteRestore', () => {
       const result = getStoredRouteState();
       expect(result).toBeNull();
 
-      Object.defineProperty(global, 'localStorage', {
+      Object.defineProperty(globalThis, 'localStorage', {
         value: originalLocalStorage,
         writable: true,
         configurable: true,

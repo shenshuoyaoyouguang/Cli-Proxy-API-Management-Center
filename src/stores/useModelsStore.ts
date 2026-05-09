@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { modelsApi } from '@/services/api/models';
 import { CacheLayer } from '@/services/cache';
+import { buildScopeKey } from '@/utils/helpers';
 import type { ModelInfo } from '@/utils/models';
 import { useAuthStore } from './useAuthStore';
 
@@ -22,12 +23,12 @@ interface ModelsState {
 
   fetchModels: (apiBase: string, apiKey?: string, forceRefresh?: boolean) => Promise<ModelInfo[]>;
   clearCache: (apiBase?: string) => void;
-  isCacheValid: (apiBase: string) => boolean;
+  isCacheValid: (cacheKey: string) => boolean;
   restoreFromPersistence: (apiBase: string) => ModelInfo[] | null;
 }
 
 let modelsRequestToken = 0;
-let inFlightModelsRequest: { id: number; apiBase: string; promise: Promise<ModelInfo[]> } | null =
+let inFlightModelsRequest: { id: number; cacheKey: string; promise: Promise<ModelInfo[]> } | null =
   null;
 
 // 5分钟缓存，模型列表相对稳定
@@ -44,6 +45,14 @@ const normalizeModelInfoArray = (data: unknown): ModelInfo[] => {
   return data.filter(isValidModelInfo);
 };
 
+const resolveModelsScopeKey = (apiBase: string): string => {
+  const { apiBase: authBase, managementKey } = useAuthStore.getState();
+  if (!authBase || !managementKey || authBase !== apiBase) {
+    return '';
+  }
+  return buildScopeKey(authBase, managementKey);
+};
+
 export const useModelsStore = create<ModelsState>((set, get) => ({
   models: [],
   loading: false,
@@ -51,10 +60,9 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
   cache: new Map(),
 
   restoreFromPersistence: (apiBase) => {
-    const { apiBase: authBase, managementKey } = useAuthStore.getState();
-    if (!authBase || !managementKey) return null;
+    const scopeKey = resolveModelsScopeKey(apiBase);
+    if (!scopeKey) return null;
 
-    const scopeKey = `${authBase}::${managementKey}`;
     const entry = CacheLayer.get<unknown>('models', scopeKey);
     if (entry) {
       const cached = normalizeModelInfoArray(entry.data);
@@ -62,7 +70,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
       const cacheEntry: ModelsCache = { data: cached, timestamp: Date.now(), apiBase };
       set((state) => {
         const nextCache = new Map(state.cache);
-        nextCache.set(apiBase, cacheEntry);
+        nextCache.set(scopeKey, cacheEntry);
         return { models: cached, error: null, cache: nextCache };
       });
       return cached;
@@ -71,11 +79,13 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
   },
 
   fetchModels: async (apiBase, apiKey, forceRefresh = false) => {
+    const scopeKey = resolveModelsScopeKey(apiBase);
+    const cacheKey = scopeKey || apiBase;
     const { cache, isCacheValid } = get();
 
     // 检查内存缓存
-    if (!forceRefresh && isCacheValid(apiBase)) {
-      const cached = cache.get(apiBase);
+    if (!forceRefresh && isCacheValid(cacheKey)) {
+      const cached = cache.get(cacheKey);
       if (cached) {
         set({ models: cached.data, error: null });
         return cached.data;
@@ -90,14 +100,14 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
       }
     }
 
-    // 复用同 apiBase 的 in-flight 请求
-    if (inFlightModelsRequest && inFlightModelsRequest.apiBase === apiBase) {
+    // 复用同 scope 的 in-flight 请求
+    if (inFlightModelsRequest && inFlightModelsRequest.cacheKey === cacheKey) {
       const list = await inFlightModelsRequest.promise;
       return list;
     }
 
-    // apiBase 变化时，让旧请求失效
-    if (inFlightModelsRequest && inFlightModelsRequest.apiBase !== apiBase) {
+    // scope 变化时，让旧请求失效
+    if (inFlightModelsRequest && inFlightModelsRequest.cacheKey !== cacheKey) {
       modelsRequestToken += 1;
       inFlightModelsRequest = null;
     }
@@ -115,15 +125,13 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
         const now = Date.now();
 
         // 持久化到 CacheLayer
-        const { apiBase: authBase, managementKey } = useAuthStore.getState();
-        if (authBase && managementKey) {
-          const scopeKey = `${authBase}::${managementKey}`;
+        if (scopeKey) {
           CacheLayer.set('models', list, { scopeKey, maxAgeMs: MODELS_CACHE_TTL_MS });
         }
 
         set((state) => {
           const nextCache = new Map(state.cache);
-          nextCache.set(apiBase, { data: list, timestamp: now, apiBase });
+          nextCache.set(cacheKey, { data: list, timestamp: now, apiBase });
           return { models: list, loading: false, cache: nextCache };
         });
 
@@ -145,7 +153,7 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
       }
     })();
 
-    inFlightModelsRequest = { id: requestId, apiBase, promise: requestPromise };
+    inFlightModelsRequest = { id: requestId, cacheKey, promise: requestPromise };
     return requestPromise;
   },
 
@@ -155,16 +163,20 @@ export const useModelsStore = create<ModelsState>((set, get) => ({
     set((state) => {
       if (apiBase !== undefined) {
         const nextCache = new Map(state.cache);
-        nextCache.delete(apiBase);
+        Array.from(nextCache.entries()).forEach(([key, entry]) => {
+          if (entry.apiBase === apiBase) {
+            nextCache.delete(key);
+          }
+        });
         return { cache: nextCache };
       }
       return { cache: new Map(), models: [] };
     });
   },
 
-  isCacheValid: (apiBase) => {
+  isCacheValid: (cacheKey) => {
     const { cache } = get();
-    const cached = cache.get(apiBase);
+    const cached = cache.get(cacheKey);
     if (!cached) return false;
     return Date.now() - cached.timestamp < MODELS_CACHE_TTL_MS;
   },

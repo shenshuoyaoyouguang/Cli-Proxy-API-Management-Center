@@ -190,3 +190,25 @@ describe('CacheLayer - redacted scope keys', () => {
     debugSpy.mockRestore();
   });
 });
+
+describe('CacheLayer - invalidate across URL-like scope keys', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('invalidates matching keys when scope keys contain URL colons', () => {
+    CacheLayer.set('models', { data: 'a' }, { scopeKey: 'http://server-a:3000::scope-a' });
+    CacheLayer.set('models', { data: 'b' }, { scopeKey: 'https://server-b:8443::scope-b' });
+
+    CacheLayer.invalidate('models');
+
+    expect(CacheLayer.get('models', 'http://server-a:3000::scope-a')).toBeNull();
+    expect(CacheLayer.get('models', 'https://server-b:8443::scope-b')).toBeNull();
+  });
+});

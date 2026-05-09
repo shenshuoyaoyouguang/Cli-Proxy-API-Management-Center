@@ -29,6 +29,7 @@ import { downloadBlob } from '@/utils/download';
 import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
 import { formatUnixTimestamp } from '@/utils/format';
 import { getErrorMessage } from '@/utils/error';
+import { buildScopeKey } from '@/utils/helpers';
 import { HTTP_METHODS, STATUS_GROUPS, resolveStatusGroup, type LogState } from './hooks/logTypes';
 import { parseLogLine } from './hooks/logParsing';
 import { useLogFilters } from './hooks/useLogFilters';
@@ -56,7 +57,7 @@ export function LogsPage() {
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const apiBase = useAuthStore((state) => state.apiBase);
   const managementKey = useAuthStore((state) => state.managementKey);
-  const traceScopeKey = `${apiBase}::${managementKey}`;
+  const traceScopeKey = apiBase && managementKey ? buildScopeKey(apiBase, managementKey) : '';
   const config = useConfigStore((state) => state.config);
   const requestLogEnabled = config?.requestLog ?? false;
 

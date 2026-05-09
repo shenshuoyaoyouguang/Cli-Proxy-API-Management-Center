@@ -3,6 +3,7 @@ import { authFilesApi } from '@/services/api/authFiles';
 import { useAuthStore, USAGE_STATS_STALE_TIME_MS } from '@/stores';
 import type { AuthFileItem } from '@/types/authFile';
 import type { CredentialInfo } from '@/types/sourceInfo';
+import { buildScopeKey } from '@/utils/helpers';
 import { createAuthFileMap } from './usageAnalyticsSnapshot';
 
 type AuthFilesCacheEntry = {
@@ -76,7 +77,10 @@ export interface UseAuthFilesMapReturn {
 export function useAuthFilesMap(): UseAuthFilesMapReturn {
   const apiBase = useAuthStore((state) => state.apiBase);
   const managementKey = useAuthStore((state) => state.managementKey);
-  const scopeKey = useMemo(() => `${apiBase || ''}::${managementKey || ''}`, [apiBase, managementKey]);
+  const scopeKey = useMemo(
+    () => (apiBase && managementKey ? buildScopeKey(apiBase, managementKey) : ''),
+    [apiBase, managementKey]
+  );
 
   const [state, setState] = useState<{ scopeKey: string; entry: AuthFilesCacheEntry }>(() => ({
     scopeKey,

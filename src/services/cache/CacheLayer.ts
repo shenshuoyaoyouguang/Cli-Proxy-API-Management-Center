@@ -47,11 +47,11 @@ function parseFullKey(fullKey: string): { scopeKey: string; dataKey: string } | 
   const prefix = CACHE_PREFIX + ':';
   if (!fullKey.startsWith(prefix)) return null;
   const remainder = fullKey.slice(prefix.length);
-  const firstColon = remainder.indexOf(':');
-  if (firstColon === -1) return null;
+  const lastColon = remainder.lastIndexOf(':');
+  if (lastColon === -1) return null;
   return {
-    scopeKey: remainder.slice(0, firstColon),
-    dataKey: remainder.slice(firstColon + 1),
+    scopeKey: remainder.slice(0, lastColon),
+    dataKey: remainder.slice(lastColon + 1),
   };
 }
 

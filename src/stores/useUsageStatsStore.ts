@@ -31,6 +31,8 @@ import type {
 export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
 const MAX_USAGE_DETAILS_LENGTH = 5000;
+const EXPIRE_FAILED_CLEANUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
+const EXPIRE_FAILED_CLEANUP_IDLE_THRESHOLD_MS = 10_000;
 
 export type LoadUsageStatsOptions = {
   force?: boolean;
@@ -462,6 +464,57 @@ const cleanBootstrapCache = (cache: PersistedUsageStatsCache): PersistedUsageSta
   writePersistedUsageStats(cleaned);
   return cleaned;
 };
+
+let expireFailedCleanupTimerId: ReturnType<typeof setTimeout> | null = null;
+
+const scheduleExpireFailedCleanup = () => {
+  if (expireFailedCleanupTimerId !== null) return;
+
+  const tryCleanup = () => {
+    if (inFlightUsageRequest !== null) {
+      expireFailedCleanupTimerId = setTimeout(tryCleanup, EXPIRE_FAILED_CLEANUP_IDLE_THRESHOLD_MS);
+      return;
+    }
+
+    const state = useUsageStatsStore.getState();
+    if (!state.scopeKey || state.loading) {
+      expireFailedCleanupTimerId = setTimeout(tryCleanup, EXPIRE_FAILED_CLEANUP_IDLE_THRESHOLD_MS);
+      return;
+    }
+
+    const cache = readPersistedUsageStats(state.scopeKey);
+    if (cache && cache.usageDetails.length > 0) {
+      const { usageDetails, removedCount, topLevelRemovedCount } = expireUsageFailed(
+        cache.usage,
+        cache.usageDetails
+      );
+      if (removedCount > 0) {
+        const keyStats = computeKeyStatsFromDetails(usageDetails);
+        const detailCount = Math.max(cache.detailCount - topLevelRemovedCount, usageDetails.length);
+        writePersistedUsageStats({
+          ...cache,
+          usageDetails,
+          keyStats,
+          detailCount,
+        });
+      }
+    }
+
+    expireFailedCleanupTimerId = null;
+    expireFailedCleanupTimerId = setTimeout(tryCleanup, EXPIRE_FAILED_CLEANUP_INTERVAL_MS);
+  };
+
+  expireFailedCleanupTimerId = setTimeout(tryCleanup, EXPIRE_FAILED_CLEANUP_INTERVAL_MS);
+};
+
+export const cancelExpireFailedCleanup = () => {
+  if (expireFailedCleanupTimerId !== null) {
+    clearTimeout(expireFailedCleanupTimerId);
+    expireFailedCleanupTimerId = null;
+  }
+};
+
+scheduleExpireFailedCleanup();
 
 export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   usage: null,

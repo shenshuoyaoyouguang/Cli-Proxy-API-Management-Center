@@ -39,6 +39,7 @@ const AUTO_PERSIST_TRIGGER_DELTA = 10;
 const AUTO_PERSIST_INTERVAL_MS = 60_000;
 const AUTO_PERSIST_START_DELAY_MS = 30_000;
 const AUTO_PERSIST_MAX_DELAY_MS = 5 * 60 * 1000;
+const CLEARED_SCOPE_KEY_TTL_MS = 10 * 60 * 1000; // 10 分钟
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
@@ -193,17 +194,29 @@ export class AutoPersistService {
   private readonly sessionId = createSessionId();
   private activeScopeKey = '';
   private currentCache: AutoPersistCache | null = null;
-  private readonly clearedScopeKeys = new Set<string>();
+  private readonly clearedScopeKeys = new Map<string, number>();
   private startDelayCompleted = false;
   private startTimerId: number | null = null;
   private intervalId: number | null = null;
   private persistInFlight: Promise<void> | null = null;
 
+  private isScopeCleared(scopeKey: string): boolean {
+    if (!this.clearedScopeKeys.has(scopeKey)) {
+      return false;
+    }
+    const clearedAt = this.clearedScopeKeys.get(scopeKey)!;
+    if (Date.now() - clearedAt < CLEARED_SCOPE_KEY_TTL_MS) {
+      return true;
+    }
+    this.clearedScopeKeys.delete(scopeKey);
+    return false;
+  }
+
   readBootstrapSnapshot(scopeKey: string): AutoPersistBootstrapSnapshot | null {
     if (!scopeKey) {
       return null;
     }
-    if (this.clearedScopeKeys.has(scopeKey)) {
+    if (this.isScopeCleared(scopeKey)) {
       return null;
     }
 
@@ -232,7 +245,7 @@ export class AutoPersistService {
     }
 
     if (options?.removePersisted && scopeKey) {
-      this.clearedScopeKeys.add(scopeKey);
+      this.clearedScopeKeys.set(scopeKey, Date.now());
       removeCache(scopeKey);
     }
   }
@@ -369,7 +382,7 @@ export class AutoPersistService {
     const task = (async () => {
       try {
         await usageApi.autoPersistUsage(payload);
-        if (this.clearedScopeKeys.has(cacheToPersist.scopeKey)) {
+        if (this.isScopeCleared(cacheToPersist.scopeKey)) {
           removeCache(cacheToPersist.scopeKey);
           return;
         }

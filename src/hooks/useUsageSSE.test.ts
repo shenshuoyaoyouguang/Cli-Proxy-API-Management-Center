@@ -22,6 +22,13 @@ const mocks = vi.hoisted(() => {
     usageSSEService: {
       connect: connectSpy,
       disconnect: disconnectSpy,
+      suspend: vi.fn(() => {
+        connectionStatus = 'disconnected';
+      }),
+      resume: vi.fn((_: string, __: string, ___: UsageSSEHandler) => {
+        latestHandler = ___;
+        connectionStatus = 'connecting';
+      }),
       getConnectionStatus: getConnectionStatusSpy,
     },
     connectSpy,
@@ -136,7 +143,8 @@ describe('useUsageSSE visibility handling', () => {
     expect(harness.getResult().connectionStatus).toBe('disconnected');
 
     mocks.connectSpy.mockClear();
-    mocks.disconnectSpy.mockClear();
+    const suspendSpy = mocks.usageSSEService.suspend as ReturnType<typeof vi.fn>;
+    suspendSpy.mockClear();
     mocks.loadUsageStatsSpy.mockClear();
     mocks.setConnectionStatus('degraded');
 
@@ -145,7 +153,7 @@ describe('useUsageSSE visibility handling', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
-    expect(mocks.disconnectSpy).toHaveBeenCalledTimes(1);
+    expect(suspendSpy).toHaveBeenCalledTimes(1);
     expect(harness.getResult().connectionStatus).toBe('disconnected');
 
     hidden = false;
@@ -153,7 +161,8 @@ describe('useUsageSSE visibility handling', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
-    expect(mocks.connectSpy).toHaveBeenCalledTimes(1);
+    const resumeSpy = mocks.usageSSEService.resume as ReturnType<typeof vi.fn>;
+    expect(resumeSpy).toHaveBeenCalledTimes(1);
     expect(mocks.loadUsageStatsSpy).not.toHaveBeenCalled();
     expect(harness.getResult().connectionStatus).toBe('connecting');
 

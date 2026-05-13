@@ -292,7 +292,7 @@ describe('useUsageStatsStore', () => {
         'http://localhost:3000',
         'test-key',
         expect.objectContaining({
-          timeoutMs: 5000,
+          timeoutMs: 8000,
         })
       );
       expect(usageApi.getUsageQueue).not.toHaveBeenCalled();

@@ -98,7 +98,8 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
           clearTimeout(reconnectTimerRef.current);
           reconnectTimerRef.current = null;
         }
-        usageSSEService.disconnect();
+        // suspend 保留 lastEventId，切回时可断点续传
+        usageSSEService.suspend();
         connectionStatusRef.current = 'disconnected';
         setConnectionStatus('disconnected');
         return;
@@ -106,7 +107,8 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
 
       if (handlerRef.current) {
         fallenBackRef.current = false;
-        usageSSEService.connect(apiBase, managementKey, handlerRef.current);
+        // resume 使用保存的 lastEventId 恢复事件流
+        usageSSEService.resume(apiBase, managementKey, handlerRef.current);
         connectionStatusRef.current = 'connecting';
         setConnectionStatus('connecting');
       }

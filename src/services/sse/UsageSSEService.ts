@@ -222,6 +222,32 @@ export class UsageSSEServiceImpl {
   private authMode: UsageSSEAuthMode = 'header';
   private hasTriedQueryFallback = false;
   private pendingFullSnapshotWaiters: PendingFullSnapshotWaiter[] = [];
+  private savedLastEventId = '';
+
+  /**
+   * 暂停连接但保留 lastEventId，用于标签页隐藏时保存状态
+   */
+  suspend(): void {
+    this.savedLastEventId = this.lastEventId;
+    this.abortStream();
+    this.rejectPendingFullSnapshotWaiters(new Error('Usage SSE suspended'));
+    this.connectionStatus = 'disconnected';
+  }
+
+  /**
+   * 恢复连接，使用保存的 lastEventId 断点续传
+   */
+  resume(
+    baseUrl: string,
+    token: string,
+    handler: UsageSSEHandler
+  ): void {
+    if (!this.lastEventId && this.savedLastEventId) {
+      this.lastEventId = this.savedLastEventId;
+    }
+    this.savedLastEventId = '';
+    this.connect(baseUrl, token, handler);
+  }
 
   connect(
     baseUrl: string,
@@ -233,6 +259,8 @@ export class UsageSSEServiceImpl {
     const nextConnectionKey = buildConnectionKey(baseUrl, token);
     if (nextConnectionKey !== this.getCurrentConnectionKey()) {
       this.rejectPendingFullSnapshotWaiters(new Error('Usage SSE connection target changed'));
+      this.lastEventId = '';
+      this.savedLastEventId = '';
     }
     this.abortStream();
     this.handler = handler;
@@ -254,6 +282,8 @@ export class UsageSSEServiceImpl {
     this.handler = null;
     this.baseUrl = '';
     this.token = '';
+    this.lastEventId = '';
+    this.savedLastEventId = '';
     this.connectionStatus = 'disconnected';
     this.authMode = 'header';
     this.hasTriedQueryFallback = false;
@@ -371,12 +401,7 @@ export class UsageSSEServiceImpl {
     const waiters = [...this.pendingFullSnapshotWaiters];
     this.pendingFullSnapshotWaiters = [];
     waiters.forEach((waiter) => {
-      if (waiter.timeoutId !== null) {
-        clearTimeout(waiter.timeoutId);
-      }
-      if (waiter.signal && waiter.abortListener) {
-        waiter.signal.removeEventListener('abort', waiter.abortListener);
-      }
+      this.removePendingFullSnapshotWaiter(waiter);
       waiter.resolve(snapshot);
     });
   }
@@ -389,12 +414,7 @@ export class UsageSSEServiceImpl {
     const waiters = [...this.pendingFullSnapshotWaiters];
     this.pendingFullSnapshotWaiters = [];
     waiters.forEach((waiter) => {
-      if (waiter.timeoutId !== null) {
-        clearTimeout(waiter.timeoutId);
-      }
-      if (waiter.signal && waiter.abortListener) {
-        waiter.signal.removeEventListener('abort', waiter.abortListener);
-      }
+      this.removePendingFullSnapshotWaiter(waiter);
       waiter.reject(error);
     });
   }

@@ -508,8 +508,11 @@ const normalizeUsageSnapshotForFrontend = (
       return acc;
     }, { totalRequests: 0, successCount: 0, failureCount: 0, totalTokens: 0 });
 
+  // 排除后端顶层 models 字段，防止缓存读取时触发二次归一化导致计数翻倍
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- models 必须被解构排除
+  const { models: _backendModels, ...usageWithoutModels } = usage;
   return {
-    ...usage,
+    ...usageWithoutModels,
     total_requests: totals.totalRequests,
     success_count: totals.successCount,
     failure_count: totals.failureCount,
@@ -572,25 +575,49 @@ const readUsageStatsWithCompatibility = async (
       };
     }
 
-    const fullSnapshot = await usageSSEService.awaitFullSnapshot(apiBase, managementKey, {
-      signal,
-      timeoutMs: 5000,
-    });
-    const usageDetails = Array.isArray(fullSnapshot.usageDetails)
-      ? buildCompatibilityUsageDetailEntries(fullSnapshot.usageDetails).map(
-          (entry) => entry.usageDetail
-        )
-      : [];
-    const usage = normalizeUsageSnapshotForFrontend(
-      fullSnapshot.usage as UsageStatsSnapshot,
-      fullSnapshot.usageDetails
-    );
+    try {
+      const fullSnapshot = await usageSSEService.awaitFullSnapshot(apiBase, managementKey, {
+        signal,
+        timeoutMs: 8000,
+      });
+      const usageDetails = Array.isArray(fullSnapshot.usageDetails)
+        ? buildCompatibilityUsageDetailEntries(fullSnapshot.usageDetails).map(
+            (entry) => entry.usageDetail
+          )
+        : [];
+      const usage = normalizeUsageSnapshotForFrontend(
+        fullSnapshot.usage as UsageStatsSnapshot,
+        fullSnapshot.usageDetails
+      );
 
-    return {
-      usage,
-      usageDetails: usageDetails.length > 0 ? usageDetails : collectUsageDetails(usage),
-      lastSeq: typeof fullSnapshot.seq === 'number' ? fullSnapshot.seq : null,
-    };
+      return {
+        usage,
+        usageDetails: usageDetails.length > 0 ? usageDetails : collectUsageDetails(usage),
+        lastSeq: typeof fullSnapshot.seq === 'number' ? fullSnapshot.seq : null,
+      };
+    } catch (snapshotError) {
+      if (snapshotError && isCanceledRequestError(snapshotError)) {
+        throw snapshotError;
+      }
+
+      // SSE 快照获取失败时，降级到已有缓存数据而不是抛错
+      if (currentUsage) {
+        logger.warn('awaitFullSnapshot failed, falling back to cached data', {
+          message: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+          stack: snapshotError instanceof Error ? snapshotError.stack : undefined,
+        });
+        return {
+          usage: currentUsage,
+          usageDetails:
+            currentUsageDetails.length > 0
+              ? trimUsageDetails(currentUsageDetails)
+              : collectUsageDetails(currentUsage),
+          lastSeq: currentLastSeq,
+        };
+      }
+
+      throw snapshotError;
+    }
   }
 };
 
@@ -923,8 +950,15 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       ? pickRicherUsageSnapshot(persistedCache, autoPersistCache)
       : autoPersistCache ?? pickRicherUsageSnapshot(persistedCache, autoPersistCache);
 
-    // 页面加载/数据恢复时，清理过期的失败记录
-    const bootstrapCache = rawBootstrapCache ? cleanBootstrapCache(rawBootstrapCache) : null;
+    // 只在缓存较旧或范围切换时清理过期失败记录，避免频繁加载时反复清除用户数据
+    const shouldCleanBootstrap = scopeChanged
+      || !fresh
+      || (rawBootstrapCache?.lastRefreshedAt !== null
+        && rawBootstrapCache?.lastRefreshedAt !== undefined
+        && now - rawBootstrapCache.lastRefreshedAt > EXPIRE_FAILED_CLEANUP_INTERVAL_MS);
+    const bootstrapCache = rawBootstrapCache
+      ? (shouldCleanBootstrap ? cleanBootstrapCache(rawBootstrapCache) : rawBootstrapCache)
+      : null;
 
     if (scopeChanged) {
       if (bootstrapCache) {

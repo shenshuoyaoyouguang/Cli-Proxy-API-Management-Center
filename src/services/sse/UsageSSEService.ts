@@ -371,7 +371,12 @@ export class UsageSSEServiceImpl {
     const waiters = [...this.pendingFullSnapshotWaiters];
     this.pendingFullSnapshotWaiters = [];
     waiters.forEach((waiter) => {
-      this.removePendingFullSnapshotWaiter(waiter);
+      if (waiter.timeoutId !== null) {
+        clearTimeout(waiter.timeoutId);
+      }
+      if (waiter.signal && waiter.abortListener) {
+        waiter.signal.removeEventListener('abort', waiter.abortListener);
+      }
       waiter.resolve(snapshot);
     });
   }
@@ -384,7 +389,12 @@ export class UsageSSEServiceImpl {
     const waiters = [...this.pendingFullSnapshotWaiters];
     this.pendingFullSnapshotWaiters = [];
     waiters.forEach((waiter) => {
-      this.removePendingFullSnapshotWaiter(waiter);
+      if (waiter.timeoutId !== null) {
+        clearTimeout(waiter.timeoutId);
+      }
+      if (waiter.signal && waiter.abortListener) {
+        waiter.signal.removeEventListener('abort', waiter.abortListener);
+      }
       waiter.reject(error);
     });
   }

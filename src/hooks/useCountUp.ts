@@ -17,6 +17,7 @@ export function useCountUp(
   const rafRef = useRef<number | null>(null);
   const prevTargetRef = useRef(targetValue);
   const isAnimatingRef = useRef(false);
+  const pausedProgressRef = useRef(0);
 
   const easeOutCubic = useCallback((t: number): number => {
     return 1 - Math.pow(1 - t, 3);
@@ -47,7 +48,7 @@ export function useCountUp(
       if (!isAnimatingRef.current) return;
 
       if (startTimeRef.current === null) {
-        startTimeRef.current = timestamp;
+        startTimeRef.current = timestamp - pausedProgressRef.current * duration;
       }
 
       const elapsed = timestamp - startTimeRef.current;
@@ -59,10 +60,32 @@ export function useCountUp(
 
       if (progress < 1 && isAnimatingRef.current) {
         rafRef.current = requestAnimationFrame(animate);
+      } else {
+        pausedProgressRef.current = 0;
       }
     };
 
     rafRef.current = requestAnimationFrame(animate);
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (startTimeRef.current !== null) {
+          const elapsed = performance.now() - startTimeRef.current;
+          pausedProgressRef.current = Math.min(elapsed / duration, 1);
+        }
+        isAnimatingRef.current = false;
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+      } else if (pausedProgressRef.current > 0 && pausedProgressRef.current < 1) {
+        isAnimatingRef.current = true;
+        startTimeRef.current = null;
+        rafRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       isAnimatingRef.current = false;
@@ -70,6 +93,7 @@ export function useCountUp(
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [targetValue, duration, enabled, easeOutCubic]);
 

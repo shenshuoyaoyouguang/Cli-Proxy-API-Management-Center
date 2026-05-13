@@ -12,7 +12,11 @@ import { CACHE_EXPIRY_MS } from '@/utils/constants';
 import { CacheLayer } from '@/services/cache';
 import { getErrorMessage, isCanceledRequestError } from '@/utils/error';
 
-// Type guards for config value assignment
+type ConfigSectionMeta = {
+  key: keyof Config;
+  validator: (value: unknown) => boolean;
+};
+
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isNumber = (value: unknown): value is number =>
@@ -32,6 +36,30 @@ const isAmpcodeConfig = (value: unknown): value is Config['ampcode'] =>
 const isOauthExcludedModels = (value: unknown): value is Config['oauthExcludedModels'] =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
+const CONFIG_SECTION_META: Record<string, ConfigSectionMeta> = {
+  'debug': { key: 'debug', validator: isBoolean },
+  'proxy-url': { key: 'proxyUrl', validator: isString },
+  'request-retry': { key: 'requestRetry', validator: isNumber },
+  'quota-exceeded': { key: 'quotaExceeded', validator: isQuotaExceededConfig },
+  'usage-statistics-enabled': { key: 'usageStatisticsEnabled', validator: isBoolean },
+  'request-log': { key: 'requestLog', validator: isBoolean },
+  'logging-to-file': { key: 'loggingToFile', validator: isBoolean },
+  'logs-max-total-size-mb': { key: 'logsMaxTotalSizeMb', validator: isNumber },
+  'ws-auth': { key: 'wsAuth', validator: isBoolean },
+  'force-model-prefix': { key: 'forceModelPrefix', validator: isBoolean },
+  'routing/strategy': { key: 'routingStrategy', validator: isString },
+  'api-keys': { key: 'apiKeys', validator: isStringArray },
+  'ampcode': { key: 'ampcode', validator: isAmpcodeConfig },
+  'gemini-api-key': { key: 'geminiApiKeys', validator: isGeminiKeyConfigArray },
+  'codex-api-key': { key: 'codexApiKeys', validator: isProviderKeyConfigArray },
+  'claude-api-key': { key: 'claudeApiKeys', validator: isProviderKeyConfigArray },
+  'vertex-api-key': { key: 'vertexApiKeys', validator: isProviderKeyConfigArray },
+  'openai-compatibility': { key: 'openaiCompatibility', validator: isOpenAIProviderConfigArray },
+  'oauth-excluded-models': { key: 'oauthExcludedModels', validator: isOauthExcludedModels },
+};
+
+const SECTION_KEYS = Object.keys(CONFIG_SECTION_META) as RawConfigSection[];
+
 interface ConfigCache {
   data: unknown;
   timestamp: number;
@@ -43,7 +71,6 @@ interface ConfigState {
   loading: boolean;
   error: string | null;
 
-  // 操作
   fetchConfig: {
     (section?: undefined, forceRefresh?: boolean, scopeKey?: string): Promise<Config>;
     (section: RawConfigSection, forceRefresh?: boolean, scopeKey?: string): Promise<unknown>;
@@ -58,75 +85,16 @@ let configRequestToken = 0;
 let inFlightConfigRequest: { id: number; promise: Promise<Config> } | null = null;
 let configAbortController: AbortController | null = null;
 
-
-
-const SECTION_KEYS: RawConfigSection[] = [
-  'debug',
-  'proxy-url',
-  'request-retry',
-  'quota-exceeded',
-  'usage-statistics-enabled',
-  'request-log',
-  'logging-to-file',
-  'logs-max-total-size-mb',
-  'ws-auth',
-  'force-model-prefix',
-  'routing/strategy',
-  'api-keys',
-  'ampcode',
-  'gemini-api-key',
-  'codex-api-key',
-  'claude-api-key',
-  'vertex-api-key',
-  'openai-compatibility',
-  'oauth-excluded-models',
-];
-
 const extractSectionValue = (config: Config | null, section?: RawConfigSection) => {
   if (!config) return undefined;
-  switch (section) {
-    case 'debug':
-      return config.debug;
-    case 'proxy-url':
-      return config.proxyUrl;
-    case 'request-retry':
-      return config.requestRetry;
-    case 'quota-exceeded':
-      return config.quotaExceeded;
-    case 'usage-statistics-enabled':
-      return config.usageStatisticsEnabled;
-    case 'request-log':
-      return config.requestLog;
-    case 'logging-to-file':
-      return config.loggingToFile;
-    case 'logs-max-total-size-mb':
-      return config.logsMaxTotalSizeMb;
-    case 'ws-auth':
-      return config.wsAuth;
-    case 'force-model-prefix':
-      return config.forceModelPrefix;
-    case 'routing/strategy':
-      return config.routingStrategy;
-    case 'api-keys':
-      return config.apiKeys;
-    case 'ampcode':
-      return config.ampcode;
-    case 'gemini-api-key':
-      return config.geminiApiKeys;
-    case 'codex-api-key':
-      return config.codexApiKeys;
-    case 'claude-api-key':
-      return config.claudeApiKeys;
-    case 'vertex-api-key':
-      return config.vertexApiKeys;
-    case 'openai-compatibility':
-      return config.openaiCompatibility;
-    case 'oauth-excluded-models':
-      return config.oauthExcludedModels;
-    default:
-      if (!section) return undefined;
-      return config.raw?.[section];
+
+  const meta = section ? CONFIG_SECTION_META[section] : undefined;
+  if (meta) {
+    return config[meta.key];
   }
+
+  if (!section) return undefined;
+  return config.raw?.[section];
 };
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
@@ -239,72 +207,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       raw[section] = value;
       const nextConfig: Config = { ...(state.config || {}), raw };
 
-      switch (section) {
-        case 'debug':
-          if (isBoolean(value)) nextConfig.debug = value;
-          break;
-        case 'proxy-url':
-          if (isString(value)) nextConfig.proxyUrl = value;
-          break;
-        case 'request-retry':
-          if (isNumber(value)) nextConfig.requestRetry = value;
-          break;
-        case 'quota-exceeded':
-          if (isQuotaExceededConfig(value)) nextConfig.quotaExceeded = value;
-          break;
-        case 'usage-statistics-enabled':
-          if (isBoolean(value)) nextConfig.usageStatisticsEnabled = value;
-          break;
-        case 'request-log':
-          if (isBoolean(value)) nextConfig.requestLog = value;
-          break;
-        case 'logging-to-file':
-          if (isBoolean(value)) nextConfig.loggingToFile = value;
-          break;
-        case 'logs-max-total-size-mb':
-          if (isNumber(value)) nextConfig.logsMaxTotalSizeMb = value;
-          break;
-        case 'ws-auth':
-          if (isBoolean(value)) nextConfig.wsAuth = value;
-          break;
-        case 'force-model-prefix':
-          if (isBoolean(value)) nextConfig.forceModelPrefix = value;
-          break;
-        case 'routing/strategy':
-          if (isString(value)) nextConfig.routingStrategy = value;
-          break;
-        case 'api-keys':
-          if (isStringArray(value)) nextConfig.apiKeys = value;
-          break;
-        case 'ampcode':
-          if (isAmpcodeConfig(value)) nextConfig.ampcode = value;
-          break;
-        case 'gemini-api-key':
-          if (isGeminiKeyConfigArray(value)) nextConfig.geminiApiKeys = value;
-          break;
-        case 'codex-api-key':
-          if (isProviderKeyConfigArray(value)) nextConfig.codexApiKeys = value;
-          break;
-        case 'claude-api-key':
-          if (isProviderKeyConfigArray(value)) nextConfig.claudeApiKeys = value;
-          break;
-        case 'vertex-api-key':
-          if (isProviderKeyConfigArray(value)) nextConfig.vertexApiKeys = value;
-          break;
-        case 'openai-compatibility':
-          if (isOpenAIProviderConfigArray(value)) nextConfig.openaiCompatibility = value;
-          break;
-        case 'oauth-excluded-models':
-          if (isOauthExcludedModels(value)) nextConfig.oauthExcludedModels = value;
-          break;
-        default:
-          break;
+      const meta = CONFIG_SECTION_META[section];
+      if (meta && meta.validator(value)) {
+        (nextConfig[meta.key] as unknown) = value;
       }
 
       return { config: nextConfig };
     });
 
-    // 清除该 section 的缓存
     get().clearCache(section);
   },
 

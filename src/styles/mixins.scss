@@ -112,3 +112,26 @@
   color: var(--primary-color);
   flex-shrink: 0;
 }
+
+@mixin contain-card {
+  contain: content;
+}
+
+@mixin will-change-transform {
+  will-change: transform;
+}
+
+@mixin will-change-transform-opacity {
+  will-change: transform, opacity;
+}
+
+@mixin content-auto($intrinsic-height: 500px) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto $intrinsic-height;
+}
+
+@mixin reduced-motion {
+  @media (prefers-reduced-motion: reduce) {
+    @content;
+  }
+}

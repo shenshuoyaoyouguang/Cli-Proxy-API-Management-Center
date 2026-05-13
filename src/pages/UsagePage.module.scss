@@ -109,6 +109,7 @@
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
+    @include will-change-transform-opacity;
   }
 
   &.connected {
@@ -162,7 +163,7 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include reduced-motion {
   .connectionStatus .statusDot {
     animation: none !important;
   }
@@ -181,6 +182,10 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.sectionLazy {
+  @include content-auto(600px);
 }
 
 .sectionTitle {
@@ -365,6 +370,8 @@
     0 1px 2px rgba(0, 0, 0, 0.05),
     0 4px 8px rgba(0, 0, 0, 0.08),
     0 12px 24px rgba(0, 0, 0, 0.1);
+  @include contain-card;
+  @include will-change-transform;
   transition:
     transform 200ms ease,
     box-shadow 200ms ease,
@@ -412,6 +419,7 @@
 @media (prefers-reduced-motion: reduce) {
   .statCard {
     animation: none;
+    transition: none;
   }
 }
 
@@ -601,6 +609,7 @@
   background: var(--bg-primary);
   font-size: 12px;
   color: var(--text-secondary);
+  contain: layout style;
   transition: background-color 150ms ease, border-color 150ms ease;
   cursor: pointer;
 
@@ -890,6 +899,7 @@
   tbody tr {
     transition: background-color 0.15s ease;
     position: relative;
+    contain: layout style;
 
     &:hover {
       background-color: var(--bg-tertiary);
@@ -1218,6 +1228,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  @include contain-card;
+  @include will-change-transform;
   transition: transform $transition-fast, border-color $transition-fast, box-shadow $transition-fast;
 
   &:hover {
@@ -1370,6 +1382,7 @@
   color: var(--success-badge-text, #065f46);
   font-weight: 600;
   animation: livePulse 1.2s ease-in-out infinite;
+  @include will-change-transform-opacity;
 }
 
 .requestEventsNewDataPulse {
@@ -1387,12 +1400,22 @@
 
 @keyframes dataPulse {
   0% {
-    color: var(--success-badge-text, #065f46);
+    opacity: 0.6;
     transform: scale(1.05);
   }
   100% {
-    color: var(--text-secondary);
+    opacity: 1;
     transform: scale(1);
+  }
+}
+
+@include reduced-motion {
+  .requestEventsLiveIndicator {
+    animation: none;
+  }
+
+  .requestEventsNewDataPulse {
+    animation: none;
   }
 }
 
@@ -1605,6 +1628,7 @@
   width: 100%;
   height: 100%;
   border-radius: 2px;
+  @include will-change-transform-opacity;
   transition:
     transform 0.15s ease,
     opacity 0.15s ease;
@@ -1672,27 +1696,29 @@
 // ============================================
 .drilldownHighlight {
   animation: highlightPulse 2s ease-in-out;
+  outline: 4px solid rgba($primary-color, 0);
+  outline-offset: 0;
 }
 
 @keyframes highlightPulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba($primary-color, 0);
+    outline-color: rgba($primary-color, 0);
   }
   25% {
-    box-shadow: 0 0 0 4px rgba($primary-color, 0.3);
+    outline-color: rgba($primary-color, 0.3);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba($primary-color, 0.15);
+    outline-color: rgba($primary-color, 0.15);
   }
   75% {
-    box-shadow: 0 0 0 4px rgba($primary-color, 0.3);
+    outline-color: rgba($primary-color, 0.3);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include reduced-motion {
   .drilldownHighlight {
     animation: none;
-    box-shadow: 0 0 0 2px rgba($primary-color, 0.3);
+    outline: 2px solid rgba($primary-color, 0.3);
   }
 }
 
@@ -1705,6 +1731,7 @@
   gap: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-color);
+  @include content-auto(400px);
 }
 
 .settingsHeader {

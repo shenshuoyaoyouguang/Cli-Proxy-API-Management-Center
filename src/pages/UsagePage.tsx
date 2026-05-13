@@ -6,6 +6,7 @@ import { Select } from '@/components/ui/Select';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useUsageSSE } from '@/hooks/useUsageSSE';
 import { useConfigStore } from '@/stores';
+import { useIntersectionObserver } from '@/hooks/useIntersectionObserver';
 import {
   IconRefreshCw,
   IconDownload,
@@ -207,6 +208,18 @@ export function UsagePage() {
 
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
 
+  const [healthSectionRef, healthSectionVisible] = useIntersectionObserver<HTMLDivElement>({
+    threshold: 0,
+    rootMargin: '200px',
+    triggerOnce: true,
+  });
+
+  const [detailsSectionRef, detailsSectionVisible] = useIntersectionObserver<HTMLDivElement>({
+    threshold: 0,
+    rootMargin: '200px',
+    triggerOnce: true,
+  });
+
   const scrollToSection = useCallback((sectionId: string) => {
     if (typeof document === 'undefined') {
       return;
@@ -335,50 +348,58 @@ export function UsagePage() {
       </section>
 
       {/* Health Section */}
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.sectionLazy}`} ref={healthSectionRef}>
         <h2 className={styles.sectionTitle}>{t('usage_stats.health_section_title')}</h2>
         <div
           id={SERVICE_HEALTH_SECTION_ID}
           className={highlightedSection === SERVICE_HEALTH_SECTION_ID ? styles.drilldownHighlight : ''}
         >
-          <ServiceHealthCard details={usageDetails} loading={loading} healthData={serviceHealth} />
+          {healthSectionVisible && (
+            <ServiceHealthCard details={usageDetails} loading={loading} healthData={serviceHealth} />
+          )}
         </div>
 
-        <TokenEfficiencyCenter
-          overview={efficiencyOverview}
-          modelRows={modelEfficiencyRows}
-          credentialRows={credentialEfficiencyRows}
-          loading={loading}
-          onDrilldownChange={handleEfficiencyDrilldown}
-        />
+        {healthSectionVisible && (
+          <TokenEfficiencyCenter
+            overview={efficiencyOverview}
+            modelRows={modelEfficiencyRows}
+            credentialRows={credentialEfficiencyRows}
+            loading={loading}
+            onDrilldownChange={handleEfficiencyDrilldown}
+          />
+        )}
       </section>
 
       {/* Details Section */}
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.sectionLazy}`} ref={detailsSectionRef}>
         <h2 className={styles.sectionTitle}>{t('usage_stats.details_section_title')}</h2>
-        <div className={styles.detailsGrid}>
-          <CredentialStatsCard rows={credentialRows} loading={loading} />
-          <ApiDetailsCard apiStats={apiStats} loading={loading} hasPrices={hasPrices} />
-        </div>
+        {detailsSectionVisible && (
+          <>
+            <div className={styles.detailsGrid}>
+              <CredentialStatsCard rows={credentialRows} loading={loading} />
+              <ApiDetailsCard apiStats={apiStats} loading={loading} hasPrices={hasPrices} />
+            </div>
 
-        <ModelStatsCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
+            <ModelStatsCard modelStats={modelStats} loading={loading} hasPrices={hasPrices} />
 
-        <div
-          id={REQUEST_EVENTS_SECTION_ID}
-          className={highlightedSection === REQUEST_EVENTS_SECTION_ID ? styles.drilldownHighlight : ''}
-        >
-          <RequestEventsDetailsCard
-            rows={requestEventsRowsForDisplay}
-            loading={loading}
-            error={error}
-            externalModelFilter={externalModelFilter}
-            externalSourceFilter={credentialDrilldown.source}
-            externalSourceRawFilter={credentialDrilldown.sourceRaw}
-            externalAuthIndexFilter={credentialDrilldown.authIndex}
-            externalResultFilter={requestEventsResultFilter}
-            onClearExternalFilters={handleClearRequestEventDrillDown}
-          />
-        </div>
+            <div
+              id={REQUEST_EVENTS_SECTION_ID}
+              className={highlightedSection === REQUEST_EVENTS_SECTION_ID ? styles.drilldownHighlight : ''}
+            >
+              <RequestEventsDetailsCard
+                rows={requestEventsRowsForDisplay}
+                loading={loading}
+                error={error}
+                externalModelFilter={externalModelFilter}
+                externalSourceFilter={credentialDrilldown.source}
+                externalSourceRawFilter={credentialDrilldown.sourceRaw}
+                externalAuthIndexFilter={credentialDrilldown.authIndex}
+                externalResultFilter={requestEventsResultFilter}
+                onClearExternalFilters={handleClearRequestEventDrillDown}
+              />
+            </div>
+          </>
+        )}
       </section>
 
       {/* Settings Section */}

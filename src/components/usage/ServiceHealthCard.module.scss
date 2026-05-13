@@ -84,12 +84,14 @@
   -webkit-tap-highlight-color: transparent;
   width: 10px;
   height: 10px;
+  contain: layout style;
 }
 
 .healthBlock {
   width: 100%;
   height: 100%;
   border-radius: 4px;
+  @include will-change-transform-opacity;
   transition:
     transform 0.15s ease,
     opacity 0.15s ease;

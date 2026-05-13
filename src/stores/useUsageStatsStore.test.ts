@@ -272,6 +272,7 @@ describe('useUsageStatsStore', () => {
       vi.mocked(usageApi.getUsage).mockRejectedValue(notFound);
       vi.mocked(usageApi.getUsageEvents).mockRejectedValue(notFound);
       vi.mocked(usageApi.getUsageQueue).mockResolvedValue([]);
+      const awaitFullSnapshotSpy = vi.spyOn(usageSSEService, 'awaitFullSnapshot');
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue(
@@ -287,6 +288,14 @@ describe('useUsageStatsStore', () => {
 
       await useUsageStatsStore.getState().loadUsageStats({ force: true });
 
+      expect(awaitFullSnapshotSpy).toHaveBeenCalledWith(
+        'http://localhost:3000',
+        'test-key',
+        expect.objectContaining({
+          timeoutMs: 5000,
+        })
+      );
+      expect(usageApi.getUsageQueue).not.toHaveBeenCalled();
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'http://localhost:3000/v0/management/usage/stream',
         expect.objectContaining({
@@ -344,6 +353,61 @@ describe('useUsageStatsStore', () => {
 
       expect(useUsageStatsStore.getState().error).toBe('Network error');
       expect(useUsageStatsStore.getState().loading).toBe(false);
+    });
+
+    it('reuses the current store snapshot instead of replaying a stale full snapshot when SSE is already connected', async () => {
+      const notFound = Object.assign(new Error('Request failed with status code 404'), {
+        status: 404,
+      });
+      const currentUsage = {
+        total_requests: 4,
+        success_count: 3,
+        failure_count: 1,
+        total_tokens: 320,
+        apis: {
+          'POST /v1/chat/completions': {
+            total_requests: 4,
+            success_count: 3,
+            failure_count: 1,
+            total_tokens: 320,
+            models: {},
+          },
+        },
+      };
+      const currentUsageDetails = [
+        createMockUsageDetail({
+          source: 'live-source',
+          auth_index: '2',
+          __modelName: 'gpt-4.1',
+          __timestampMs: Date.parse('2026-01-01T00:05:00.000Z'),
+        }),
+      ];
+
+      useUsageStatsStore.setState({
+        usage: currentUsage,
+        keyStats: createMockKeyStats(),
+        usageDetails: currentUsageDetails,
+        loading: false,
+        error: null,
+        lastRefreshedAt: Date.parse('2026-01-01T00:05:00.000Z'),
+        scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
+        lastSeq: 42,
+      });
+
+      vi.mocked(usageApi.getUsage).mockRejectedValue(notFound);
+      vi.mocked(usageApi.getUsageEvents).mockRejectedValue(notFound);
+      const awaitFullSnapshotSpy = vi.spyOn(usageSSEService, 'awaitFullSnapshot');
+      const getConnectionStatusSpy = vi
+        .spyOn(usageSSEService, 'getConnectionStatus')
+        .mockReturnValue('connected');
+
+      await useUsageStatsStore.getState().loadUsageStats({ force: true });
+
+      expect(awaitFullSnapshotSpy).not.toHaveBeenCalled();
+      expect(getConnectionStatusSpy).toHaveBeenCalled();
+      expect(useUsageStatsStore.getState().usage).toEqual(currentUsage);
+      expect(useUsageStatsStore.getState().usageDetails).toEqual(currentUsageDetails);
+      expect(useUsageStatsStore.getState().lastSeq).toBe(42);
     });
 
     it('sets loading state during fetch', async () => {

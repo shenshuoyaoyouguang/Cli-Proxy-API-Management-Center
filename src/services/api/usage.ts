@@ -116,7 +116,8 @@ export const usageApi = {
       .then(normalizeUsageEventsResponse),
 
   /**
-   * 从当前后端兼容的 usage 队列中拉取事件
+   * 从 usage 队列中拉取事件。
+   * 注意：某些后端实现对该接口使用破坏性消费语义，不能作为常规 bootstrap 数据源。
    */
   getUsageQueue: (count = 1000, config?: AxiosRequestConfig) =>
     apiClient

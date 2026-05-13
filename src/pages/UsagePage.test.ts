@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
   const handleImport = vi.fn();
   const handleImportChange = vi.fn();
   const setModelPrices = vi.fn();
+  const callOrder: string[] = [];
 
   return {
     loadUsage,
@@ -16,6 +17,30 @@ const mocks = vi.hoisted(() => {
     handleImportChange,
     setModelPrices,
     useHeaderRefresh: vi.fn(),
+    callOrder,
+    useUsageSSE: vi.fn(() => {
+      callOrder.push('useUsageSSE');
+      return { connectionStatus: 'connected' };
+    }),
+    useUsageData: vi.fn(() => {
+      callOrder.push('useUsageData');
+      return {
+        usage: { totalRequests: 1 },
+        usageDetails: [],
+        loading: false,
+        error: '',
+        lastRefreshedAt: null,
+        modelPrices: {},
+        setModelPrices,
+        loadUsage,
+        handleExport,
+        handleImport,
+        handleImportChange,
+        importInputRef: { current: null },
+        exporting: false,
+        importing: false,
+      };
+    }),
   };
 });
 
@@ -31,7 +56,7 @@ vi.mock('@/hooks/useHeaderRefresh', () => ({
 }));
 
 vi.mock('@/hooks/useUsageSSE', () => ({
-  useUsageSSE: () => ({ connectionStatus: 'connected' }),
+  useUsageSSE: mocks.useUsageSSE,
 }));
 
 vi.mock('@/stores', () => ({
@@ -110,22 +135,7 @@ vi.mock('@/components/usage', () => {
     CredentialStatsCard: Stub,
     RequestEventsDetailsCard: Stub,
     ServiceHealthCard: Stub,
-    useUsageData: () => ({
-      usage: { totalRequests: 1 },
-      usageDetails: [],
-      loading: false,
-      error: '',
-      lastRefreshedAt: null,
-      modelPrices: {},
-      setModelPrices: mocks.setModelPrices,
-      loadUsage: mocks.loadUsage,
-      handleExport: mocks.handleExport,
-      handleImport: mocks.handleImport,
-      handleImportChange: mocks.handleImportChange,
-      importInputRef: { current: null },
-      exporting: false,
-      importing: false,
-    }),
+    useUsageData: mocks.useUsageData,
     useAuthFilesMap: () => ({
       authFileMap: {},
       authFiles: [],
@@ -174,6 +184,7 @@ describe('UsagePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    mocks.callOrder.length = 0;
   });
 
   afterEach(() => {
@@ -203,5 +214,15 @@ describe('UsagePage', () => {
     await waitFor(() => {
       expect(mocks.loadUsage).toHaveBeenCalled();
     });
+  });
+
+  it('registers the live SSE hook before usage data bootstrap logic', () => {
+    render(createElement(UsagePage));
+
+    expect(mocks.callOrder.indexOf('useUsageSSE')).toBeGreaterThanOrEqual(0);
+    expect(mocks.callOrder.indexOf('useUsageData')).toBeGreaterThanOrEqual(0);
+    expect(mocks.callOrder.indexOf('useUsageSSE')).toBeLessThan(
+      mocks.callOrder.indexOf('useUsageData')
+    );
   });
 });

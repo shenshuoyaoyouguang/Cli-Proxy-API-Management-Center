@@ -41,6 +41,29 @@ function createOpenStreamResponse(chunk: string): Response {
   });
 }
 
+function createControllableStreamResponse() {
+  const encoder = new TextEncoder();
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const readable = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controllerRef = controller;
+    },
+  });
+
+  return {
+    response: new Response(readable, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    }),
+    enqueue: (chunk: string) => {
+      controllerRef?.enqueue(encoder.encode(chunk));
+    },
+    close: () => {
+      controllerRef?.close();
+    },
+  };
+}
+
 const createHandler = (): UsageSSEHandler => ({
   onDelta: vi.fn(),
   onFull: vi.fn(),
@@ -341,6 +364,96 @@ describe('UsageSSEService', () => {
 
     expect(handler.onFull).toHaveBeenCalledTimes(1);
     expect((handler.onFull as ReturnType<typeof vi.fn>).mock.calls[0][0].seq).toBe(1);
+  });
+
+  it('reuses the active live stream when awaiting the first full snapshot', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+    const controllable = createControllableStreamResponse();
+
+    fetchSpy.mockResolvedValue(controllable.response);
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    const fullSnapshotPromise = service.awaitFullSnapshot('http://localhost:3000', 'test-key', {
+      timeoutMs: 2000,
+    });
+
+    await Promise.resolve();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const fullData = JSON.stringify({
+      seq: 7,
+      timestamp: '2026-01-01T00:05:00.000Z',
+      usage: { apis: { live: {} } },
+      usageDetails: [],
+    });
+
+    controllable.enqueue(`event:usage:full\ndata:${fullData}\n\n`);
+    const snapshot = await fullSnapshotPromise;
+
+    expect(snapshot).toEqual(JSON.parse(fullData));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    service.disconnect();
+  });
+
+  it('times out when a one-shot full snapshot fetch never emits usage:full', async () => {
+    const service = new UsageSSEServiceImpl();
+    const controllable = createControllableStreamResponse();
+
+    fetchSpy.mockResolvedValue(controllable.response);
+    const snapshotPromise = service.awaitFullSnapshot('http://localhost:3000', 'test-key', {
+      timeoutMs: 100,
+    });
+    const rejection = expect(snapshotPromise).rejects.toThrow(
+      'Timed out waiting for usage:full after 100ms'
+    );
+
+    await vi.advanceTimersByTimeAsync(100);
+    await rejection;
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a pending live full-snapshot waiter when the stream disconnects', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+    const controllable = createControllableStreamResponse();
+
+    fetchSpy.mockResolvedValue(controllable.response);
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    const fullSnapshotPromise = service.awaitFullSnapshot('http://localhost:3000', 'test-key', {
+      timeoutMs: 2000,
+    });
+    const rejection = expect(fullSnapshotPromise).rejects.toThrow('Usage SSE disconnected');
+
+    await Promise.resolve();
+    service.disconnect();
+    await rejection;
+  });
+
+  it('rejects a pending live full-snapshot waiter after reconnect attempts are exhausted', async () => {
+    const service = new UsageSSEServiceImpl();
+    const handler = createHandler();
+
+    fetchSpy.mockRejectedValue(new Error('Network error'));
+    service.connect('http://localhost:3000', 'test-key', handler);
+
+    const fullSnapshotPromise = service.awaitFullSnapshot('http://localhost:3000', 'test-key', {
+      timeoutMs: 60000,
+    });
+    const rejection = expect(fullSnapshotPromise).rejects.toThrow(
+      `SSE reconnect failed after ${SSE_RECONNECT_MAX_ATTEMPTS} attempts`
+    );
+
+    await vi.runOnlyPendingTimersAsync();
+    await Promise.resolve();
+
+    for (let i = 0; i < SSE_RECONNECT_MAX_ATTEMPTS; i += 1) {
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
+    }
+
+    await rejection;
   });
 
   it('dispatches usage:heartbeat events to handler', async () => {

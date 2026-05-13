@@ -19,7 +19,6 @@ import { normalizeUsageDetailTokens } from '@/atoms/usage/tokens';
 import { expireUsageFailed } from '@/molecules/usage/expireUsageFailed';
 import i18n from '@/i18n';
 import { buildScopeKey } from '@/utils/helpers';
-import { computeApiUrl } from '@/utils/connection';
 import { getApiErrorStatus, getErrorMessage, isCanceledRequestError } from '@/utils/error';
 import { parseTimestampMs } from '@/utils/timestamp';
 import { logger } from '@/utils/logger';
@@ -64,7 +63,6 @@ const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
 const UNKNOWN_USAGE_MODEL = 'unknown';
 const UNKNOWN_USAGE_ENDPOINT = 'unknown';
-const USAGE_QUEUE_FALLBACK_COUNT = 1000;
 
 type UsageBootstrapResult = {
   usage: UsageStatsSnapshot | null;
@@ -520,249 +518,13 @@ const normalizeUsageSnapshotForFrontend = (
   };
 };
 
-type ParsedSSEEvent = {
-  eventType: string;
-  data: string;
-};
-
-const parseSSEChunk = (chunk: string, buffer: { value: string }): ParsedSSEEvent[] => {
-  buffer.value += chunk;
-
-  const events: ParsedSSEEvent[] = [];
-  let eventType = 'message';
-  let data = '';
-  const lines = buffer.value.split(/\r\n|\n|\r/);
-  const lastLine = lines.pop() ?? '';
-  buffer.value = lastLine;
-
-  lines.forEach((line) => {
-    if (line === '') {
-      if (data !== '') {
-        events.push({ eventType, data });
-        eventType = 'message';
-        data = '';
-      }
-      return;
-    }
-
-    if (line.startsWith(':')) {
-      return;
-    }
-
-    const colonIndex = line.indexOf(':');
-    if (colonIndex === -1) {
-      return;
-    }
-
-    const field = line.slice(0, colonIndex);
-    const value = line.slice(colonIndex + 1).replace(/^ /, '');
-    if (field === 'event') {
-      eventType = value;
-      return;
-    }
-    if (field === 'data') {
-      data = data ? `${data}\n${value}` : value;
-    }
-  });
-
-  return events;
-};
-
-const createHttpStatusError = (status: number, message: string) => {
-  const error = new Error(message) as Error & { status: number };
-  error.status = status;
-  return error;
-};
-
-const readUsageBootstrapFromStream = async (
-  apiBase: string,
-  managementKey: string,
-  signal: AbortSignal
-): Promise<UsageBootstrapResult> => {
-  const url = `${computeApiUrl(apiBase)}/usage/stream`;
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'text/event-stream',
-      Authorization: `Bearer ${managementKey}`,
-    },
-    signal,
-  });
-
-  if (!response.ok) {
-    throw createHttpStatusError(response.status, `HTTP ${response.status}`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error('No readable stream');
-  }
-
-  const decoder = new TextDecoder();
-  const buffer = { value: '' };
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      const events = parseSSEChunk(decoder.decode(value, { stream: true }), buffer);
-      for (const event of events) {
-        if (event.eventType !== 'usage:full') {
-          continue;
-        }
-
-        const payload = JSON.parse(event.data) as UsageFullEvent;
-        const usageDetails = buildCompatibilityUsageDetailEntries(payload.usageDetails).map(
-          (entry) => entry.usageDetail
-        );
-        const usage = normalizeUsageSnapshotForFrontend(
-          payload.usage as UsageStatsSnapshot,
-          payload.usageDetails
-        );
-        await reader.cancel();
-        return {
-          usage,
-          usageDetails,
-          lastSeq: typeof payload.seq === 'number' ? payload.seq : null,
-        };
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  throw new Error('Usage stream ended before initial snapshot');
-};
-
-const buildUsageDeltaFromEvents = (events: UsageEvent[]): UsageDeltaEvent => {
-  const modelBreakdownMap = new Map<string, UsageModelBreakdownItem>();
-  let requestCount = 0;
-  let successCount = 0;
-  let failureCount = 0;
-  let promptTokens = 0;
-  let completionTokens = 0;
-  let reasoningTokens = 0;
-  let cachedTokens = 0;
-  let totalTokens = 0;
-
-  const details = events.reduce<UsageDeltaDetailItem[]>((acc, event) => {
-    if (!isRecord(event)) {
-      return acc;
-    }
-
-    const tokens = normalizeUsageDetailTokens(event.tokens ?? event.usage ?? event);
-    const timestamp =
-      typeof event.timestamp === 'number'
-        ? event.timestamp
-        : parseTimestampMs(typeof event.timestamp === 'string' ? event.timestamp : '');
-    const endpoint = normalizeStringValue(event.endpoint, UNKNOWN_USAGE_ENDPOINT);
-    const model = normalizeUsageModelName(event.model);
-    const success = event.failed !== true;
-    const mapKey = `${endpoint}\u0000${model}`;
-    const bucket = modelBreakdownMap.get(mapKey) ?? {
-      endpoint,
-      model,
-      requestCount: 0,
-      successCount: 0,
-      failureCount: 0,
-      tokenDelta: {
-        promptTokens: 0,
-        completionTokens: 0,
-        reasoningTokens: 0,
-        cachedTokens: 0,
-        totalTokens: 0,
-      },
-    };
-
-    bucket.requestCount += 1;
-    bucket.successCount += success ? 1 : 0;
-    bucket.failureCount += success ? 0 : 1;
-    bucket.tokenDelta.promptTokens += tokens.input_tokens;
-    bucket.tokenDelta.completionTokens += tokens.output_tokens;
-    bucket.tokenDelta.reasoningTokens = (bucket.tokenDelta.reasoningTokens ?? 0) + tokens.reasoning_tokens;
-    bucket.tokenDelta.cachedTokens = (bucket.tokenDelta.cachedTokens ?? 0) + tokens.cached_tokens;
-    bucket.tokenDelta.totalTokens += tokens.total_tokens;
-    modelBreakdownMap.set(mapKey, bucket);
-
-    requestCount += 1;
-    successCount += success ? 1 : 0;
-    failureCount += success ? 0 : 1;
-    promptTokens += tokens.input_tokens;
-    completionTokens += tokens.output_tokens;
-    reasoningTokens += tokens.reasoning_tokens;
-    cachedTokens += tokens.cached_tokens;
-    totalTokens += tokens.total_tokens;
-
-    acc.push({
-      model,
-      source: normalizeUsageSourceId(event.source),
-      timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
-      success,
-      tokens: {
-        prompt: tokens.input_tokens,
-        completion: tokens.output_tokens,
-        reasoning: tokens.reasoning_tokens,
-        cached: tokens.cached_tokens,
-        total: tokens.total_tokens,
-      },
-    });
-    return acc;
-  }, []);
-
-  return {
-    seq: 0,
-    timestamp: Date.now(),
-    requestCount,
-    successCount,
-    failureCount,
-    tokenDelta: {
-      promptTokens,
-      completionTokens,
-      reasoningTokens,
-      cachedTokens,
-      totalTokens,
-    },
-    modelBreakdown: Array.from(modelBreakdownMap.values()),
-    details,
-  };
-};
-
-const readUsageBootstrapFromQueue = async (
-  baseUsage: UsageStatsSnapshot | null,
-  baseUsageDetails: UsageDetail[],
-  signal: AbortSignal
-): Promise<UsageBootstrapResult> => {
-  const events = await usageApi.getUsageQueue(USAGE_QUEUE_FALLBACK_COUNT, { signal });
-  const normalizedDetails = collectUsageDetailsFromEvents(events);
-  if (events.length === 0) {
-    return {
-      usage: baseUsage,
-      usageDetails: trimUsageDetails(baseUsageDetails),
-      lastSeq: null,
-    };
-  }
-
-  const mergedDetails = [...baseUsageDetails, ...normalizedDetails];
-  const delta = buildUsageDeltaFromEvents(events);
-  const usage = baseUsage
-    ? mergeModelBreakdown(mergeUsageDelta(baseUsage, delta), delta.modelBreakdown)
-    : buildUsageSnapshotFromCompatibilityEntries(buildCompatibilityUsageDetailEntries(events));
-
-  return {
-    usage,
-    usageDetails: trimUsageDetails(mergedDetails),
-    lastSeq: null,
-  };
-};
-
 const readUsageStatsWithCompatibility = async (
   apiBase: string,
   managementKey: string,
   signal: AbortSignal,
-  baseUsage: UsageStatsSnapshot | null,
-  baseUsageDetails: UsageDetail[]
+  currentUsage: UsageStatsSnapshot | null,
+  currentUsageDetails: UsageDetail[],
+  currentLastSeq: number | null
 ): Promise<UsageBootstrapResult> => {
   try {
     const [usageResponse, eventsResponse] = await Promise.all([
@@ -798,17 +560,37 @@ const readUsageStatsWithCompatibility = async (
       throw error;
     }
 
-    try {
-      return await readUsageBootstrapFromStream(apiBase, managementKey, signal);
-    } catch (streamError) {
-      if (streamError && isCanceledRequestError(streamError)) {
-        throw streamError;
-      }
-      logger.warn('Failed to bootstrap usage stats from stream, falling back to queue', {
-        error: streamError,
-      });
-      return readUsageBootstrapFromQueue(baseUsage, baseUsageDetails, signal);
+    if (
+      usageSSEService.getConnectionStatus() === 'connected' &&
+      currentUsage
+    ) {
+      return {
+        usage: currentUsage,
+        usageDetails:
+          currentUsageDetails.length > 0 ? trimUsageDetails(currentUsageDetails) : collectUsageDetails(currentUsage),
+        lastSeq: currentLastSeq,
+      };
     }
+
+    const fullSnapshot = await usageSSEService.awaitFullSnapshot(apiBase, managementKey, {
+      signal,
+      timeoutMs: 5000,
+    });
+    const usageDetails = Array.isArray(fullSnapshot.usageDetails)
+      ? buildCompatibilityUsageDetailEntries(fullSnapshot.usageDetails).map(
+          (entry) => entry.usageDetail
+        )
+      : [];
+    const usage = normalizeUsageSnapshotForFrontend(
+      fullSnapshot.usage as UsageStatsSnapshot,
+      fullSnapshot.usageDetails
+    );
+
+    return {
+      usage,
+      usageDetails: usageDetails.length > 0 ? usageDetails : collectUsageDetails(usage),
+      lastSeq: typeof fullSnapshot.seq === 'number' ? fullSnapshot.seq : null,
+    };
   }
 };
 
@@ -1190,20 +972,13 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     const requestPromise = (async () => {
       try {
         const baseState = get();
-        const fallbackUsage =
-          baseState.scopeKey === scopeKey
-            ? baseState.usage
-            : bootstrapCache?.usage ?? null;
-        const fallbackUsageDetails =
-          baseState.scopeKey === scopeKey
-            ? baseState.usageDetails
-            : bootstrapCache?.usageDetails ?? [];
         const bootstrap = await readUsageStatsWithCompatibility(
           apiBase,
           managementKey,
           activeAbortController.signal,
-          fallbackUsage,
-          fallbackUsageDetails
+          baseState.scopeKey === scopeKey ? baseState.usage : bootstrapCache?.usage ?? null,
+          baseState.scopeKey === scopeKey ? baseState.usageDetails : bootstrapCache?.usageDetails ?? [],
+          baseState.scopeKey === scopeKey ? baseState.lastSeq : null
         );
         const usage = bootstrap.usage;
 

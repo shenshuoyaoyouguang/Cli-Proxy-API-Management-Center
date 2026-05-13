@@ -62,6 +62,7 @@ const loadTimeRange = (): UsageTimeRange => {
 export function UsagePage() {
   const { t, i18n } = useTranslation();
   const config = useConfigStore((state) => state.config);
+  const { connectionStatus } = useUsageSSE({ enabled: true });
 
   const {
     usage,
@@ -85,8 +86,6 @@ export function UsagePage() {
   const { aliasReverseMap } = useModelAliasReverseMap();
 
   useHeaderRefresh(loadUsage);
-
-  const { connectionStatus } = useUsageSSE({ enabled: true });
 
   const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
   const [efficiencyDrilldown, setEfficiencyDrilldown] = useState<EfficiencyDrilldown>({

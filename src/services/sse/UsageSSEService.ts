@@ -19,10 +19,23 @@ type UsageSSEConnectOptions = {
 
 type UsageSSEAuthMode = 'header' | 'query';
 
+type UsageFullSnapshotOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+
 type ParsedSSEEvent = {
   eventType: string;
   id: string;
   data: string;
+};
+
+type PendingFullSnapshotWaiter = {
+  resolve: (data: UsageFullEvent) => void;
+  reject: (error: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout> | null;
+  signal?: AbortSignal;
+  abortListener?: (() => void) | null;
 };
 
 function parseSSELines(chunk: string, buffer: { value: string }): ParsedSSEEvent[] {
@@ -191,6 +204,10 @@ function mapDeltaEvent(raw: RawDeltaPayload): UsageDeltaEvent {
   };
 }
 
+function buildConnectionKey(baseUrl: string, token: string): string {
+  return `${baseUrl}::${token}`;
+}
+
 export class UsageSSEServiceImpl {
   private handler: UsageSSEHandler | null = null;
   private reconnectAttempts = 0;
@@ -204,6 +221,7 @@ export class UsageSSEServiceImpl {
   private lastEventId = '';
   private authMode: UsageSSEAuthMode = 'header';
   private hasTriedQueryFallback = false;
+  private pendingFullSnapshotWaiters: PendingFullSnapshotWaiter[] = [];
 
   connect(
     baseUrl: string,
@@ -212,6 +230,10 @@ export class UsageSSEServiceImpl {
     options: UsageSSEConnectOptions = {}
   ): void {
     const { resetRetryState = true } = options;
+    const nextConnectionKey = buildConnectionKey(baseUrl, token);
+    if (nextConnectionKey !== this.getCurrentConnectionKey()) {
+      this.rejectPendingFullSnapshotWaiters(new Error('Usage SSE connection target changed'));
+    }
     this.abortStream();
     this.handler = handler;
     this.baseUrl = baseUrl;
@@ -228,6 +250,7 @@ export class UsageSSEServiceImpl {
 
   disconnect(): void {
     this.abortStream();
+    this.rejectPendingFullSnapshotWaiters(new Error('Usage SSE disconnected'));
     this.handler = null;
     this.baseUrl = '';
     this.token = '';
@@ -252,10 +275,262 @@ export class UsageSSEServiceImpl {
     return this.connectionStatus;
   }
 
+  async awaitFullSnapshot(
+    baseUrl: string,
+    token: string,
+    options: UsageFullSnapshotOptions = {}
+  ): Promise<UsageFullEvent> {
+    if (this.hasActiveConnection(baseUrl, token)) {
+      return this.waitForLiveFullSnapshot(options);
+    }
+
+    return this.fetchFullSnapshotOnce(baseUrl, token, options);
+  }
+
   requestFullCorrection(): void {
     if (!this.handler || !this.baseUrl || !this.token) return;
     this.lastEventId = '';
     this.connect(this.baseUrl, this.token, this.handler);
+  }
+
+  private getCurrentConnectionKey(): string {
+    if (!this.baseUrl || !this.token) {
+      return '';
+    }
+    return buildConnectionKey(this.baseUrl, this.token);
+  }
+
+  private hasActiveConnection(baseUrl: string, token: string): boolean {
+    if (!this.handler) {
+      return false;
+    }
+
+    const currentConnectionKey = this.getCurrentConnectionKey();
+    if (!currentConnectionKey || currentConnectionKey !== buildConnectionKey(baseUrl, token)) {
+      return false;
+    }
+
+    return this.connectionStatus === 'connecting' || this.connectionStatus === 'connected';
+  }
+
+  private waitForLiveFullSnapshot(options: UsageFullSnapshotOptions): Promise<UsageFullEvent> {
+    const { signal, timeoutMs = 5000 } = options;
+
+    if (signal?.aborted) {
+      return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'));
+    }
+
+    return new Promise<UsageFullEvent>((resolve, reject) => {
+      const waiter: PendingFullSnapshotWaiter = {
+        resolve,
+        reject,
+        timeoutId: null,
+        signal,
+        abortListener: null,
+      };
+
+      if (typeof timeoutMs === 'number' && timeoutMs > 0) {
+        waiter.timeoutId = setTimeout(() => {
+          this.removePendingFullSnapshotWaiter(waiter);
+          reject(new Error(`Timed out waiting for usage:full after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }
+
+      if (signal) {
+        waiter.abortListener = () => {
+          this.removePendingFullSnapshotWaiter(waiter);
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        };
+        signal.addEventListener('abort', waiter.abortListener, { once: true });
+      }
+
+      this.pendingFullSnapshotWaiters.push(waiter);
+    });
+  }
+
+  private removePendingFullSnapshotWaiter(waiter: PendingFullSnapshotWaiter): void {
+    const index = this.pendingFullSnapshotWaiters.indexOf(waiter);
+    if (index >= 0) {
+      this.pendingFullSnapshotWaiters.splice(index, 1);
+    }
+    if (waiter.timeoutId !== null) {
+      clearTimeout(waiter.timeoutId);
+      waiter.timeoutId = null;
+    }
+    if (waiter.signal && waiter.abortListener) {
+      waiter.signal.removeEventListener('abort', waiter.abortListener);
+      waiter.abortListener = null;
+    }
+  }
+
+  private resolvePendingFullSnapshotWaiters(snapshot: UsageFullEvent): void {
+    if (this.pendingFullSnapshotWaiters.length === 0) {
+      return;
+    }
+
+    const waiters = [...this.pendingFullSnapshotWaiters];
+    this.pendingFullSnapshotWaiters = [];
+    waiters.forEach((waiter) => {
+      this.removePendingFullSnapshotWaiter(waiter);
+      waiter.resolve(snapshot);
+    });
+  }
+
+  private rejectPendingFullSnapshotWaiters(error: Error): void {
+    if (this.pendingFullSnapshotWaiters.length === 0) {
+      return;
+    }
+
+    const waiters = [...this.pendingFullSnapshotWaiters];
+    this.pendingFullSnapshotWaiters = [];
+    waiters.forEach((waiter) => {
+      this.removePendingFullSnapshotWaiter(waiter);
+      waiter.reject(error);
+    });
+  }
+
+  private async fetchFullSnapshotOnce(
+    baseUrl: string,
+    token: string,
+    options: UsageFullSnapshotOptions
+  ): Promise<UsageFullEvent> {
+    const { signal, timeoutMs = 5000 } = options;
+    const response = await this.fetchSnapshotStreamResponse(baseUrl, token, signal);
+    const deadline =
+      typeof timeoutMs === 'number' && timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No readable stream');
+      }
+
+      const decoder = new TextDecoder();
+      const buffer = { value: '' };
+
+      try {
+        while (true) {
+          const remainingMs = Number.isFinite(deadline) ? Math.max(0, deadline - Date.now()) : 0;
+          const { done, value } = await this.readChunkWithDeadline(reader, signal, remainingMs);
+          if (done) {
+            break;
+          }
+
+          const events = parseSSELines(decoder.decode(value, { stream: true }), buffer);
+          for (const event of events) {
+            if (event.eventType !== 'usage:full') {
+              continue;
+            }
+            const snapshot = JSON.parse(event.data) as UsageFullEvent;
+            await reader.cancel();
+            return snapshot;
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      throw new Error('Usage stream ended before usage:full');
+  }
+
+  private async readChunkWithDeadline(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    signal: AbortSignal | undefined,
+    remainingMs: number
+  ): Promise<ReadableStreamReadResult<Uint8Array>> {
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    if (remainingMs <= 0) {
+      void reader.cancel();
+      throw new Error('Timed out waiting for usage:full after 0ms');
+    }
+
+    return new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+      let settled = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      let abortListener: (() => void) | null = null;
+
+      const cleanup = () => {
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        if (signal && abortListener) {
+          signal.removeEventListener('abort', abortListener);
+          abortListener = null;
+        }
+      };
+
+      const finish = (callback: () => void) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        callback();
+      };
+
+      timeoutId = setTimeout(() => {
+        void reader.cancel();
+        finish(() => reject(new Error(`Timed out waiting for usage:full after ${remainingMs}ms`)));
+      }, remainingMs);
+
+      if (signal) {
+        abortListener = () => {
+          void reader.cancel();
+          finish(() => reject(new DOMException('The operation was aborted.', 'AbortError')));
+        };
+        signal.addEventListener('abort', abortListener, { once: true });
+      }
+
+      reader.read().then(
+        (result) => {
+          finish(() => resolve(result));
+        },
+        (error) => {
+          finish(() => reject(error));
+        }
+      );
+    });
+  }
+
+  private async fetchSnapshotStreamResponse(
+    baseUrl: string,
+    token: string,
+    signal?: AbortSignal
+  ): Promise<Response> {
+    const attempt = async (authMode: UsageSSEAuthMode): Promise<Response> => {
+      const url = new URL(`${baseUrl}${MANAGEMENT_API_PREFIX}/usage/stream`);
+      const headers: Record<string, string> = {
+        Accept: 'text/event-stream',
+      };
+
+      if (authMode === 'query') {
+        url.searchParams.set('token', token);
+      } else {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      return fetch(url.toString(), {
+        headers,
+        signal,
+      });
+    };
+
+    const headerResponse = await attempt('header');
+    if (headerResponse.ok) {
+      return headerResponse;
+    }
+
+    if (headerResponse.status === 401 || headerResponse.status === 403) {
+      const queryResponse = await attempt('query');
+      if (queryResponse.ok) {
+        return queryResponse;
+      }
+      throw new Error(`HTTP ${queryResponse.status}`);
+    }
+
+    throw new Error(`HTTP ${headerResponse.status}`);
   }
 
   private startFetchStream(): void {
@@ -386,6 +661,7 @@ export class UsageSSEServiceImpl {
       const data = JSON.parse(rawData) as UsageFullEvent;
       this.resetRetryState();
       this.connectionStatus = 'connected';
+      this.resolvePendingFullSnapshotWaiters(data);
       this.handler?.onFull(data);
     } catch (err) {
       this.handler?.onError(new ErrorEvent('error', { message: `SSE parse error: ${(err as Error).message}` }));
@@ -401,6 +677,7 @@ export class UsageSSEServiceImpl {
   private handleAuthErrorEvent(): void {
     this.abortStream();
     this.connectionStatus = 'degraded';
+    this.rejectPendingFullSnapshotWaiters(new Error('Usage SSE authentication failed'));
     this.handler?.onAuthError();
   }
 
@@ -433,6 +710,9 @@ export class UsageSSEServiceImpl {
 
     if (this.reconnectAttempts >= SSE_RECONNECT_MAX_ATTEMPTS) {
       this.connectionStatus = 'degraded';
+      this.rejectPendingFullSnapshotWaiters(
+        new Error(`SSE reconnect failed after ${SSE_RECONNECT_MAX_ATTEMPTS} attempts`)
+      );
       this.handler?.onError(new ErrorEvent('error', { message: `SSE reconnect failed after ${SSE_RECONNECT_MAX_ATTEMPTS} attempts` }));
       return;
     }

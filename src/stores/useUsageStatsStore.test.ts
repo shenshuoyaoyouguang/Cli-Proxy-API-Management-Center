@@ -74,6 +74,7 @@ vi.mock('@/services/api', () => ({
   usageApi: {
     getUsage: vi.fn(),
     getUsageEvents: vi.fn(),
+    getUsageQueue: vi.fn(),
   },
 }));
 
@@ -119,6 +120,11 @@ vi.mock('@/utils/usage', () => ({
     byAuthIndex: { '0': { success: 1, failure: 0 } },
   })),
   getDetailTimestampMs: vi.fn((detail: UsageDetail) => detail.__timestampMs ?? Date.parse(detail.timestamp)),
+  normalizeAuthIndex: vi.fn((value: unknown) => {
+    if (value === null || value === undefined || value === '') return null;
+    return String(value);
+  }),
+  normalizeUsageSourceId: vi.fn((value: unknown) => (typeof value === 'string' ? value : '')),
 }));
 
 vi.mock('@/i18n', () => ({
@@ -157,6 +163,7 @@ describe('useUsageStatsStore', () => {
   afterEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -202,6 +209,132 @@ describe('useUsageStatsStore', () => {
       expect(useUsageStatsStore.getState().usage).toEqual(mockUsage);
       expect(useUsageStatsStore.getState().loading).toBe(false);
       expect(useUsageStatsStore.getState().error).toBeNull();
+    });
+
+    it('falls back to usage stream when /usage returns 404 and normalizes the current backend snapshot', async () => {
+      const endpoint = 'POST /v1/chat/completions';
+      const notFound = Object.assign(new Error('Request failed with status code 404'), {
+        status: 404,
+      });
+      const fullSnapshotPayload = {
+        seq: 21,
+        timestamp: '2026-01-01T00:05:00.000Z',
+        usage: {
+          apis: {
+            [endpoint]: {
+              request_count: 3,
+              success_count: 2,
+              failure_count: 1,
+              total_tokens: {
+                input_tokens: 180,
+                output_tokens: 70,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                total_tokens: 250,
+              },
+            },
+          },
+          models: {
+            'gpt-4.1': {
+              endpoint,
+              request_count: 3,
+              success_count: 2,
+              failure_count: 1,
+              token_delta: {
+                input_tokens: 180,
+                output_tokens: 70,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                total_tokens: 250,
+              },
+            },
+          },
+        },
+        usageDetails: [
+          {
+            timestamp: '2026-01-01T00:00:00.000Z',
+            source: 'k:test-key',
+            auth_index: '0',
+            endpoint,
+            model: 'gpt-4.1',
+            tokens: {
+              input_tokens: 100,
+              output_tokens: 50,
+              reasoning_tokens: 0,
+              cached_tokens: 0,
+              total_tokens: 150,
+            },
+            failed: false,
+          },
+        ],
+      };
+
+      vi.mocked(usageApi.getUsage).mockRejectedValue(notFound);
+      vi.mocked(usageApi.getUsageEvents).mockRejectedValue(notFound);
+      vi.mocked(usageApi.getUsageQueue).mockResolvedValue([]);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(
+            `event: usage:full\ndata: ${JSON.stringify(fullSnapshotPayload)}\n\n`,
+            {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream' },
+            }
+          )
+        )
+      );
+
+      await useUsageStatsStore.getState().loadUsageStats({ force: true });
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'http://localhost:3000/v0/management/usage/stream',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Accept: 'text/event-stream',
+            Authorization: 'Bearer test-key',
+          }),
+        })
+      );
+      expect(useUsageStatsStore.getState().usage).toEqual(
+        expect.objectContaining({
+          total_requests: 3,
+          success_count: 2,
+          failure_count: 1,
+          total_tokens: 250,
+          apis: {
+            [endpoint]: expect.objectContaining({
+              total_requests: 3,
+              success_count: 2,
+              failure_count: 1,
+              total_tokens: 250,
+              models: {
+                'gpt-4.1': expect.objectContaining({
+                  total_requests: 3,
+                  success_count: 2,
+                  failure_count: 1,
+                  total_tokens: 250,
+                  details: [
+                    expect.objectContaining({
+                      timestamp: '2026-01-01T00:00:00.000Z',
+                      source: 'k:test-key',
+                      auth_index: '0',
+                    }),
+                  ],
+                }),
+              },
+            }),
+          },
+        })
+      );
+      expect(useUsageStatsStore.getState().usageDetails).toEqual([
+        expect.objectContaining({
+          source: 'k:test-key',
+          auth_index: '0',
+          __modelName: 'gpt-4.1',
+        }),
+      ]);
+      expect(useUsageStatsStore.getState().lastSeq).toBe(21);
     });
 
     it('throws error on fetch failure', async () => {
@@ -792,7 +925,8 @@ describe('useUsageStatsStore', () => {
       });
 
       expect(vi.mocked(collectUsageDetails)).not.toHaveBeenCalled();
-      expect(useUsageStatsStore.getState().usageDetails).toEqual(snapshotDetails);
+      expect(useUsageStatsStore.getState().usageDetails).toHaveLength(1);
+      expect(useUsageStatsStore.getState().usageDetails[0]).toMatchObject(snapshotDetails[0]);
       expect(useUsageStatsStore.getState().lastSeq).toBe(21);
     });
 
@@ -832,6 +966,93 @@ describe('useUsageStatsStore', () => {
           __timestampMs: Date.parse('2026-01-01T00:05:00.000Z'),
         }),
       ]);
+    });
+
+    it('normalizes current backend usage:full snapshots before writing them into store state', () => {
+      const endpoint = 'POST /v1/chat/completions';
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+
+      useUsageStatsStore.setState({
+        scopeKey,
+        lastSeq: 20,
+      });
+
+      useUsageStatsStore.getState().applyFullSnapshot({
+        seq: 21,
+        timestamp: Date.parse('2026-01-01T00:05:00.000Z'),
+        usage: {
+          apis: {
+            [endpoint]: {
+              request_count: 2,
+              success_count: 1,
+              failure_count: 1,
+              total_tokens: {
+                input_tokens: 120,
+                output_tokens: 30,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                total_tokens: 150,
+              },
+            },
+          },
+          models: {
+            'gpt-4.1': {
+              endpoint,
+              request_count: 2,
+              success_count: 1,
+              failure_count: 1,
+              token_delta: {
+                input_tokens: 120,
+                output_tokens: 30,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                total_tokens: 150,
+              },
+            },
+          },
+        },
+        usageDetails: [
+          {
+            timestamp: '2026-01-01T00:05:00.000Z',
+            source: 'snapshot-source',
+            auth_index: '5',
+            endpoint,
+            model: 'gpt-4.1',
+            tokens: {
+              input_tokens: 100,
+              output_tokens: 50,
+              reasoning_tokens: 0,
+              cached_tokens: 0,
+              total_tokens: 150,
+            },
+            failed: false,
+          } as UsageDetail & { endpoint: string; model: string },
+        ],
+      });
+
+      expect(useUsageStatsStore.getState().usage).toEqual(
+        expect.objectContaining({
+          total_requests: 2,
+          success_count: 1,
+          failure_count: 1,
+          total_tokens: 150,
+          apis: {
+            [endpoint]: expect.objectContaining({
+              total_requests: 2,
+              success_count: 1,
+              failure_count: 1,
+              total_tokens: 150,
+              models: {
+                'gpt-4.1': expect.objectContaining({
+                  total_requests: 2,
+                  total_tokens: 150,
+                }),
+              },
+            }),
+          },
+        })
+      );
+      expect(useUsageStatsStore.getState().lastSeq).toBe(21);
     });
   });
 

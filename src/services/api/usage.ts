@@ -64,6 +64,23 @@ export interface UsageEvent {
   [key: string]: unknown;
 }
 
+const normalizeUsageEventsResponse = (response: unknown): UsageEvent[] => {
+  if (Array.isArray(response)) {
+    return response as UsageEvent[];
+  }
+
+  if (
+    response &&
+    typeof response === 'object' &&
+    'events' in response &&
+    Array.isArray((response as { events?: unknown }).events)
+  ) {
+    return (response as { events: UsageEvent[] }).events;
+  }
+
+  return [];
+};
+
 export const usageApi = {
   /**
    * 获取使用统计原始数据
@@ -91,10 +108,23 @@ export const usageApi = {
    * 获取请求事件明细（完整字段列表）
    */
   getUsageEvents: (config?: AxiosRequestConfig) =>
-    apiClient.get<UsageEvent[]>('/usage-events', {
-      timeout: USAGE_TIMEOUT_MS,
-      ...config,
-    }),
+    apiClient
+      .get<unknown>('/usage-events', {
+        timeout: USAGE_TIMEOUT_MS,
+        ...config,
+      })
+      .then(normalizeUsageEventsResponse),
+
+  /**
+   * 从当前后端兼容的 usage 队列中拉取事件
+   */
+  getUsageQueue: (count = 1000, config?: AxiosRequestConfig) =>
+    apiClient
+      .get<unknown>(`/usage-queue?count=${count}`, {
+        timeout: USAGE_TIMEOUT_MS,
+        ...config,
+      })
+      .then(normalizeUsageEventsResponse),
 
   /**
    * 导出使用统计快照

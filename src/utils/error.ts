@@ -39,6 +39,21 @@ export function isCanceledRequestError(error: unknown): boolean {
 }
 
 /**
+ * 从未知错误对象中提取 HTTP / API 状态码
+ *
+ * 常用于判断 401、403、404 等兼容分支，不关心具体错误类型来源。
+ */
+export function getApiErrorStatus(error: unknown): number | null {
+  return (
+    error &&
+    typeof error === 'object' &&
+    typeof (error as { status?: unknown }).status === 'number'
+  )
+    ? (error as { status: number }).status
+    : null;
+}
+
+/**
  * 统一 API 错误处理：提取消息并（可选地）执行副作用
  *
  * 典型用法：

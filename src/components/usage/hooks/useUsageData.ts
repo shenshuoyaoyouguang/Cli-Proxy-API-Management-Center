@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { USAGE_STATS_STALE_TIME_MS, useNotificationStore, useUsageStatsStore } from '@/stores';
 import { usageApi } from '@/services/api/usage';
+import { getApiErrorStatus } from '@/utils/error';
 import { downloadBlob } from '@/utils/download';
 import { loadModelPrices, saveModelPrices, type ModelPrice, type UsageDetail } from '@/utils/usage';
 import { syncPricesForModels } from '@/molecules/usage/priceAutoSync';
@@ -163,6 +164,10 @@ export function useUsageData(): UseUsageDataReturn {
       });
       showNotification(t('usage_stats.export_success'), 'success');
     } catch (err: unknown) {
+      if (getApiErrorStatus(err) === 404) {
+        showNotification(t('usage_stats.export_unsupported'), 'warning');
+        return;
+      }
       const message = err instanceof Error ? err.message : '';
       showNotification(
         `${t('notification.download_failed')}${message ? `: ${message}` : ''}`,
@@ -217,6 +222,10 @@ export function useUsageData(): UseUsageDataReturn {
         );
       }
     } catch (err: unknown) {
+      if (getApiErrorStatus(err) === 404) {
+        showNotification(t('usage_stats.import_unsupported'), 'warning');
+        return;
+      }
       const message = err instanceof Error ? err.message : '';
       showNotification(
         `${t('notification.upload_failed')}${message ? `: ${message}` : ''}`,

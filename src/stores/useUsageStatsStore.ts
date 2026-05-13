@@ -9,6 +9,8 @@ import {
   collectUsageDetails,
   collectUsageDetailsFromEvents,
   computeKeyStatsFromDetails,
+  mergeKeyStatsIncremental,
+  subtractKeyStatsForDetails,
   normalizeAuthIndex,
   normalizeUsageSourceId,
   type KeyStats,
@@ -521,6 +523,19 @@ const normalizeUsageSnapshotForFrontend = (
   };
 };
 
+const buildUsageSnapshotFromEvents = (events: UsageEvent[]): UsageStatsSnapshot | null => {
+  if (!Array.isArray(events) || events.length === 0) {
+    return null;
+  }
+
+  const entries = buildCompatibilityUsageDetailEntries(events);
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return buildUsageSnapshotFromCompatibilityEntries(entries);
+};
+
 const readUsageStatsWithCompatibility = async (
   apiBase: string,
   managementKey: string,
@@ -530,14 +545,43 @@ const readUsageStatsWithCompatibility = async (
   currentLastSeq: number | null
 ): Promise<UsageBootstrapResult> => {
   try {
-    const [usageResponse, eventsResponse] = await Promise.all([
+    const [usageResult, eventsResult] = await Promise.allSettled([
       usageApi.getUsage({ signal }),
-      usageApi.getUsageEvents({ signal }).catch((error) => {
-        if (error && isCanceledRequestError(error)) return undefined;
-        logger.warn('Failed to fetch usage events', { error });
-        return undefined;
-      }),
+      usageApi.getUsageEvents({ signal }),
     ]);
+
+    if (signal.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+
+    const usageResponse = usageResult.status === 'fulfilled' ? usageResult.value : null;
+    const usageError = usageResult.status === 'rejected' ? usageResult.reason : null;
+    const eventsResponse = eventsResult.status === 'fulfilled' ? eventsResult.value : undefined;
+    const eventsError = eventsResult.status === 'rejected' ? eventsResult.reason : null;
+
+    if (usageError && isCanceledRequestError(usageError)) {
+      throw usageError;
+    }
+    if (eventsError && isCanceledRequestError(eventsError)) {
+      throw eventsError;
+    }
+
+    if (eventsError && !isCanceledRequestError(eventsError)) {
+      logger.warn('Failed to fetch usage events', { error: eventsError });
+    }
+
+    const usageStatus = usageError ? getApiErrorStatus(usageError) : null;
+    const hasEvents = eventsResponse && eventsResponse.length > 0;
+
+    if (usageStatus === 404 && hasEvents) {
+      const usageDetails = collectUsageDetailsFromEvents(eventsResponse);
+      const usage = buildUsageSnapshotFromEvents(eventsResponse!);
+      return { usage, usageDetails, lastSeq: null };
+    }
+
+    if (usageError) {
+      throw usageError;
+    }
 
     const rawUsage = usageResponse?.usage ?? usageResponse;
     const usage =
@@ -545,7 +589,7 @@ const readUsageStatsWithCompatibility = async (
         ? normalizeUsageSnapshotForFrontend(rawUsage as UsageStatsSnapshot, eventsResponse)
         : null;
     const usageDetails =
-      eventsResponse && eventsResponse.length > 0
+      hasEvents
         ? collectUsageDetailsFromEvents(eventsResponse)
         : collectUsageDetails(usage);
 
@@ -1119,7 +1163,12 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       return;
     }
 
-    if (state.lastSeq !== null && delta.seq !== state.lastSeq + 1) {
+    if (state.lastSeq === null) {
+      requestDeltaRecovery();
+      return;
+    }
+
+    if (delta.seq !== state.lastSeq + 1) {
       requestDeltaRecovery();
       return;
     }
@@ -1128,11 +1177,17 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       mergeUsageDelta(state.usage, delta),
       delta.modelBreakdown
     );
-    const usageDetails = [...state.usageDetails, ...delta.details.map(createUsageDetailFromDelta)];
-    const trimmedDetails = usageDetails.length > MAX_USAGE_DETAILS_LENGTH
+    const newDetails = delta.details.map(createUsageDetailFromDelta);
+    const usageDetails = [...state.usageDetails, ...newDetails];
+    const needsTrim = usageDetails.length > MAX_USAGE_DETAILS_LENGTH;
+    const trimmedDetails = needsTrim
       ? usageDetails.slice(usageDetails.length - MAX_USAGE_DETAILS_LENGTH)
       : usageDetails;
-    const keyStats = computeKeyStatsFromDetails(trimmedDetails);
+    let keyStats = mergeKeyStatsIncremental(state.keyStats, newDetails);
+    if (needsTrim) {
+      const removedDetails = usageDetails.slice(0, usageDetails.length - MAX_USAGE_DETAILS_LENGTH);
+      keyStats = subtractKeyStatsForDetails(keyStats, removedDetails);
+    }
     const receivedAt = Date.now();
     const nextSnapshot = {
       usage: mergedUsage,
@@ -1170,11 +1225,11 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       snapshot.usage as UsageStatsSnapshot,
       snapshot.usageDetails
     );
-    const usageDetails = Array.isArray(snapshot.usageDetails)
-      ? trimUsageDetails(
-          buildCompatibilityUsageDetailEntries(snapshot.usageDetails).map((entry) => entry.usageDetail)
-        )
+    const rawDetails = Array.isArray(snapshot.usageDetails)
+      ? buildCompatibilityUsageDetailEntries(snapshot.usageDetails).map((entry) => entry.usageDetail)
       : collectUsageDetails(usage);
+    const rawDetailCount = rawDetails.length;
+    const usageDetails = trimUsageDetails(rawDetails);
     const keyStats = computeKeyStatsFromDetails(usageDetails);
     const lastRefreshedAt = Date.now();
     const nextSnapshot = {
@@ -1182,7 +1237,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       keyStats,
       usageDetails,
       lastRefreshedAt,
-      detailCount: usageDetails.length,
+      detailCount: rawDetailCount,
       scopeKey: state.scopeKey,
     };
 

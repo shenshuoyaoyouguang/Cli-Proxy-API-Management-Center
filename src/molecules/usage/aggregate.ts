@@ -169,6 +169,106 @@ export function computeKeyStatsFromDetails(usageDetails: UsageDetail[]): KeyStat
   return { bySource, byAuthIndex };
 }
 
+export function mergeKeyStatsIncremental(
+  current: KeyStats,
+  newDetails: UsageDetail[]
+): KeyStats {
+  const bySource: Record<string, KeyStatBucket> = {};
+  const byAuthIndex: Record<string, KeyStatBucket> = {};
+
+  Object.entries(current.bySource).forEach(([key, bucket]) => {
+    bySource[key] = { ...bucket };
+  });
+  Object.entries(current.byAuthIndex).forEach(([key, bucket]) => {
+    byAuthIndex[key] = { ...bucket };
+  });
+
+  newDetails.forEach((detail) => {
+    const source = detail.source;
+    const authIndexKey = normalizeAuthIndex(detail.auth_index);
+    const isFailed = detail.failed === true;
+
+    if (source) {
+      if (!bySource[source]) {
+        bySource[source] = { success: 0, failure: 0 };
+      }
+      bySource[source] = {
+        success: bySource[source].success + (isFailed ? 0 : 1),
+        failure: bySource[source].failure + (isFailed ? 1 : 0),
+      };
+    }
+
+    if (authIndexKey !== null) {
+      if (!byAuthIndex[authIndexKey]) {
+        byAuthIndex[authIndexKey] = { success: 0, failure: 0 };
+      }
+      byAuthIndex[authIndexKey] = {
+        success: byAuthIndex[authIndexKey].success + (isFailed ? 0 : 1),
+        failure: byAuthIndex[authIndexKey].failure + (isFailed ? 1 : 0),
+      };
+    }
+  });
+
+  return { bySource, byAuthIndex };
+}
+
+export function subtractKeyStatsForDetails(
+  current: KeyStats,
+  removedDetails: UsageDetail[]
+): KeyStats {
+  const bySource: Record<string, KeyStatBucket> = {};
+  const byAuthIndex: Record<string, KeyStatBucket> = {};
+
+  Object.entries(current.bySource).forEach(([key, bucket]) => {
+    bySource[key] = { ...bucket };
+  });
+  Object.entries(current.byAuthIndex).forEach(([key, bucket]) => {
+    byAuthIndex[key] = { ...bucket };
+  });
+
+  removedDetails.forEach((detail) => {
+    const source = detail.source;
+    const authIndexKey = normalizeAuthIndex(detail.auth_index);
+    const isFailed = detail.failed === true;
+
+    if (source) {
+      if (!bySource[source]) {
+        if (import.meta.env.DEV) {
+          console.warn(`[subtractKeyStatsForDetails] Bucket not found for source: ${source}`);
+        }
+      } else {
+        if (isFailed) {
+          bySource[source].failure = Math.max(0, bySource[source].failure - 1);
+        } else {
+          bySource[source].success = Math.max(0, bySource[source].success - 1);
+        }
+        if (bySource[source].success === 0 && bySource[source].failure === 0) {
+          delete bySource[source];
+        }
+      }
+    }
+
+    if (authIndexKey !== null) {
+      if (!byAuthIndex[authIndexKey]) {
+        if (import.meta.env.DEV) {
+          console.warn(`[subtractKeyStatsForDetails] Bucket not found for authIndex: ${authIndexKey}`);
+        }
+      } else {
+        if (isFailed) {
+          byAuthIndex[authIndexKey].failure = Math.max(0, byAuthIndex[authIndexKey].failure - 1);
+        } else {
+          byAuthIndex[authIndexKey].success = Math.max(0, byAuthIndex[authIndexKey].success - 1);
+        }
+        if (byAuthIndex[authIndexKey].success === 0 && byAuthIndex[authIndexKey].failure === 0) {
+          delete byAuthIndex[authIndexKey];
+        }
+      }
+    }
+  });
+
+  return { bySource, byAuthIndex };
+}
+
 export function getApiStats(
   usageData: unknown,
   modelPrices: Record<string, ModelPrice>

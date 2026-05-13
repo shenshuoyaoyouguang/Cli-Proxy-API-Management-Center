@@ -82,6 +82,8 @@ export {
   createAggregateOnlyUsageSnapshot,
   computeKeyStats,
   computeKeyStatsFromDetails,
+  mergeKeyStatsIncremental,
+  subtractKeyStatsForDetails,
   getApiStats,
   getModelStats,
   rehydrateUsageAggregatesFromDetails,

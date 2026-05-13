@@ -119,6 +119,43 @@ vi.mock('@/utils/usage', () => ({
     bySource: { 'k:test-key': { success: 1, failure: 0 } },
     byAuthIndex: { '0': { success: 1, failure: 0 } },
   })),
+  mergeKeyStatsIncremental: vi.fn((current: { bySource: Record<string, { success: number; failure: number }>; byAuthIndex: Record<string, { success: number; failure: number }> }, newDetails: UsageDetail[]) => {
+    const bySource: Record<string, { success: number; failure: number }> = {};
+    const byAuthIndex: Record<string, { success: number; failure: number }> = {};
+    Object.entries(current.bySource).forEach(([key, bucket]) => {
+      bySource[key] = { ...bucket };
+    });
+    Object.entries(current.byAuthIndex).forEach(([key, bucket]) => {
+      byAuthIndex[key] = { ...bucket };
+    });
+    newDetails.forEach((detail) => {
+      const source = detail.source;
+      const authIndexKey = detail.auth_index ?? null;
+      const isFailed = detail.failed === true;
+      if (source) {
+        if (!bySource[source]) {
+          bySource[source] = { success: 0, failure: 0 };
+        }
+        bySource[source] = {
+          success: bySource[source].success + (isFailed ? 0 : 1),
+          failure: bySource[source].failure + (isFailed ? 1 : 0),
+        };
+      }
+      if (authIndexKey !== null) {
+        if (!byAuthIndex[authIndexKey]) {
+          byAuthIndex[authIndexKey] = { success: 0, failure: 0 };
+        }
+        byAuthIndex[authIndexKey] = {
+          success: byAuthIndex[authIndexKey].success + (isFailed ? 0 : 1),
+          failure: byAuthIndex[authIndexKey].failure + (isFailed ? 1 : 0),
+        };
+      }
+    });
+    return { bySource, byAuthIndex };
+  }),
+  subtractKeyStatsForDetails: vi.fn((current: { bySource: Record<string, { success: number; failure: number }>; byAuthIndex: Record<string, { success: number; failure: number }> }) => {
+    return { ...current };
+  }),
   getDetailTimestampMs: vi.fn((detail: UsageDetail) => detail.__timestampMs ?? Date.parse(detail.timestamp)),
   normalizeAuthIndex: vi.fn((value: unknown) => {
     if (value === null || value === undefined || value === '') return null;
@@ -136,7 +173,7 @@ vi.mock('@/i18n', () => ({
 import { useUsageStatsStore } from './useUsageStatsStore';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
-import { collectUsageDetails, computeKeyStatsFromDetails } from '@/utils/usage';
+import { collectUsageDetails, mergeKeyStatsIncremental } from '@/utils/usage';
 import { usageSSEService } from '@/services/sse';
 
 describe('useUsageStatsStore', () => {
@@ -844,7 +881,7 @@ describe('useUsageStatsStore', () => {
       expect((state.usage?.apis as Record<string, unknown>)[endpoint]).toBe(endpointBucket);
       expect((state.usage?.apis as Record<string, unknown>)['live-source']).toBeUndefined();
       expect(vi.mocked(collectUsageDetails)).not.toHaveBeenCalled();
-      expect(vi.mocked(computeKeyStatsFromDetails)).toHaveBeenLastCalledWith(state.usageDetails);
+      expect(vi.mocked(mergeKeyStatsIncremental)).toHaveBeenCalled();
       expect(autoPersistService.onUsageRefreshed).toHaveBeenCalledWith(
         expect.objectContaining({
           scopeKey,

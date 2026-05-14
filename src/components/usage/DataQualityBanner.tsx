@@ -3,7 +3,6 @@ import styles from './DataQualityBanner.module.scss';
 
 interface DataQualityBannerProps {
   message: string;
-  zeroedCount: number;
 }
 
 function WarningIcon() {

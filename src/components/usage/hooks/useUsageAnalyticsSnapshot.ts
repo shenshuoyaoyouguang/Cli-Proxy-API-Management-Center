@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import type { CredentialInfo } from '@/types/sourceInfo';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
 import {
@@ -124,72 +124,16 @@ export function useUsageAnalyticsSnapshot({
     [filteredUsage, mergedAliasReverseMap]
   );
 
-  const filteredDetailsCache = useRef({
-    result: [] as UsageDetail[],
-    prevSource: [] as unknown[],
-    computedCount: 0,
-    timeRange: 'all' as UsageTimeRange,
-    nowMs: 0,
-  });
-  const filteredDetails = useMemo(() => {
-    const prev = filteredDetailsCache.current;
-    if (
-      timeRange === prev.timeRange &&
-      nowMs === prev.nowMs &&
-      prev.prevSource === analyticsSourceDetails
-    ) {
-      if (analyticsSourceDetails.length === prev.computedCount) return prev.result;
-      if (analyticsSourceDetails.length > prev.computedCount) {
-        const newItems = analyticsSourceDetails.slice(prev.computedCount);
-        const newFiltered = filterUsageDetailsByTimeRange(newItems, timeRange, nowMs);
-        if (newFiltered.length === 0) return prev.result;
-        const result = prev.computedCount === 0 ? newFiltered : [...prev.result, ...newFiltered];
-        prev.result = result;
-        prev.computedCount = analyticsSourceDetails.length;
-        return result;
-      }
-    }
-    const result = filterUsageDetailsByTimeRange(analyticsSourceDetails, timeRange, nowMs);
-    filteredDetailsCache.current = {
-      result,
-      prevSource: analyticsSourceDetails,
-      computedCount: analyticsSourceDetails.length,
-      timeRange,
-      nowMs,
-    };
-    return result;
-  }, [analyticsSourceDetails, timeRange, nowMs]);
+  const filteredDetails = useMemo(
+    () => filterUsageDetailsByTimeRange(analyticsSourceDetails, timeRange, nowMs),
+    [analyticsSourceDetails, timeRange, nowMs]
+  );
 
-  const resolvedDetailsCache = useRef({
-    result: [] as UsageDetail[],
-    prevSource: [] as unknown[],
-    computedCount: 0,
-    aliasMap: null as Map<string, string> | null,
-  });
-  const resolvedDetails = useMemo(() => {
-    const prev = resolvedDetailsCache.current;
-    if (prev.aliasMap === mergedAliasReverseMap && prev.prevSource === filteredDetails) {
-      if (filteredDetails.length === prev.computedCount) return prev.result;
-      if (filteredDetails.length > prev.computedCount) {
-        const newItems = filteredDetails.slice(prev.computedCount);
-        const newResolved = resolveModelNameInDetails(newItems, mergedAliasReverseMap);
-        const result = prev.computedCount === 0 ? newResolved : [...prev.result, ...newResolved];
-        prev.result = result;
-        prev.computedCount = filteredDetails.length;
-        return result;
-      }
-    }
-    const result = resolveModelNameInDetails(filteredDetails, mergedAliasReverseMap);
-    resolvedDetailsCache.current = {
-      result,
-      prevSource: filteredDetails,
-      computedCount: filteredDetails.length,
-      aliasMap: mergedAliasReverseMap,
-    };
-    return result;
-  }, [filteredDetails, mergedAliasReverseMap]);
+  const resolvedDetails = useMemo(
+    () => resolveModelNameInDetails(filteredDetails, mergedAliasReverseMap),
+    [filteredDetails, mergedAliasReverseMap]
+  );
 
-  // 所有聚合函数现在全部基于 canonicalUsage，确保口径100%统一
   const modelNames = useMemo(() => getModelNamesFromUsage(canonicalUsage), [canonicalUsage]);
 
   const apiStats = useMemo(
@@ -214,98 +158,34 @@ export function useUsageAnalyticsSnapshot({
     [claudeConfigs, codexConfigs, geminiKeys, openaiProviders, vertexConfigs]
   );
 
-  const tdCache = useRef(null as { result: TokenDistribution; count: number } | null);
-  const tokenDistribution = useMemo(() => {
-    const prev = tdCache.current;
-    if (prev && resolvedDetails.length > prev.count) {
-      const delta = createTokenDistribution(resolvedDetails.slice(prev.count));
-      const merged: TokenDistribution = {
-        input: prev.result.input + delta.input,
-        output: prev.result.output + delta.output,
-        cached: prev.result.cached + delta.cached,
-        reasoning: prev.result.reasoning + delta.reasoning,
-      };
-      tdCache.current = { result: merged, count: resolvedDetails.length };
-      return merged;
-    }
-    const result = createTokenDistribution(resolvedDetails);
-    tdCache.current = { result, count: resolvedDetails.length };
-    return result;
-  }, [resolvedDetails]);
-
-  const usCache = useRef(
-    null as {
-      result: UsageSummaryMetrics;
-      count: number;
-      modelPrices: Record<string, ModelPrice>;
-      nowMs: number;
-    } | null
+  const tokenDistribution = useMemo(
+    () => createTokenDistribution(resolvedDetails),
+    [resolvedDetails]
   );
-  const stableNowMs = Math.floor(nowMs / 10000) * 10000;
-  const usageSummary = useMemo(() => {
-    const prev = usCache.current;
-    if (
-      prev &&
-      prev.modelPrices === modelPrices &&
-      prev.nowMs === stableNowMs &&
-      resolvedDetails.length > prev.count
-    ) {
-      const delta = createUsageSummaryMetrics(
-        resolvedDetails.slice(prev.count),
-        modelPrices,
-        stableNowMs,
-        30
-      );
-      const merged: UsageSummaryMetrics = {
-        totalTokens: prev.result.totalTokens + delta.totalTokens,
-        tokenBreakdown: {
-          cachedTokens: prev.result.tokenBreakdown.cachedTokens + delta.tokenBreakdown.cachedTokens,
-          reasoningTokens:
-            prev.result.tokenBreakdown.reasoningTokens + delta.tokenBreakdown.reasoningTokens,
-          inputTokens: prev.result.tokenBreakdown.inputTokens + delta.tokenBreakdown.inputTokens,
-          outputTokens: prev.result.tokenBreakdown.outputTokens + delta.tokenBreakdown.outputTokens,
-        },
-        rateStats: delta.rateStats,
-        totalCost: prev.result.totalCost + delta.totalCost,
-      };
-      usCache.current = {
-        result: merged,
-        count: resolvedDetails.length,
-        modelPrices,
-        nowMs: stableNowMs,
-      };
-      return merged;
-    }
-    const result = createUsageSummaryMetrics(resolvedDetails, modelPrices, stableNowMs, 30);
-    usCache.current = { result, count: resolvedDetails.length, modelPrices, nowMs: stableNowMs };
-    return result;
-  }, [resolvedDetails, modelPrices, stableNowMs]);
+
+  const stableNowMs = useMemo(() => Math.floor(nowMs / 10000) * 10000, [nowMs]);
+  const usageSummary = useMemo(
+    () => createUsageSummaryMetrics(resolvedDetails, modelPrices, stableNowMs, 30),
+    [resolvedDetails, modelPrices, stableNowMs]
+  );
 
   const requestEventRows = useMemo(
     () => createRequestEventRows(resolvedDetails, sourceInfoMap, authFileMap, locale),
     [authFileMap, resolvedDetails, locale, sourceInfoMap]
   );
 
-  const healthRowsLenRef = useRef(0);
-  const healthRowsResultRef = useRef<RequestEventRow[]>([]);
   const healthRequestEventRows = useMemo(() => {
     if (!includeHealthRequestEventRows) {
-      healthRowsLenRef.current = 0;
-      healthRowsResultRef.current = [];
-      return healthRowsResultRef.current;
+      return [];
     }
-    if (analyticsSourceDetails.length !== healthRowsLenRef.current) {
-      healthRowsLenRef.current = analyticsSourceDetails.length;
-      healthRowsResultRef.current = createRequestEventRowsForRange(
-        analyticsSourceDetails,
-        '1d',
-        nowMs,
-        sourceInfoMap,
-        authFileMap,
-        locale
-      );
-    }
-    return healthRowsResultRef.current;
+    return createRequestEventRowsForRange(
+      analyticsSourceDetails,
+      '1d',
+      nowMs,
+      sourceInfoMap,
+      authFileMap,
+      locale
+    );
   }, [
     analyticsSourceDetails,
     authFileMap,
@@ -339,44 +219,15 @@ export function useUsageAnalyticsSnapshot({
     ]
   );
 
-  const eoCache = useRef(
-    null as {
-      result: EfficiencyOverview;
-      count: number;
-      modelPrices: Record<string, ModelPrice>;
-    } | null
+  const efficiencyOverview = useMemo(
+    () => createEfficiencyOverview(resolvedDetails, modelPrices),
+    [resolvedDetails, modelPrices]
   );
-  const efficiencyOverview = useMemo(() => {
-    const prev = eoCache.current;
-    if (prev && prev.modelPrices === modelPrices && resolvedDetails.length > prev.count) {
-      const result = createEfficiencyOverview(resolvedDetails, modelPrices);
-      eoCache.current = { result, count: resolvedDetails.length, modelPrices };
-      return result;
-    }
-    if (prev && prev.modelPrices === modelPrices && resolvedDetails.length === prev.count) {
-      return prev.result;
-    }
-    const result = createEfficiencyOverview(resolvedDetails, modelPrices);
-    eoCache.current = { result, count: resolvedDetails.length, modelPrices };
-    return result;
-  }, [resolvedDetails, modelPrices]);
 
-  const merCache = useRef(
-    null as {
-      result: ModelEfficiencyRow[];
-      count: number;
-      modelPrices: Record<string, ModelPrice>;
-    } | null
+  const modelEfficiencyRows = useMemo(
+    () => createModelEfficiencyRows(resolvedDetails, modelPrices),
+    [resolvedDetails, modelPrices]
   );
-  const modelEfficiencyRows = useMemo(() => {
-    const prev = merCache.current;
-    if (prev && prev.modelPrices === modelPrices && resolvedDetails.length === prev.count) {
-      return prev.result;
-    }
-    const result = createModelEfficiencyRows(resolvedDetails, modelPrices);
-    merCache.current = { result, count: resolvedDetails.length, modelPrices };
-    return result;
-  }, [resolvedDetails, modelPrices]);
 
   const credentialEfficiencyRows = useMemo(
     () => createCredentialEfficiencyRows(resolvedDetails, sourceInfoMap, authFileMap, modelPrices),

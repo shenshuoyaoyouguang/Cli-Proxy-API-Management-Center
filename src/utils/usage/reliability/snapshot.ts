@@ -288,6 +288,7 @@ export function buildReliabilitySnapshot(
   details.forEach((detail) => {
     const existingMinuteBuckets = minuteByModel.get(detail.minuteKey) ?? new Map<string, ReliabilityCounts>();
     existingMinuteBuckets.set(detail.modelName, appendOutcome(existingMinuteBuckets.get(detail.modelName), detail.failed));
+    minuteByModel.set(detail.minuteKey, existingMinuteBuckets);
 
     hourBuckets.set(detail.hourKey, appendOutcome(hourBuckets.get(detail.hourKey), detail.failed));
     dayBuckets.set(detail.dayKey, appendOutcome(dayBuckets.get(detail.dayKey), detail.failed));

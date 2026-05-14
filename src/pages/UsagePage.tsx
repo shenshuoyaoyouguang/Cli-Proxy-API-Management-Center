@@ -322,7 +322,6 @@ export function UsagePage() {
       {dataQualityWarning && (
         <DataQualityBanner
           message={dataQualityWarning.message}
-          zeroedCount={dataQualityWarning.zeroedCount}
         />
       )}
 

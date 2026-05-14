@@ -38,3 +38,4 @@ settings.local.json
 *.njsproj
 *.sln
 *.sw?
+statistics-analysis-report.html

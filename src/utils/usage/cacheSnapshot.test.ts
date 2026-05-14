@@ -1,8 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   trimUsageDetailsForCache,
   resolveCachedUsageDetailsFromUsage,
-  DEFAULT_USAGE_CACHE_MAX_DETAILS,
 } from './cacheSnapshot';
 import type { UsageDetail } from '@/atoms/usage/types';
 import type { UsageStatsSnapshot } from './cacheSnapshot';
@@ -192,7 +191,7 @@ describe('resolveCachedUsageDetailsFromUsage', () => {
           '/v1/chat/completions': {
             models: {
               'gpt-4': {
-                details: Array.from({ length: 50 }, (_, i) => ({
+                details: Array.from({ length: 50 }, (_) => ({
                   timestamp: new Date(JAN_2025 + 86400000).toISOString(),
                   tokens: { total_tokens: 100 },
                 })),
@@ -216,7 +215,7 @@ describe('resolveCachedUsageDetailsFromUsage', () => {
           '/v1/chat/completions': {
             models: {
               'gpt-4': {
-                details: Array.from({ length: 100 }, (_, i) => ({
+                details: Array.from({ length: 100 }, (_) => ({
                   timestamp: new Date(JAN_2025 + 86400000).toISOString(),
                   tokens: { total_tokens: 100 },
                 })),

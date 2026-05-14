@@ -1,10 +1,6 @@
 import { usageApi, type AutoPersistUsagePayload } from '@/services/api/usage';
 import { CacheLayer } from '@/services/cache';
-import {
-  createAggregateOnlyUsageSnapshot,
-  type KeyStats,
-  type UsageDetail,
-} from '@/utils/usage';
+import { createAggregateOnlyUsageSnapshot, type KeyStats, type UsageDetail } from '@/utils/usage';
 import {
   DEFAULT_USAGE_CACHE_MAX_DETAILS,
   resolveCachedUsageDetailsFromUsage,
@@ -35,9 +31,9 @@ type AutoPersistCache = AutoPersistBootstrapSnapshot & {
 };
 
 const AUTO_PERSIST_CACHE_PREFIX = 'cli-proxy-usage-auto-persist-v1';
-const AUTO_PERSIST_TRIGGER_DELTA = 3;       // 降低触发阈值：10 → 3
-const AUTO_PERSIST_INTERVAL_MS = 30_000;    // 缩短上传间隔：60s → 30s
-const AUTO_PERSIST_START_DELAY_MS = 5_000;  // 降低启动延迟：30s → 5s
+const AUTO_PERSIST_TRIGGER_DELTA = 3; // 降低触发阈值：10 → 3
+const AUTO_PERSIST_INTERVAL_MS = 30_000; // 缩短上传间隔：60s → 30s
+const AUTO_PERSIST_START_DELAY_MS = 5_000; // 降低启动延迟：30s → 5s
 const AUTO_PERSIST_MAX_DELAY_MS = 5 * 60 * 1000;
 const CLEARED_SCOPE_KEY_TTL_MS = 10 * 60 * 1000; // 10 分钟
 
@@ -245,14 +241,22 @@ export class AutoPersistService {
     }
 
     const cache =
-      this.activeScopeKey === scopeKey ? this.currentCache ?? readCache(scopeKey) : readCache(scopeKey);
+      this.activeScopeKey === scopeKey
+        ? (this.currentCache ?? readCache(scopeKey))
+        : readCache(scopeKey);
     if (!cache) {
       return null;
     }
 
+    // 排除顶层 models 字段，防止缓存数据触发二次归一化导致计数翻倍
+    const { models: _strippedModels, ...usageWithoutModels } =
+      cache.usage && typeof cache.usage === 'object'
+        ? (cache.usage as Record<string, unknown>)
+        : { models: undefined };
+
     return {
       scopeKey: cache.scopeKey,
-      usage: cache.usage,
+      usage: cache.usage ? (usageWithoutModels as AutoPersistBootstrapSnapshot['usage']) : null,
       keyStats: cache.keyStats,
       usageDetails: cache.usageDetails,
       lastRefreshedAt: cache.lastRefreshedAt,
@@ -281,7 +285,9 @@ export class AutoPersistService {
     this.clearedScopeKeys.delete(input.scopeKey);
 
     const previousCache =
-      this.activeScopeKey === input.scopeKey ? this.currentCache ?? readCache(input.scopeKey) : readCache(input.scopeKey);
+      this.activeScopeKey === input.scopeKey
+        ? (this.currentCache ?? readCache(input.scopeKey))
+        : readCache(input.scopeKey);
     const nextCache = this.createNextCache(previousCache, input);
 
     this.activeScopeKey = input.scopeKey;
@@ -300,7 +306,10 @@ export class AutoPersistService {
     const incomingDetailCount = input.usageDetails.length;
     const usage = input.usage;
     const keyStats = input.keyStats;
-    const usageDetails = trimUsageDetailsForCache(input.usageDetails, DEFAULT_USAGE_CACHE_MAX_DETAILS);
+    const usageDetails = trimUsageDetailsForCache(
+      input.usageDetails,
+      DEFAULT_USAGE_CACHE_MAX_DETAILS
+    );
     const detailCount = incomingDetailCount;
     const rawDetailCount = incomingDetailCount;
     const lastRefreshedAt = input.lastRefreshedAt;
@@ -313,7 +322,7 @@ export class AutoPersistService {
             origin: 'cli-proxy-auto-persist',
             session_id: this.sessionId,
           } satisfies AutoPersistUsagePayload)
-        : previousCache?.payload ?? null;
+        : (previousCache?.payload ?? null);
 
     return {
       scopeKey: input.scopeKey,
@@ -399,7 +408,10 @@ export class AutoPersistService {
       }
     }
 
-    if (cache.lastPersistedAt !== null && Date.now() - cache.lastPersistedAt < AUTO_PERSIST_INTERVAL_MS) {
+    if (
+      cache.lastPersistedAt !== null &&
+      Date.now() - cache.lastPersistedAt < AUTO_PERSIST_INTERVAL_MS
+    ) {
       return false;
     }
 
@@ -407,7 +419,12 @@ export class AutoPersistService {
   }
 
   private async maybePersist() {
-    if (!this.startDelayCompleted || !this.currentCache || !this.shouldPersist(this.currentCache) || this.persistInFlight) {
+    if (
+      !this.startDelayCompleted ||
+      !this.currentCache ||
+      !this.shouldPersist(this.currentCache) ||
+      this.persistInFlight
+    ) {
       return;
     }
 
@@ -427,7 +444,7 @@ export class AutoPersistService {
 
         const current =
           this.activeScopeKey === cacheToPersist.scopeKey
-            ? this.currentCache ?? readCache(cacheToPersist.scopeKey)
+            ? (this.currentCache ?? readCache(cacheToPersist.scopeKey))
             : readCache(cacheToPersist.scopeKey);
         if (!current) {
           return;

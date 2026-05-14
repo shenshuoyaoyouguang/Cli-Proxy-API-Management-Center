@@ -18,6 +18,7 @@ const STATUS_CLASS_BY_STATUS: Record<RuntimeQualityStatus, string> = {
   healthy: styles.statusHealthy,
   warning: styles.statusWarning,
   critical: styles.statusCritical,
+  insufficient: styles.statusEmpty,
   empty: styles.statusEmpty
 };
 
@@ -25,6 +26,7 @@ const STATUS_LABEL_KEY_BY_STATUS: Record<RuntimeQualityStatus, string> = {
   healthy: 'usage_quality.status_healthy',
   warning: 'usage_quality.status_warning',
   critical: 'usage_quality.status_critical',
+  insufficient: 'usage_quality.status_insufficient',
   empty: 'usage_quality.status_empty'
 };
 
@@ -32,6 +34,7 @@ const DESCRIPTION_KEY_BY_STATUS: Record<RuntimeQualityStatus, string> = {
   healthy: 'usage_quality.summary_healthy',
   warning: 'usage_quality.summary_warning',
   critical: 'usage_quality.summary_critical',
+  insufficient: 'usage_quality.summary_insufficient',
   empty: 'usage_quality.summary_empty'
 };
 
@@ -79,6 +82,12 @@ export function RuntimeQualityCard({ summary, loading }: RuntimeQualityCardProps
       }
     >
       <p className={styles.description}>{description}</p>
+
+      {!summary.dataConsistent && summary.hasData && (
+        <div className={styles.dataInconsistencyBanner}>
+          {t('usage_quality.data_inconsistent')}
+        </div>
+      )}
 
       <div className={styles.metricsGrid}>
         <div className={styles.metricCard}>

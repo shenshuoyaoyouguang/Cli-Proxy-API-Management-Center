@@ -153,7 +153,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
@@ -266,27 +267,27 @@
   gap: 16px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-areas:
-    "requests requests tokens tokens"
-    "rpm tpm cost cost";
+    'requests requests tokens tokens'
+    'rpm tpm cost cost';
 
   @include tablet {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
-      "requests requests"
-      "tokens tokens"
-      "rpm tpm"
-      "cost cost";
+      'requests requests'
+      'tokens tokens'
+      'rpm tpm'
+      'cost cost';
   }
 
   @include mobile {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "requests"
-      "tokens"
-      "rpm"
-      "tpm"
-      "cost"
-      "cost";
+      'requests'
+      'tokens'
+      'rpm'
+      'tpm'
+      'cost'
+      'cost';
   }
 }
 
@@ -358,8 +359,7 @@
   padding: 20px;
   background:
     radial-gradient(120% 140% at 12% 0%, var(--accent-soft) 0%, rgba(0, 0, 0, 0) 62%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)),
-    var(--bg-primary);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)), var(--bg-primary);
   border-radius: $radius-lg;
   border: 1px solid var(--border-color);
   display: flex;
@@ -610,7 +610,9 @@
   font-size: 12px;
   color: var(--text-secondary);
   contain: layout style;
-  transition: background-color 150ms ease, border-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
   cursor: pointer;
 
   &:hover {
@@ -1230,7 +1232,10 @@
   gap: 8px;
   @include contain-card;
   @include will-change-transform;
-  transition: transform $transition-fast, border-color $transition-fast, box-shadow $transition-fast;
+  transition:
+    transform $transition-fast,
+    border-color $transition-fast,
+    box-shadow $transition-fast;
 
   &:hover {
     transform: translateY(-1px);
@@ -1258,7 +1263,9 @@
 
 .tokenEfficiencyClickableRow {
   cursor: pointer;
-  transition: background-color $transition-fast, transform $transition-fast;
+  transition:
+    background-color $transition-fast,
+    transform $transition-fast;
 }
 
 .tokenEfficiencyClickableRow:hover {
@@ -1390,7 +1397,8 @@
 }
 
 @keyframes livePulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -1436,10 +1444,43 @@
 }
 
 .requestEventsTableWrapper {
-  overflow: auto;
-  max-height: 460px;
+  overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: $radius-md;
+}
+
+.requestEventsTableGrid {
+  width: 100%;
+  font-size: 12px;
+}
+
+.requestEventsTableHeaderRow {
+  display: grid;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+
+  > div {
+    padding: 8px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+}
+
+.requestEventsVirtualRow {
+  > div {
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+  }
 }
 
 .requestEventsTimestamp {
@@ -1701,7 +1742,8 @@
 }
 
 @keyframes highlightPulse {
-  0%, 100% {
+  0%,
+  100% {
     outline-color: rgba($primary-color, 0);
   }
   25% {

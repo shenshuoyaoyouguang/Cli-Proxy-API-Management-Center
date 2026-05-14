@@ -6,12 +6,9 @@ import { Select } from '@/components/ui/Select';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { useUsageSSE } from '@/hooks/useUsageSSE';
 import { useConfigStore } from '@/stores';
+import { useUsageStatsStore } from '@/stores';
 import { useIntersectionObserver } from '@/hooks/useIntersectionObserver';
-import {
-  IconRefreshCw,
-  IconDownload,
-  IconUpload,
-} from '@/components/ui/icons';
+import { IconRefreshCw, IconDownload, IconUpload } from '@/components/ui/icons';
 import {
   StatCards,
   RuntimeQualityCard,
@@ -22,6 +19,7 @@ import {
   CredentialStatsCard,
   RequestEventsDetailsCard,
   ServiceHealthCard,
+  DataQualityBanner,
   useUsageData,
   useAuthFilesMap,
   useSparklines,
@@ -86,6 +84,8 @@ export function UsagePage() {
 
   const { aliasReverseMap } = useModelAliasReverseMap();
 
+  const dataQualityWarning = useUsageStatsStore((state) => state.dataQualityWarning);
+
   useHeaderRefresh(loadUsage);
 
   const [timeRange, setTimeRange] = useState<UsageTimeRange>(loadTimeRange);
@@ -120,7 +120,7 @@ export function UsagePage() {
   useEffect(() => {
     const id = setInterval(() => {
       setNowMs(Date.now());
-    }, 30000);
+    }, 120_000);
     return () => clearInterval(id);
   }, []);
 
@@ -167,8 +167,7 @@ export function UsagePage() {
     dayCostSparkline,
   } = useSparklines({ usage: filteredUsage, usageDetails, loading, modelPrices, nowMs });
 
-  const { loading: subscriptionTierLoading } =
-    useUsageSubscriptionTier(authFiles);
+  const { loading: subscriptionTierLoading } = useUsageSubscriptionTier(authFiles);
 
   const { serviceHealth } = useUsageReliabilitySnapshot({
     usageDetails,
@@ -309,9 +308,7 @@ export function UsagePage() {
           {loading && usage ? (
             <span className={styles.lastRefreshed}>{t('common.refreshing')}</span>
           ) : lastRefreshedAt ? (
-            <span className={styles.lastRefreshed}>
-              {lastRefreshedAt.toLocaleTimeString()}
-            </span>
+            <span className={styles.lastRefreshed}>{lastRefreshedAt.toLocaleTimeString()}</span>
           ) : null}
           <span className={`${styles.connectionStatus} ${styles[connectionStatus] ?? ''}`}>
             <span className={styles.statusDot} />
@@ -321,6 +318,13 @@ export function UsagePage() {
       </div>
 
       {error && <div className={styles.errorBox}>{error}</div>}
+
+      {dataQualityWarning && (
+        <DataQualityBanner
+          message={dataQualityWarning.message}
+          zeroedCount={dataQualityWarning.zeroedCount}
+        />
+      )}
 
       {/* Overview Section */}
       <section className={styles.section}>
@@ -352,10 +356,16 @@ export function UsagePage() {
         <h2 className={styles.sectionTitle}>{t('usage_stats.health_section_title')}</h2>
         <div
           id={SERVICE_HEALTH_SECTION_ID}
-          className={highlightedSection === SERVICE_HEALTH_SECTION_ID ? styles.drilldownHighlight : ''}
+          className={
+            highlightedSection === SERVICE_HEALTH_SECTION_ID ? styles.drilldownHighlight : ''
+          }
         >
           {healthSectionVisible && (
-            <ServiceHealthCard details={usageDetails} loading={loading} healthData={serviceHealth} />
+            <ServiceHealthCard
+              details={usageDetails}
+              loading={loading}
+              healthData={serviceHealth}
+            />
           )}
         </div>
 
@@ -384,7 +394,9 @@ export function UsagePage() {
 
             <div
               id={REQUEST_EVENTS_SECTION_ID}
-              className={highlightedSection === REQUEST_EVENTS_SECTION_ID ? styles.drilldownHighlight : ''}
+              className={
+                highlightedSection === REQUEST_EVENTS_SECTION_ID ? styles.drilldownHighlight : ''
+              }
             >
               <RequestEventsDetailsCard
                 rows={requestEventsRowsForDisplay}

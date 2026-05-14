@@ -114,6 +114,11 @@ export function TokenEfficiencyCenter({
                 <span className={`${styles.tokenEfficiencyGrade} ${getScoreTone(overview.efficiencyScore)}`}>
                   {overview.grade}
                 </span>
+                {!overview.costEnabled && (
+                  <span className={styles.costDisabledBadge}>
+                    {t('usage_stats.score_cost_disabled')}
+                  </span>
+                )}
               </div>
               <div className={styles.tokenEfficiencySubtle}>
                 {t('usage_stats.request_events_count', { count: overview.requestCount })} ·{' '}

@@ -11,7 +11,8 @@ export type { UsageSSEConnectionStatus };
 
 export function useUsageSSE(options: { enabled?: boolean } = {}) {
   const { enabled = true } = options;
-  const [connectionStatus, setConnectionStatus] = useState<UsageSSEConnectionStatus>('disconnected');
+  const [connectionStatus, setConnectionStatus] =
+    useState<UsageSSEConnectionStatus>('disconnected');
   const fallenBackRef = useRef(false);
   const handlerRef = useRef<UsageSSEHandler | null>(null);
   const connectionStatusRef = useRef<UsageSSEConnectionStatus>('disconnected');
@@ -90,6 +91,16 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
         usageSSEService.resume(apiBase, managementKey, handlerRef.current);
         connectionStatusRef.current = 'connecting';
         setConnectionStatus('connecting');
+
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+        }
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          if (connectionStatusRef.current === 'connecting') {
+            enterDegradedMode();
+          }
+        }, 5000);
       }
     };
 
@@ -108,9 +119,14 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
     };
   }, [enabled, apiBase, enterDegradedMode, managementKey, syncStatus]);
 
-  useInterval(() => {
-    void useUsageStatsStore.getState().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
-  }, connectionStatus === 'degraded' ? SSE_POLLING_INTERVAL_MS : null);
+  useInterval(
+    () => {
+      void useUsageStatsStore
+        .getState()
+        .loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
+    },
+    connectionStatus === 'degraded' ? SSE_POLLING_INTERVAL_MS : null
+  );
 
   return {
     connectionStatus,

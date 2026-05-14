@@ -1,12 +1,15 @@
+import type { MutableRefObject } from 'react';
 import type { AuthFileItem } from '@/types/authFile';
 import type { CredentialInfo } from '@/types/sourceInfo';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
 import {
   buildCandidateUsageSourceIds,
   calculateCost,
+  kahanAdd,
   extractTotalTokens,
   normalizeAuthIndex,
   type ApiStats,
+  type KahanAccumulator,
   type ModelPrice,
   type UsageDetail,
   type UsageTimeRange,
@@ -22,7 +25,7 @@ import { parseTimestampMs } from '@/utils/timestamp';
 const RUNTIME_QUALITY_HEALTHY_SUCCESS_RATE = 0.99;
 const RUNTIME_QUALITY_CRITICAL_SUCCESS_RATE = 0.97;
 const RUNTIME_QUALITY_WINDOW_MS = 15 * 60 * 1000;
-const RUNTIME_QUALITY_MIN_WINDOW_REQUESTS = 20;
+const RUNTIME_QUALITY_MIN_WINDOW_REQUESTS = 15;
 const RUNTIME_QUALITY_SEVERE_WINDOW_SUCCESS_RATE = 0.9;
 const RUNTIME_QUALITY_AFFECTED_CREDENTIAL_SUCCESS_RATE = 95;
 const RUNTIME_QUALITY_AFFECTED_CREDENTIAL_MIN_REQUESTS = 30;
@@ -82,11 +85,13 @@ export interface UsageSummaryMetrics {
     tokenCount: number;
     peakRpm: number;
     peakTpm: number;
+    avgRpm: number;
+    avgTpm: number;
   };
   totalCost: number;
 }
 
-export type RuntimeQualityStatus = 'healthy' | 'warning' | 'critical' | 'empty';
+export type RuntimeQualityStatus = 'healthy' | 'warning' | 'critical' | 'insufficient' | 'empty';
 export type RuntimeIncidentType = 'credential' | 'endpoint' | 'model' | 'none';
 
 export interface RuntimeQualityPrimaryIncident {
@@ -109,7 +114,10 @@ export interface RuntimeQualitySummary {
   status: RuntimeQualityStatus;
   overallSuccessRate: number;
   totalRequests: number;
+  successCount: number;
   failureCount: number;
+  windowsInsufficient: boolean;
+  dataConsistent: boolean;
   abnormalWindowCount: number;
   severeWindowCount: number;
   affectedCredentialCount: number;
@@ -132,6 +140,7 @@ export interface EfficiencyOverview {
   efficiencyScore: number;
   grade: 'A' | 'B' | 'C' | 'D';
   signals: EfficiencySignal[];
+  costEnabled: boolean;
   metrics: {
     cacheReuseRate: number;
     outputYield: number;
@@ -201,6 +210,41 @@ interface EfficiencyAggregate {
   totalCost: number;
 }
 
+export interface IncrementalCache<T> {
+  result: T;
+  prevSource: unknown[];
+  computedCount: number;
+}
+
+export function incrementalAppend<T>(
+  source: unknown[],
+  cache: MutableRefObject<IncrementalCache<T> | null>,
+  compute: (items: unknown[]) => T,
+  merge: (prev: T, delta: T) => T
+): T {
+  const prev = cache.current;
+  if (!prev || prev.prevSource !== source) {
+    const result = compute(source);
+    cache.current = { result, prevSource: source, computedCount: source.length };
+    return result;
+  }
+
+  const prevLen = prev.computedCount;
+  const newLen = source.length;
+  if (newLen === prevLen) return prev.result;
+  if (newLen < prevLen) {
+    const result = compute(source);
+    cache.current = { result, prevSource: source, computedCount: newLen };
+    return result;
+  }
+
+  const newItems = source.slice(prevLen);
+  const delta = compute(newItems);
+  const result = prevLen === 0 ? delta : merge(prev.result, delta);
+  cache.current = { result, prevSource: source, computedCount: newLen };
+  return result;
+}
+
 const CACHE_REUSE_TARGET = 0.5;
 const OUTPUT_YIELD_TARGET = 0.3;
 const FAILURE_WASTE_BAD_THRESHOLD = 0.2;
@@ -227,7 +271,7 @@ const createEmptyPrimaryIncident = (): RuntimeQualityPrimaryIncident => ({
   name: '',
   failureCount: 0,
   failureRate: 0,
-  totalRequests: 0
+  totalRequests: 0,
 });
 
 const getFailureRate = (failureCount: number, totalRequests: number) =>
@@ -248,11 +292,23 @@ const comparePrimaryIncidents = (
   return right.totalRequests - left.totalRequests;
 };
 
-const getCachedTokens = (tokens: UsageDetail['tokens'] | undefined): number =>
-  Math.max(
-    typeof tokens?.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-    typeof tokens?.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
-  );
+const isAnthropicModel = (modelName: string): boolean => {
+  const lowerModel = modelName.toLowerCase();
+  return lowerModel.includes('claude') || lowerModel.includes('anthropic');
+};
+
+const getCachedTokens = (
+  tokens: UsageDetail['tokens'] | undefined,
+  modelName: string = ''
+): number => {
+  const cachedTokens = typeof tokens?.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0;
+  const cacheTokens = typeof tokens?.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0;
+
+  if (isAnthropicModel(modelName)) {
+    return cacheTokens;
+  }
+  return cachedTokens;
+};
 
 const createEmptyEfficiencyAggregate = (): EfficiencyAggregate => ({
   requests: 0,
@@ -264,21 +320,27 @@ const createEmptyEfficiencyAggregate = (): EfficiencyAggregate => ({
   cachedTokens: 0,
   totalTokens: 0,
   failureTokens: 0,
-  totalCost: 0
+  totalCost: 0,
 });
 
 const accumulateEfficiencyAggregate = (
   aggregate: EfficiencyAggregate,
   detail: UsageDetail,
-  modelPrices: Record<string, ModelPrice>
+  modelPrices: Record<string, ModelPrice>,
+  costAcc?: KahanAccumulator
 ): EfficiencyAggregate => {
   const inputTokens = Math.max(toNumber(detail.tokens?.input_tokens), 0);
   const outputTokens = Math.max(toNumber(detail.tokens?.output_tokens), 0);
   const reasoningTokens = Math.max(toNumber(detail.tokens?.reasoning_tokens), 0);
-  const cachedTokens = getCachedTokens(detail.tokens);
+  const modelName = String(detail.__modelName ?? '').trim();
+  const cachedTokens = getCachedTokens(detail.tokens, modelName);
   const totalTokens = Math.max(toNumber(detail.tokens?.total_tokens), extractTotalTokens(detail));
   const failed = detail.failed === true;
-  const modelName = String(detail.__modelName ?? '').trim();
+
+  const cost = calculateCost({ ...detail, __modelName: modelName }, modelPrices);
+  if (costAcc) {
+    kahanAdd(costAcc, cost);
+  }
 
   return {
     requests: aggregate.requests + 1,
@@ -290,7 +352,7 @@ const accumulateEfficiencyAggregate = (
     cachedTokens: aggregate.cachedTokens + cachedTokens,
     totalTokens: aggregate.totalTokens + totalTokens,
     failureTokens: aggregate.failureTokens + (failed ? totalTokens : 0),
-    totalCost: aggregate.totalCost + calculateCost({ ...detail, __modelName: modelName }, modelPrices)
+    totalCost: costAcc ? costAcc.sum : aggregate.totalCost + cost,
   };
 };
 
@@ -328,21 +390,43 @@ const calculateEfficiencyOverview = (aggregate: EfficiencyAggregate): Efficiency
   const hasData = aggregate.requests > 0;
   const totalInputTokens = aggregate.inputTokens + aggregate.cachedTokens;
   const cacheReuseRate = totalInputTokens > 0 ? aggregate.cachedTokens / totalInputTokens : 0;
-  const outputYield = aggregate.totalTokens > 0 ? aggregate.outputTokens / aggregate.totalTokens : 0;
-  const failureWasteRate = aggregate.totalTokens > 0 ? aggregate.failureTokens / aggregate.totalTokens : 0;
+  const outputYield =
+    aggregate.totalTokens > 0 ? aggregate.outputTokens / aggregate.totalTokens : 0;
+  const failureWasteRate =
+    aggregate.totalTokens > 0 ? aggregate.failureTokens / aggregate.totalTokens : 0;
   const costYield = aggregate.totalCost > 0 ? aggregate.outputTokens / aggregate.totalCost : null;
 
+  const costEnabled = costYield !== null;
+  const costScore = costYield === null ? 50 : scorePositiveMetric(costYield, COST_YIELD_TARGET);
+
   const metricScores = [
-    { enabled: hasData, weight: 25, score: scorePositiveMetric(cacheReuseRate, CACHE_REUSE_TARGET) },
+    {
+      enabled: hasData,
+      weight: 25,
+      score: scorePositiveMetric(cacheReuseRate, CACHE_REUSE_TARGET),
+    },
     { enabled: hasData, weight: 25, score: scorePositiveMetric(outputYield, OUTPUT_YIELD_TARGET) },
-    { enabled: hasData, weight: 30, score: scoreInverseMetric(failureWasteRate, FAILURE_WASTE_BAD_THRESHOLD) },
-    { enabled: costYield !== null, weight: 20, score: costYield === null ? 0 : scorePositiveMetric(costYield, COST_YIELD_TARGET) }
+    {
+      enabled: hasData,
+      weight: 30,
+      score: scoreInverseMetric(failureWasteRate, FAILURE_WASTE_BAD_THRESHOLD),
+    },
+    { enabled: true, weight: 20, score: costScore },
   ];
 
-  const totalWeight = metricScores.reduce((sum, metric) => sum + (metric.enabled ? metric.weight : 0), 0);
-  const weightedScore = totalWeight > 0
-    ? Math.round(metricScores.reduce((sum, metric) => sum + (metric.enabled ? metric.score * metric.weight : 0), 0) / totalWeight)
-    : 0;
+  const totalWeight = metricScores.reduce(
+    (sum, metric) => sum + (metric.enabled ? metric.weight : 0),
+    0
+  );
+  const weightedScore =
+    totalWeight > 0
+      ? Math.round(
+          metricScores.reduce(
+            (sum, metric) => sum + (metric.enabled ? metric.score * metric.weight : 0),
+            0
+          ) / totalWeight
+        )
+      : 0;
 
   const signals: EfficiencySignal[] = [];
   if (failureWasteRate >= 0.15) signals.push('high_failure_waste');
@@ -361,12 +445,13 @@ const calculateEfficiencyOverview = (aggregate: EfficiencyAggregate): Efficiency
     efficiencyScore: weightedScore,
     grade: getEfficiencyGrade(weightedScore),
     signals,
+    costEnabled,
     metrics: {
       cacheReuseRate,
       outputYield,
       failureWasteRate,
-      costYield
-    }
+      costYield,
+    },
   };
 };
 
@@ -381,28 +466,51 @@ const resolveRuntimeRequestSummary = (
   const derivedTotalRequests = details.length;
   const derivedSuccessCount = Math.max(derivedTotalRequests - derivedFailureCount, 0);
 
-  const hasUsageTotal = typeof usage?.total_requests === 'number' && Number.isFinite(usage.total_requests);
-  const hasUsageSuccess = typeof usage?.success_count === 'number' && Number.isFinite(usage.success_count);
-  const hasUsageFailure = typeof usage?.failure_count === 'number' && Number.isFinite(usage.failure_count);
+  const hasUsageTotal =
+    typeof usage?.total_requests === 'number' && Number.isFinite(usage.total_requests);
+  const hasUsageSuccess =
+    typeof usage?.success_count === 'number' && Number.isFinite(usage.success_count);
+  const hasUsageFailure =
+    typeof usage?.failure_count === 'number' && Number.isFinite(usage.failure_count);
 
   if (!hasUsageTotal && !hasUsageSuccess && !hasUsageFailure) {
     return {
       totalRequests: derivedTotalRequests,
       successCount: derivedSuccessCount,
-      failureCount: derivedFailureCount
+      failureCount: derivedFailureCount,
+      usedDerivedValues: true,
     };
   }
 
-  const totalRequests = hasUsageTotal ? Math.max(toNumber(usage?.total_requests), 0) : derivedTotalRequests;
-  const failureCount = hasUsageFailure ? Math.max(toNumber(usage?.failure_count), 0) : derivedFailureCount;
-  const successCount = hasUsageSuccess
-    ? Math.max(toNumber(usage?.success_count), 0)
-    : Math.max(totalRequests - failureCount, 0);
+  const usageTotal = hasUsageTotal ? Math.max(toNumber(usage?.total_requests), 0) : null;
+  const usageFailure = hasUsageFailure ? Math.max(toNumber(usage?.failure_count), 0) : null;
+  const usageSuccess = hasUsageSuccess ? Math.max(toNumber(usage?.success_count), 0) : null;
+
+  let isUsageConsistent = true;
+  if (usageTotal !== null && usageFailure !== null && usageSuccess !== null) {
+    isUsageConsistent = usageSuccess + usageFailure === usageTotal;
+  } else if (usageTotal !== null && usageFailure !== null && usageFailure > usageTotal) {
+    isUsageConsistent = false;
+  }
+
+  if (!isUsageConsistent && details.length > 0) {
+    return {
+      totalRequests: derivedTotalRequests,
+      successCount: derivedSuccessCount,
+      failureCount: derivedFailureCount,
+      usedDerivedValues: true,
+    };
+  }
+
+  const totalRequests = usageTotal ?? derivedTotalRequests;
+  const failureCount = usageFailure ?? derivedFailureCount;
+  const successCount = usageSuccess ?? Math.max(totalRequests - failureCount, 0);
 
   return {
     totalRequests,
     successCount,
-    failureCount
+    failureCount,
+    usedDerivedValues: false,
   };
 };
 
@@ -447,7 +555,7 @@ const countRuntimeQualityWindows = (details: UsageDetail[]) => {
 
   return {
     abnormalWindowCount,
-    severeWindowCount
+    severeWindowCount,
   };
 };
 
@@ -464,7 +572,10 @@ const countAffectedEndpoints = (apiStats: ApiStats[]) =>
       return false;
     }
 
-    return getFailureRate(api.failureCount, api.totalRequests) > RUNTIME_QUALITY_AFFECTED_ENDPOINT_FAILURE_RATE;
+    return (
+      getFailureRate(api.failureCount, api.totalRequests) >
+      RUNTIME_QUALITY_AFFECTED_ENDPOINT_FAILURE_RATE
+    );
   }).length;
 
 const countAffectedModels = (modelStats: RuntimeModelStat[]) =>
@@ -473,7 +584,10 @@ const countAffectedModels = (modelStats: RuntimeModelStat[]) =>
       return false;
     }
 
-    return getFailureRate(model.failureCount, model.requests) > RUNTIME_QUALITY_AFFECTED_MODEL_FAILURE_RATE;
+    return (
+      getFailureRate(model.failureCount, model.requests) >
+      RUNTIME_QUALITY_AFFECTED_MODEL_FAILURE_RATE
+    );
   }).length;
 
 const pickPrimaryIncident = (
@@ -492,7 +606,7 @@ const pickPrimaryIncident = (
       name: row.displayName,
       failureCount: row.failure,
       failureRate: getFailureRate(row.failure, row.total),
-      totalRequests: row.total
+      totalRequests: row.total,
     }))
     .sort(comparePrimaryIncidents)[0];
 
@@ -504,14 +618,15 @@ const pickPrimaryIncident = (
     .filter(
       (api) =>
         api.totalRequests >= RUNTIME_QUALITY_AFFECTED_ENDPOINT_MIN_REQUESTS &&
-        getFailureRate(api.failureCount, api.totalRequests) > RUNTIME_QUALITY_AFFECTED_ENDPOINT_FAILURE_RATE
+        getFailureRate(api.failureCount, api.totalRequests) >
+          RUNTIME_QUALITY_AFFECTED_ENDPOINT_FAILURE_RATE
     )
     .map<RuntimeQualityPrimaryIncident>((api) => ({
       type: 'endpoint',
       name: api.endpoint,
       failureCount: api.failureCount,
       failureRate: getFailureRate(api.failureCount, api.totalRequests),
-      totalRequests: api.totalRequests
+      totalRequests: api.totalRequests,
     }))
     .sort(comparePrimaryIncidents)[0];
 
@@ -525,14 +640,17 @@ const pickPrimaryIncident = (
         return false;
       }
 
-      return getFailureRate(model.failureCount, model.requests) > RUNTIME_QUALITY_AFFECTED_MODEL_FAILURE_RATE;
+      return (
+        getFailureRate(model.failureCount, model.requests) >
+        RUNTIME_QUALITY_AFFECTED_MODEL_FAILURE_RATE
+      );
     })
     .map<RuntimeQualityPrimaryIncident>((model) => ({
       type: 'model',
       name: model.model,
       failureCount: model.failureCount,
       failureRate: getFailureRate(model.failureCount, model.requests),
-      totalRequests: model.requests
+      totalRequests: model.requests,
     }))
     .sort(comparePrimaryIncidents)[0];
 
@@ -546,7 +664,8 @@ const resolveRuntimeQualityStatus = ({
   severeWindowCount,
   affectedCredentialCount,
   affectedEndpointCount,
-  affectedModelCount
+  affectedModelCount,
+  windowsInsufficient,
 }: Pick<
   RuntimeQualitySummary,
   | 'hasData'
@@ -556,9 +675,19 @@ const resolveRuntimeQualityStatus = ({
   | 'affectedCredentialCount'
   | 'affectedEndpointCount'
   | 'affectedModelCount'
->): RuntimeQualityStatus => {
+> & { windowsInsufficient: boolean }): RuntimeQualityStatus => {
   if (!hasData) {
     return 'empty';
+  }
+
+  const hasRiskFactors =
+    abnormalWindowCount > 0 ||
+    affectedCredentialCount > 0 ||
+    affectedEndpointCount > 0 ||
+    affectedModelCount > 0;
+
+  if (windowsInsufficient && !hasRiskFactors && overallSuccessRate >= RUNTIME_QUALITY_CRITICAL_SUCCESS_RATE) {
+    return 'insufficient';
   }
 
   if (overallSuccessRate < RUNTIME_QUALITY_CRITICAL_SUCCESS_RATE || severeWindowCount > 0) {
@@ -587,7 +716,7 @@ export function createAuthFileMap(files: AuthFileItem[]): Map<string, Credential
 
     map.set(key, {
       name: file.name || key,
-      type: (file.type || file.provider || '').toString()
+      type: (file.type || file.provider || '').toString(),
     });
   });
 
@@ -627,9 +756,10 @@ export function createTokenDistribution(details: UsageDetail[]): TokenDistributi
 
   details.forEach((detail) => {
     const tokens = detail.tokens;
+    const modelName = String(detail.__modelName ?? '').trim();
     input += typeof tokens?.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
     output += typeof tokens?.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
-    cached += getCachedTokens(tokens);
+    cached += getCachedTokens(tokens, modelName);
     reasoning +=
       typeof tokens?.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
   });
@@ -642,10 +772,10 @@ export function createUsageSummaryMetrics(
   modelPrices: Record<string, ModelPrice>,
   nowMs: number,
   windowMinutes: number = 30,
-  fallbackTotalTokens?: unknown
+  _fallbackTotalTokens?: unknown
 ): UsageSummaryMetrics {
   const empty: UsageSummaryMetrics = {
-    totalTokens: Math.max(0, toNumber(fallbackTotalTokens)),
+    totalTokens: 0,
     tokenBreakdown: { cachedTokens: 0, reasoningTokens: 0, inputTokens: 0, outputTokens: 0 },
     rateStats: {
       rpm: 0,
@@ -654,9 +784,11 @@ export function createUsageSummaryMetrics(
       requestCount: 0,
       tokenCount: 0,
       peakRpm: 0,
-      peakTpm: 0
+      peakTpm: 0,
+      avgRpm: 0,
+      avgTpm: 0,
     },
-    totalCost: 0
+    totalCost: 0,
   };
 
   if (!details.length) {
@@ -680,8 +812,9 @@ export function createUsageSummaryMetrics(
 
   details.forEach((detail) => {
     const tokens = detail.tokens;
+    const modelName = String(detail.__modelName ?? '').trim();
     const totalTokens = extractTotalTokens(detail);
-    const cached = getCachedTokens(tokens);
+    const cached = getCachedTokens(tokens, modelName);
 
     cachedTokens += cached;
     inputTokens += Math.max(toNumber(tokens?.input_tokens), 0);
@@ -722,18 +855,20 @@ export function createUsageSummaryMetrics(
   });
 
   return {
-    totalTokens: Math.max(overallTotalTokens, toNumber(fallbackTotalTokens)),
+    totalTokens: overallTotalTokens,
     tokenBreakdown: { cachedTokens, reasoningTokens, inputTokens, outputTokens },
     rateStats: {
-      rpm: requestCount / safeWindowMinutes,
-      tpm: tokenCount / safeWindowMinutes,
+      rpm: peakRpm,
+      tpm: peakTpm,
       windowMinutes: safeWindowMinutes,
       requestCount,
       tokenCount,
       peakRpm,
-      peakTpm
+      peakTpm,
+      avgRpm: requestCount / safeWindowMinutes,
+      avgTpm: tokenCount / safeWindowMinutes,
     },
-    totalCost
+    totalCost,
   };
 }
 
@@ -769,7 +904,7 @@ export function createModelEfficiencyRows(
         outputYield: overview.metrics.outputYield,
         failureWasteRate: overview.metrics.failureWasteRate,
         costYield: overview.metrics.costYield,
-        efficiencyScore: overview.efficiencyScore
+        efficiencyScore: overview.efficiencyScore,
       };
     })
     .sort((left, right) => {
@@ -803,28 +938,36 @@ export function createCredentialEfficiencyRows(
   >();
 
   details.forEach((detail) => {
-    const sourceInfo = resolveSourceDisplay(detail.source ?? '', detail.auth_index, sourceInfoMap, authFileMap);
+    const sourceInfo = resolveSourceDisplay(
+      detail.source ?? '',
+      detail.auth_index,
+      sourceInfoMap,
+      authFileMap
+    );
     const authIndex = normalizeAuthIndex(detail.auth_index);
     const sourceRaw = String(detail.source ?? '').trim() || null;
-    const key = authIndex ? `auth:${authIndex}` : `display:${sourceInfo.displayName}::${sourceInfo.type}`;
-    const current =
-      credentialAggregates.get(key) ?? {
-        key,
-        displayName: sourceInfo.displayName,
-        type: sourceInfo.type,
-        filterSource: sourceInfo.displayName,
-        filterSourceRaw: authIndex ? null : sourceRaw,
-        filterAuthIndex: authIndex,
-        aggregate: createEmptyEfficiencyAggregate()
-      };
+    const key = authIndex
+      ? `auth:${authIndex}`
+      : `display:${sourceInfo.displayName}::${sourceInfo.type}`;
+    const current = credentialAggregates.get(key) ?? {
+      key,
+      displayName: sourceInfo.displayName,
+      type: sourceInfo.type,
+      filterSource: sourceInfo.displayName,
+      filterSourceRaw: authIndex ? null : sourceRaw,
+      filterAuthIndex: authIndex,
+      aggregate: createEmptyEfficiencyAggregate(),
+    };
 
     credentialAggregates.set(key, {
       ...current,
       filterSourceRaw:
-        current.filterSourceRaw === null || sourceRaw === null || current.filterSourceRaw === sourceRaw
-          ? current.filterSourceRaw ?? sourceRaw
+        current.filterSourceRaw === null ||
+        sourceRaw === null ||
+        current.filterSourceRaw === sourceRaw
+          ? (current.filterSourceRaw ?? sourceRaw)
           : null,
-      aggregate: accumulateEfficiencyAggregate(current.aggregate, detail, modelPrices)
+      aggregate: accumulateEfficiencyAggregate(current.aggregate, detail, modelPrices),
     });
   });
 
@@ -842,13 +985,15 @@ export function createCredentialEfficiencyRows(
         success: row.aggregate.successCount,
         failure: row.aggregate.failureCount,
         successRate:
-          row.aggregate.requests > 0 ? (row.aggregate.successCount / row.aggregate.requests) * 100 : 100,
+          row.aggregate.requests > 0
+            ? (row.aggregate.successCount / row.aggregate.requests) * 100
+            : 100,
         totalTokens: row.aggregate.totalTokens,
         cacheReuseRate: overview.metrics.cacheReuseRate,
         outputYield: overview.metrics.outputYield,
         failureWasteRate: overview.metrics.failureWasteRate,
         costYield: overview.metrics.costYield,
-        efficiencyScore: overview.efficiencyScore
+        efficiencyScore: overview.efficiencyScore,
       };
     })
     .sort((left, right) => {
@@ -884,8 +1029,11 @@ export function createRequestEventRows(
       const inputTokens = Math.max(toNumber(detail.tokens?.input_tokens), 0);
       const outputTokens = Math.max(toNumber(detail.tokens?.output_tokens), 0);
       const reasoningTokens = Math.max(toNumber(detail.tokens?.reasoning_tokens), 0);
-      const cachedTokens = getCachedTokens(detail.tokens);
-      const totalTokens = Math.max(toNumber(detail.tokens?.total_tokens), extractTotalTokens(detail));
+      const cachedTokens = getCachedTokens(detail.tokens, model);
+      const totalTokens = Math.max(
+        toNumber(detail.tokens?.total_tokens),
+        extractTotalTokens(detail)
+      );
 
       return {
         id: `${timestampMs}-${model}-${sourceRaw || sourceInfo.displayName}-${authIndex}-${inputTokens}-${outputTokens}-${totalTokens}-${index}`,
@@ -902,7 +1050,7 @@ export function createRequestEventRows(
         outputTokens,
         reasoningTokens,
         cachedTokens,
-        totalTokens
+        totalTokens,
       };
     })
     .sort((a, b) => toSortableTimestampMs(b.timestampMs) - toSortableTimestampMs(a.timestampMs));
@@ -927,7 +1075,7 @@ export function createCredentialRows(
     claudeApiKeys = [],
     codexApiKeys = [],
     vertexApiKeys = [],
-    openaiCompatibility = []
+    openaiCompatibility = [],
   }: ProviderConfigs,
   authFileMap: Map<string, CredentialInfo>
 ): CredentialRow[] {
@@ -1015,7 +1163,7 @@ export function createCredentialRows(
       success,
       failure,
       total,
-      successRate: (success / total) * 100
+      successRate: (success / total) * 100,
     });
   };
 
@@ -1084,7 +1232,7 @@ export function createCredentialRows(
       success,
       failure,
       total,
-      successRate: (success / total) * 100
+      successRate: (success / total) * 100,
     });
   });
 
@@ -1101,7 +1249,7 @@ export function createCredentialRows(
         success: bucket.success,
         failure: bucket.failure,
         total,
-        successRate: total > 0 ? (bucket.success / total) * 100 : 100
+        successRate: total > 0 ? (bucket.success / total) * 100 : 100,
       }) - 1;
 
     const authIdx = sourceToAuthIndex.get(key);
@@ -1139,7 +1287,7 @@ export function createCredentialRows(
         success: bucket.success,
         failure: bucket.failure,
         total,
-        successRate: (bucket.success / total) * 100
+        successRate: (bucket.success / total) * 100,
       }) - 1;
 
     authIndexToRowIndex.set(authIdx, rowIndex);
@@ -1153,7 +1301,7 @@ export function createRuntimeQualitySummary({
   details,
   credentialRows,
   apiStats,
-  modelStats
+  modelStats,
 }: {
   usage: RuntimeUsageSummaryInput | null;
   details: UsageDetail[];
@@ -1161,10 +1309,33 @@ export function createRuntimeQualitySummary({
   apiStats: ApiStats[];
   modelStats: RuntimeModelStat[];
 }): RuntimeQualitySummary {
-  const { totalRequests, successCount, failureCount } = resolveRuntimeRequestSummary(usage, details);
+  const { totalRequests, successCount, failureCount, usedDerivedValues } = resolveRuntimeRequestSummary(
+    usage,
+    details
+  );
   const hasData = totalRequests > 0;
   const overallSuccessRate = hasData ? successCount / totalRequests : 0;
   const { abnormalWindowCount, severeWindowCount } = countRuntimeQualityWindows(details);
+  const windowsInsufficient = details.length < RUNTIME_QUALITY_MIN_WINDOW_REQUESTS;
+
+  const usageTotalRequests =
+    typeof usage?.total_requests === 'number' ? usage.total_requests : null;
+  const usageSuccessCount =
+    typeof usage?.success_count === 'number' ? usage.success_count : null;
+  const usageFailureCount =
+    typeof usage?.failure_count === 'number' ? usage.failure_count : null;
+
+  let dataConsistent = true;
+  if (usedDerivedValues) {
+    dataConsistent = false;
+  } else if (
+    usageTotalRequests !== null &&
+    usageSuccessCount !== null &&
+    usageFailureCount !== null
+  ) {
+    dataConsistent = usageSuccessCount + usageFailureCount === usageTotalRequests;
+  }
+
   const affectedCredentialCount = countAffectedCredentials(credentialRows);
   const affectedEndpointCount = countAffectedEndpoints(apiStats);
   const affectedModelCount = countAffectedModels(modelStats);
@@ -1179,17 +1350,21 @@ export function createRuntimeQualitySummary({
       severeWindowCount,
       affectedCredentialCount,
       affectedEndpointCount,
-      affectedModelCount
+      affectedModelCount,
+      windowsInsufficient,
     }),
     overallSuccessRate,
     totalRequests,
+    successCount,
     failureCount,
+    windowsInsufficient,
+    dataConsistent,
     abnormalWindowCount,
     severeWindowCount,
     affectedCredentialCount,
     affectedEndpointCount,
     affectedModelCount,
-    primaryIncident
+    primaryIncident,
   };
 }
 

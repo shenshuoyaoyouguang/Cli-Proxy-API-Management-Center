@@ -64,7 +64,13 @@ export {
 } from '@/atoms/usage/bucket';
 
 // === 成本相关重导出 ===
-export { calculateCost, calculateTotalCost } from '@/atoms/usage/cost';
+export {
+  calculateCost,
+  calculateTotalCost,
+  createKahanAccumulator,
+  kahanAdd,
+  type KahanAccumulator,
+} from '@/atoms/usage/cost';
 
 // === 分子层重导出 ===
 export {

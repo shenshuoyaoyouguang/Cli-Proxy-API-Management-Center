@@ -124,3 +124,13 @@
 .primaryIncidentValue {
   font-size: 16px;
 }
+
+.dataInconsistencyBanner {
+  padding: 10px 14px;
+  border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.4));
+  border-radius: $radius-md;
+  background: var(--warning-bg, #fef3c7);
+  color: var(--warning-text, #92400e);
+  font-size: 13px;
+  line-height: 1.5;
+}

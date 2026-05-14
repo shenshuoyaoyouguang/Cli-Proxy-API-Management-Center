@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCost } from './cost';
+import { calculateCost, calculateTotalCost, createKahanAccumulator, kahanAdd } from './cost';
 
 describe('calculateCost', () => {
   const modelPrices = {
@@ -137,5 +137,79 @@ describe('calculateCost', () => {
     const cachedCost = (30 / 1_000_000) * 0.5;
     const completionCost = (50 / 1_000_000) * 2;
     expect(cost).toBeCloseTo(promptCost + cachedCost + completionCost, 10);
+  });
+});
+
+describe('calculateTotalCost', () => {
+  const modelPrices = {
+    'gpt-test': {
+      prompt: 1,
+      completion: 1,
+      cache: 0.5,
+    },
+  };
+
+  it('returns 0 for empty details', () => {
+    expect(calculateTotalCost([], modelPrices)).toBe(0);
+  });
+
+  it('returns 0 when modelPrices is empty', () => {
+    const details = [
+      {
+        __modelName: 'gpt-test',
+        tokens: { input_tokens: 100, output_tokens: 0, cached_tokens: 0, reasoning_tokens: 0, total_tokens: 100 },
+      },
+    ];
+    expect(calculateTotalCost(details, {})).toBe(0);
+  });
+
+  it('accumulates cost for multiple details', () => {
+    const detail = {
+      __modelName: 'gpt-test',
+      tokens: { input_tokens: 100, output_tokens: 50, cached_tokens: 0, reasoning_tokens: 0, total_tokens: 150 },
+    };
+    const details = Array.from({ length: 5 }, () => detail);
+    const expected = calculateCost(detail, modelPrices) * 5;
+    expect(calculateTotalCost(details, modelPrices)).toBeCloseTo(expected, 12);
+  });
+
+  it('Kahan summation precision: 100000 tiny prompt costs have relative error < 1e-10', () => {
+    const modelPrices = {
+      'cheap-model': { prompt: 0.001, completion: 0, cache: 0 },
+    };
+    const count = 100000;
+    const promptTokens = 1;
+    const details = Array.from({ length: count }, () => ({
+      __modelName: 'cheap-model',
+      tokens: {
+        input_tokens: promptTokens,
+        output_tokens: 0,
+        cached_tokens: 0,
+        reasoning_tokens: 0,
+        total_tokens: promptTokens,
+      },
+    }));
+
+    const result = calculateTotalCost(details, modelPrices);
+
+    const unitPrice = 0.001;
+    const exact = (count * promptTokens / 1_000_000) * unitPrice;
+    const relativeError = Math.abs(result - exact) / exact;
+
+    expect(relativeError).toBeLessThan(1e-10);
+  });
+
+  it('Kahan accumulator helper works correctly', () => {
+    const acc = createKahanAccumulator();
+    kahanAdd(acc, 1);
+    for (let i = 0; i < 10000; i++) {
+      kahanAdd(acc, 1e-16);
+    }
+    let naive = 1;
+    for (let i = 0; i < 10000; i++) {
+      naive += 1e-16;
+    }
+    const exact = 1 + 10000 * 1e-16;
+    expect(Math.abs(acc.sum - exact)).toBeLessThan(Math.abs(naive - exact));
   });
 });

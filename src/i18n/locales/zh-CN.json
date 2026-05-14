@@ -948,8 +948,8 @@
     "total_tokens": "总Token数",
     "cached_tokens": "缓存 Tokens",
     "reasoning_tokens": "思考 Tokens",
-    "rpm_30m": "RPM",
-    "tpm_30m": "TPM",
+    "rpm_30m": "RPM (30分钟均值)",
+    "tpm_30m": "TPM (30分钟均值)",
     "rate_30m": "近30分钟速率",
     "model_name": "模型名称",
     "model_price_settings": "模型价格设置",
@@ -1049,6 +1049,7 @@
     "signal_low_cache_reuse": "缓存复用偏低",
     "signal_low_output_yield": "输出产出偏低",
     "signal_cost_not_enabled": "成本维度未启用",
+    "score_cost_disabled": "不含成本维度",
     "signal_low_cost_yield": "成本产出偏低",
     "drilldown_hint": "点击排行项可联动查看请求明细",
     "drilldown_active": "当前正在查看来自效率中心的联动结果",
@@ -1058,6 +1059,7 @@
     "cost_efficiency": "成本效益",
     "current": "当前",
     "peak": "峰值",
+    "avg": "均值",
     "total": "总计"
   },
   "health": {
@@ -1142,10 +1144,12 @@
     "status_warning": "预警",
     "status_critical": "异常",
     "status_empty": "暂无数据",
+    "status_insufficient": "数据不足",
     "summary_healthy": "当前时间范围内请求质量稳定，未发现显著异常对象。",
     "summary_warning": "请求质量出现波动，建议优先查看异常窗口与受影响对象。",
     "summary_critical": "当前请求质量存在明显异常，请尽快排查首要异常对象。",
     "summary_empty": "当前时间范围内暂无可用于分析的请求数据。",
+    "summary_insufficient": "当前请求数据量较少，不足以进行可靠的质量评估。",
     "incident_credential": "凭证",
     "incident_endpoint": "接口",
     "incident_model": "模型",
@@ -1159,7 +1163,8 @@
     "affected_credentials": "受影响凭证数",
     "affected_endpoints": "受影响接口数",
     "primary_incident": "首要异常对象",
-    "failure_rate": "失败率"
+    "failure_rate": "失败率",
+    "data_inconsistent": "数据可能存在不一致：用量聚合值与请求级记录不匹配。"
   },
   "service_health": {
     "title": "请求健康热力图",

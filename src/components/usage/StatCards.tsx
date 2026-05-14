@@ -3,10 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Line } from 'react-chartjs-2';
 
 const MemoizedLine = memo(Line);
-import {
-  IconDiamond,
-  IconSatellite,
-} from '@/components/ui/icons';
+import { IconDiamond, IconSatellite } from '@/components/ui/icons';
 import { TokenNumber } from '@/components/ui/SmartNumber';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { sparklineOptions } from '@/utils/usage/chartConfig';
@@ -202,7 +199,9 @@ export const StatCards = memo(function StatCards({
             </div>
             <span className={styles.statIconBadge}>{card.icon}</span>
           </div>
-          <div className={`${styles.statValue} ${card.size === 'small' ? styles.statValueSmall : ''}`}>
+          <div
+            className={`${styles.statValue} ${card.size === 'small' ? styles.statValueSmall : ''}`}
+          >
             {card.value}
           </div>
           {card.meta && <div className={styles.statMetaRow}>{card.meta}</div>}
@@ -223,7 +222,7 @@ export const StatCards = memo(function StatCards({
       <div className={styles.metricCardRow}>
         <RateMetricCard
           metricType="rpm"
-          currentValue={rateStats.rpm}
+          currentValue={rateStats.avgRpm}
           peakValue={rateStats.peakRpm}
           trend={rpmTrend}
           sparklineData={sparklines.rpm}
@@ -234,7 +233,7 @@ export const StatCards = memo(function StatCards({
         />
         <RateMetricCard
           metricType="tpm"
-          currentValue={rateStats.tpm}
+          currentValue={rateStats.avgTpm}
           peakValue={rateStats.peakTpm}
           trend={tpmTrend}
           sparklineData={sparklines.tpm}

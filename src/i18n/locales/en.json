@@ -948,8 +948,8 @@
     "total_tokens": "Total Tokens",
     "cached_tokens": "Cached Tokens",
     "reasoning_tokens": "Reasoning Tokens",
-    "rpm_30m": "RPM",
-    "tpm_30m": "TPM",
+    "rpm_30m": "RPM (30m avg)",
+    "tpm_30m": "TPM (30m avg)",
     "rate_30m": "Rate (last 30 min)",
     "model_name": "Model Name",
     "model_price_settings": "Model Pricing Settings",
@@ -1048,6 +1048,7 @@
     "signal_low_cache_reuse": "Low cache reuse",
     "signal_low_output_yield": "Low output yield",
     "signal_cost_not_enabled": "Cost metrics disabled",
+    "score_cost_disabled": "Excl. cost",
     "signal_low_cost_yield": "Low cost yield",
     "drilldown_hint": "Click a ranking row to view request details",
     "drilldown_active": "Showing drilldown results from the efficiency center",
@@ -1057,6 +1058,7 @@
     "cost_efficiency": "Cost Efficiency",
     "current": "Current",
     "peak": "Peak",
+    "avg": "Avg",
     "total": "Total"
   },
   "health": {

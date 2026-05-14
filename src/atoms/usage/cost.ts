@@ -4,6 +4,22 @@ import { normalizeUsageTokens } from '@/utils/usageTokenNormalizer';
 const TOKENS_PER_PRICE_UNIT = 1_000_000;
 const RPM_TPM_PER_PRICE_UNIT = 1_000;
 
+export interface KahanAccumulator {
+  sum: number;
+  c: number;
+}
+
+export function createKahanAccumulator(): KahanAccumulator {
+  return { sum: 0, c: 0 };
+}
+
+export function kahanAdd(acc: KahanAccumulator, value: number): void {
+  const y = value - acc.c;
+  const t = acc.sum + y;
+  acc.c = (t - acc.sum) - y;
+  acc.sum = t;
+}
+
 export function calculateCost(
   detail: Pick<UsageDetail, 'tokens' | '__modelName'> & { requestCount?: number },
   modelPrices: Record<string, ModelPrice>
@@ -51,5 +67,9 @@ export function calculateTotalCost(
   if (!details.length || !Object.keys(modelPrices).length) {
     return 0;
   }
-  return details.reduce((sum, detail) => sum + calculateCost(detail, modelPrices), 0);
+  const acc = createKahanAccumulator();
+  for (let i = 0; i < details.length; i++) {
+    kahanAdd(acc, calculateCost(details[i], modelPrices));
+  }
+  return acc.sum;
 }

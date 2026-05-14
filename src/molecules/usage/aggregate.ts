@@ -1,4 +1,10 @@
-import type { UsageDetail, KeyStats, KeyStatBucket, ApiStats, ModelPrice } from '@/atoms/usage/types';
+import type {
+  UsageDetail,
+  KeyStats,
+  KeyStatBucket,
+  ApiStats,
+  ModelPrice,
+} from '@/atoms/usage/types';
 import { isRecord, getApisRecord, normalizeAuthIndex } from '@/atoms/usage/guards';
 import { normalizeUsageSourceId, maskUsageSensitiveValue } from '@/atoms/usage/source';
 import {
@@ -6,7 +12,12 @@ import {
   hasUsageTokenEvidence,
   normalizeUsageDetailTokens,
 } from '@/atoms/usage/tokens';
-import { calculateCost } from '@/atoms/usage/cost';
+import {
+  calculateCost,
+  createKahanAccumulator,
+  kahanAdd,
+  type KahanAccumulator,
+} from '@/atoms/usage/cost';
 import { rehydrateUsageAggregatesFromDetails } from '@/utils/usageAggregation';
 
 export { rehydrateUsageAggregatesFromDetails } from '@/utils/usageAggregation';
@@ -23,8 +34,13 @@ const toFiniteNonNegativeNumber = (value: unknown): number => {
   return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
 };
 
+const safeAdd = (a: number, b: number): number => {
+  const result = a + b;
+  return result > Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : result;
+};
+
 const getDerivedDetailTokensTotal = (details: unknown[]): number =>
-  details.reduce<number>((sum, detail) => sum + getUsageDetailTotalTokenCount(detail), 0);
+  details.reduce<number>((sum, detail) => safeAdd(sum, getUsageDetailTotalTokenCount(detail)), 0);
 
 const getResolvedModelTokens = (modelData: Record<string, unknown>, details: unknown[]): number => {
   const explicitTokens = toFiniteNonNegativeNumber(modelData.total_tokens);
@@ -169,10 +185,7 @@ export function computeKeyStatsFromDetails(usageDetails: UsageDetail[]): KeyStat
   return { bySource, byAuthIndex };
 }
 
-export function mergeKeyStatsIncremental(
-  current: KeyStats,
-  newDetails: UsageDetail[]
-): KeyStats {
+export function mergeKeyStatsIncremental(current: KeyStats, newDetails: UsageDetail[]): KeyStats {
   const bySource: Record<string, KeyStatBucket> = {};
   const byAuthIndex: Record<string, KeyStatBucket> = {};
 
@@ -251,7 +264,9 @@ export function subtractKeyStatsForDetails(
     if (authIndexKey !== null) {
       if (!byAuthIndex[authIndexKey]) {
         if (import.meta.env.DEV) {
-          console.warn(`[subtractKeyStatsForDetails] Bucket not found for authIndex: ${authIndexKey}`);
+          console.warn(
+            `[subtractKeyStatsForDetails] Bucket not found for authIndex: ${authIndexKey}`
+          );
         }
       } else {
         if (isFailed) {
@@ -286,7 +301,7 @@ export function getApiStats(
     let derivedSuccessCount = 0;
     let derivedFailureCount = 0;
     let derivedTotalTokens = 0;
-    let totalCost = 0;
+    const totalCostAcc = createKahanAccumulator();
 
     const modelsData = isRecord(apiData.models) ? apiData.models : {};
     Object.entries(modelsData).forEach(([modelName, modelData]) => {
@@ -321,12 +336,15 @@ export function getApiStats(
           }
 
           if (price && detailRecord) {
-            totalCost += calculateCost(
-              {
-                tokens: normalizeUsageDetailTokens(detailRecord),
-                __modelName: modelName,
-              },
-              modelPrices
+            kahanAdd(
+              totalCostAcc,
+              calculateCost(
+                {
+                  tokens: normalizeUsageDetailTokens(detailRecord),
+                  __modelName: modelName,
+                },
+                modelPrices
+              )
             );
           }
         });
@@ -342,22 +360,16 @@ export function getApiStats(
       };
       derivedSuccessCount += successCount;
       derivedFailureCount += failureCount;
-      derivedTotalTokens += modelTokens;
+      derivedTotalTokens = safeAdd(derivedTotalTokens, modelTokens);
     });
 
     const hasModelEntries = Object.keys(models).length > 0;
-    const successCount = hasModelEntries
-      ? derivedSuccessCount
-      : Number(apiData.success_count) || 0;
-    const failureCount = hasModelEntries
-      ? derivedFailureCount
-      : Number(apiData.failure_count) || 0;
+    const successCount = hasModelEntries ? derivedSuccessCount : Number(apiData.success_count) || 0;
+    const failureCount = hasModelEntries ? derivedFailureCount : Number(apiData.failure_count) || 0;
     const totalRequests = hasModelEntries
       ? Object.values(models).reduce((sum, model) => sum + model.requests, 0)
       : Number(apiData.total_requests) || 0;
-    const totalTokens = hasModelEntries
-      ? derivedTotalTokens
-      : Number(apiData.total_tokens) || 0;
+    const totalTokens = hasModelEntries ? derivedTotalTokens : Number(apiData.total_tokens) || 0;
 
     result.push({
       endpoint: maskUsageSensitiveValue(endpoint),
@@ -365,7 +377,7 @@ export function getApiStats(
       successCount,
       failureCount,
       totalTokens,
-      totalCost,
+      totalCost: totalCostAcc.sum,
       models,
     });
   });
@@ -392,6 +404,7 @@ export function getModelStats(
     string,
     { requests: number; successCount: number; failureCount: number; tokens: number; cost: number }
   >();
+  const modelCostAccs = new Map<string, KahanAccumulator>();
 
   Object.values(apis).forEach((apiData) => {
     if (!isRecord(apiData)) return;
@@ -411,7 +424,7 @@ export function getModelStats(
       existing.requests += Number(modelData.total_requests) || 0;
 
       const details = Array.isArray(modelData.details) ? modelData.details : [];
-      existing.tokens += getResolvedModelTokens(modelData, details);
+      existing.tokens = safeAdd(existing.tokens, getResolvedModelTokens(modelData, details));
 
       const price = modelPrices[modelName];
 
@@ -428,6 +441,12 @@ export function getModelStats(
         hasExplicitCounts = false;
       }
 
+      let costAcc = modelCostAccs.get(modelName);
+      if (!costAcc) {
+        costAcc = createKahanAccumulator();
+        modelCostAccs.set(modelName, costAcc);
+      }
+
       if (details.length > 0 && (!hasExplicitCounts || price)) {
         details.forEach((detail) => {
           const detailRecord = isRecord(detail) ? detail : null;
@@ -440,16 +459,20 @@ export function getModelStats(
           }
 
           if (price && detailRecord) {
-            existing.cost += calculateCost(
-              {
-                tokens: normalizeUsageDetailTokens(detailRecord),
-                __modelName: modelName,
-              },
-              modelPrices
+            kahanAdd(
+              costAcc,
+              calculateCost(
+                {
+                  tokens: normalizeUsageDetailTokens(detailRecord),
+                  __modelName: modelName,
+                },
+                modelPrices
+              )
             );
           }
         });
       }
+      existing.cost = costAcc.sum;
       modelMap.set(modelName, existing);
     });
   });

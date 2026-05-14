@@ -59,7 +59,9 @@ const createMockAuthStorePartial = (
   managementKey,
 });
 
-const createMockBootstrapSnapshot = (overrides: Partial<BootstrapSnapshot> = {}): BootstrapSnapshot => ({
+const createMockBootstrapSnapshot = (
+  overrides: Partial<BootstrapSnapshot> = {}
+): BootstrapSnapshot => ({
   scopeKey: createScopeKey('http://localhost:3000', 'test-key'),
   usage: null,
   keyStats: createMockKeyStats(),
@@ -119,44 +121,59 @@ vi.mock('@/utils/usage', () => ({
     bySource: { 'k:test-key': { success: 1, failure: 0 } },
     byAuthIndex: { '0': { success: 1, failure: 0 } },
   })),
-  mergeKeyStatsIncremental: vi.fn((current: { bySource: Record<string, { success: number; failure: number }>; byAuthIndex: Record<string, { success: number; failure: number }> }, newDetails: UsageDetail[]) => {
-    const bySource: Record<string, { success: number; failure: number }> = {};
-    const byAuthIndex: Record<string, { success: number; failure: number }> = {};
-    Object.entries(current.bySource).forEach(([key, bucket]) => {
-      bySource[key] = { ...bucket };
-    });
-    Object.entries(current.byAuthIndex).forEach(([key, bucket]) => {
-      byAuthIndex[key] = { ...bucket };
-    });
-    newDetails.forEach((detail) => {
-      const source = detail.source;
-      const authIndexKey = detail.auth_index ?? null;
-      const isFailed = detail.failed === true;
-      if (source) {
-        if (!bySource[source]) {
-          bySource[source] = { success: 0, failure: 0 };
+  mergeKeyStatsIncremental: vi.fn(
+    (
+      current: {
+        bySource: Record<string, { success: number; failure: number }>;
+        byAuthIndex: Record<string, { success: number; failure: number }>;
+      },
+      newDetails: UsageDetail[]
+    ) => {
+      const bySource: Record<string, { success: number; failure: number }> = {};
+      const byAuthIndex: Record<string, { success: number; failure: number }> = {};
+      Object.entries(current.bySource).forEach(([key, bucket]) => {
+        bySource[key] = { ...bucket };
+      });
+      Object.entries(current.byAuthIndex).forEach(([key, bucket]) => {
+        byAuthIndex[key] = { ...bucket };
+      });
+      newDetails.forEach((detail) => {
+        const source = detail.source;
+        const authIndexKey = detail.auth_index ?? null;
+        const isFailed = detail.failed === true;
+        if (source) {
+          if (!bySource[source]) {
+            bySource[source] = { success: 0, failure: 0 };
+          }
+          bySource[source] = {
+            success: bySource[source].success + (isFailed ? 0 : 1),
+            failure: bySource[source].failure + (isFailed ? 1 : 0),
+          };
         }
-        bySource[source] = {
-          success: bySource[source].success + (isFailed ? 0 : 1),
-          failure: bySource[source].failure + (isFailed ? 1 : 0),
-        };
-      }
-      if (authIndexKey !== null) {
-        if (!byAuthIndex[authIndexKey]) {
-          byAuthIndex[authIndexKey] = { success: 0, failure: 0 };
+        if (authIndexKey !== null) {
+          if (!byAuthIndex[authIndexKey]) {
+            byAuthIndex[authIndexKey] = { success: 0, failure: 0 };
+          }
+          byAuthIndex[authIndexKey] = {
+            success: byAuthIndex[authIndexKey].success + (isFailed ? 0 : 1),
+            failure: byAuthIndex[authIndexKey].failure + (isFailed ? 1 : 0),
+          };
         }
-        byAuthIndex[authIndexKey] = {
-          success: byAuthIndex[authIndexKey].success + (isFailed ? 0 : 1),
-          failure: byAuthIndex[authIndexKey].failure + (isFailed ? 1 : 0),
-        };
-      }
-    });
-    return { bySource, byAuthIndex };
-  }),
-  subtractKeyStatsForDetails: vi.fn((current: { bySource: Record<string, { success: number; failure: number }>; byAuthIndex: Record<string, { success: number; failure: number }> }) => {
-    return { ...current };
-  }),
-  getDetailTimestampMs: vi.fn((detail: UsageDetail) => detail.__timestampMs ?? Date.parse(detail.timestamp)),
+      });
+      return { bySource, byAuthIndex };
+    }
+  ),
+  subtractKeyStatsForDetails: vi.fn(
+    (current: {
+      bySource: Record<string, { success: number; failure: number }>;
+      byAuthIndex: Record<string, { success: number; failure: number }>;
+    }) => {
+      return { ...current };
+    }
+  ),
+  getDetailTimestampMs: vi.fn(
+    (detail: UsageDetail) => detail.__timestampMs ?? Date.parse(detail.timestamp)
+  ),
   normalizeAuthIndex: vi.fn((value: unknown) => {
     if (value === null || value === undefined || value === '') return null;
     return String(value);
@@ -170,7 +187,12 @@ vi.mock('@/i18n', () => ({
   },
 }));
 
-import { useUsageStatsStore, cancelExpireFailedCleanup } from './useUsageStatsStore';
+import {
+  useUsageStatsStore,
+  cancelExpireFailedCleanup,
+  flushDeferredPersistQueue,
+} from './useUsageStatsStore';
+import { logger } from '@/utils/logger';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
 import { collectUsageDetails, mergeKeyStatsIncremental } from '@/utils/usage';
@@ -313,13 +335,10 @@ describe('useUsageStatsStore', () => {
       vi.stubGlobal(
         'fetch',
         vi.fn().mockResolvedValue(
-          new Response(
-            `event: usage:full\ndata: ${JSON.stringify(fullSnapshotPayload)}\n\n`,
-            {
-              status: 200,
-              headers: { 'Content-Type': 'text/event-stream' },
-            }
-          )
+          new Response(`event: usage:full\ndata: ${JSON.stringify(fullSnapshotPayload)}\n\n`, {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          })
         )
       );
 
@@ -507,12 +526,16 @@ describe('useUsageStatsStore', () => {
 
       const { useAuthStore } = await import('./useAuthStore');
       vi.mocked(useAuthStore.getState).mockReturnValue(
-        createMockAuthStorePartial('http://localhost:3000', 'test-key') as ReturnType<typeof useAuthStore.getState>
+        createMockAuthStorePartial('http://localhost:3000', 'test-key') as ReturnType<
+          typeof useAuthStore.getState
+        >
       );
 
       await useUsageStatsStore.getState().loadUsageStats();
 
-      expect(useUsageStatsStore.getState().scopeKey).toBe(createScopeKey('http://localhost:3000', 'test-key'));
+      expect(useUsageStatsStore.getState().scopeKey).toBe(
+        createScopeKey('http://localhost:3000', 'test-key')
+      );
     });
 
     it('accepts an empty fresh usage response instead of replaying bootstrap data', async () => {
@@ -535,7 +558,13 @@ describe('useUsageStatsStore', () => {
             createMockUsageDetail({
               timestamp: '2025-01-01T00:00:00Z',
               source: 'previous',
-              tokens: { input_tokens: 1, output_tokens: 1, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 2 },
+              tokens: {
+                input_tokens: 1,
+                output_tokens: 1,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                total_tokens: 2,
+              },
             }),
           ],
           lastRefreshedAt: Date.now() - 60_000,
@@ -556,14 +585,26 @@ describe('useUsageStatsStore', () => {
         timestamp: `2025-01-01T00:${String(index % 60).padStart(2, '0')}:00Z`,
         source: 'persisted',
         auth_index: '0',
-        tokens: { input_tokens: 1, output_tokens: 1, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 2 },
+        tokens: {
+          input_tokens: 1,
+          output_tokens: 1,
+          reasoning_tokens: 0,
+          cached_tokens: 0,
+          total_tokens: 2,
+        },
         failed: false,
       }));
       const autoPersistDetails: UsageDetail[] = Array.from({ length: 5_000 }, (_, index) => ({
         timestamp: `2025-01-02T00:${String(index % 60).padStart(2, '0')}:00Z`,
         source: 'auto',
         auth_index: '0',
-        tokens: { input_tokens: 1, output_tokens: 1, reasoning_tokens: 0, cached_tokens: 0, total_tokens: 2 },
+        tokens: {
+          input_tokens: 1,
+          output_tokens: 1,
+          reasoning_tokens: 0,
+          cached_tokens: 0,
+          total_tokens: 2,
+        },
         failed: false,
       }));
 
@@ -637,7 +678,9 @@ describe('useUsageStatsStore', () => {
       vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue(
         createMockBootstrapSnapshot()
       );
-      vi.mocked(usageApi.getUsage).mockResolvedValue(createMockUsageResponse({ apis: { live: {} } }));
+      vi.mocked(usageApi.getUsage).mockResolvedValue(
+        createMockUsageResponse({ apis: { live: {} } })
+      );
 
       await useUsageStatsStore.getState().loadUsageStats();
 
@@ -662,7 +705,9 @@ describe('useUsageStatsStore', () => {
       }));
 
       vi.mocked(collectUsageDetails).mockReturnValueOnce(largeUsageDetails);
-      vi.mocked(usageApi.getUsage).mockResolvedValue(createMockUsageResponse({ apis: { live: {} } }));
+      vi.mocked(usageApi.getUsage).mockResolvedValue(
+        createMockUsageResponse({ apis: { live: {} } })
+      );
 
       await useUsageStatsStore.getState().loadUsageStats({ force: true });
 
@@ -865,6 +910,8 @@ describe('useUsageStatsStore', () => {
         ],
       });
 
+      flushDeferredPersistQueue();
+
       const state = useUsageStatsStore.getState();
       const persistedRaw = localStorage.getItem(
         `cli-proxy-usage-stats-cache-v1:${encodeURIComponent(scopeKey)}`
@@ -986,7 +1033,9 @@ describe('useUsageStatsStore', () => {
 
       expect(nextApis).not.toBe(originalApis);
       expect(nextEndpointBucket).not.toBe(originalEndpointBucket);
-      expect((originalEndpointBucket as { models: Record<string, unknown> }).models).not.toHaveProperty('gpt-4o-mini');
+      expect(
+        (originalEndpointBucket as { models: Record<string, unknown> }).models
+      ).not.toHaveProperty('gpt-4o-mini');
       expect(nextModels['gpt-4o-mini']).toMatchObject({
         total_requests: 1,
         success_count: 1,
@@ -1220,6 +1269,103 @@ describe('useUsageStatsStore', () => {
     it('cancelExpireFailedCleanup is safe to call when no timer is active', () => {
       expect(() => cancelExpireFailedCleanup()).not.toThrow();
       expect(() => cancelExpireFailedCleanup()).not.toThrow();
+    });
+  });
+
+  describe('addUsageAggregate overflow protection', () => {
+    it('caps total_tokens at MAX_SAFE_INTEGER when accumulation exceeds the safe integer limit', () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+      const nearMax = Number.MAX_SAFE_INTEGER - 100;
+
+      useUsageStatsStore.setState({
+        usage: {
+          total_requests: 1,
+          success_count: 1,
+          failure_count: 0,
+          total_tokens: nearMax,
+          prompt_tokens: nearMax,
+          completion_tokens: 50,
+          reasoning_tokens: 10,
+          cached_tokens: 0,
+          apis: {},
+        },
+        keyStats: createMockKeyStats(),
+        usageDetails: [],
+        loading: false,
+        error: null,
+        lastRefreshedAt: Date.now(),
+        scopeKey,
+        lastSeq: 10,
+      });
+
+      useUsageStatsStore.getState().applyDelta({
+        seq: 11,
+        timestamp: Date.now(),
+        requestCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        tokenDelta: {
+          promptTokens: 200,
+          completionTokens: 0,
+          totalTokens: 200,
+        },
+        details: [],
+      });
+
+      const state = useUsageStatsStore.getState();
+      expect(state.usage?.total_tokens).toBe(Number.MAX_SAFE_INTEGER);
+      expect(state.usage?.prompt_tokens).toBe(Number.MAX_SAFE_INTEGER);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[addUsageAggregate] 累加结果超过安全整数上限，已锁定:',
+        expect.any(Object)
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('accumulates normally when result is below MAX_SAFE_INTEGER', () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+
+      useUsageStatsStore.setState({
+        usage: {
+          total_requests: 1,
+          success_count: 1,
+          failure_count: 0,
+          total_tokens: 500,
+          prompt_tokens: 300,
+          completion_tokens: 200,
+          reasoning_tokens: 10,
+          cached_tokens: 0,
+          apis: {},
+        },
+        keyStats: createMockKeyStats(),
+        usageDetails: [],
+        loading: false,
+        error: null,
+        lastRefreshedAt: Date.now(),
+        scopeKey,
+        lastSeq: 10,
+      });
+
+      useUsageStatsStore.getState().applyDelta({
+        seq: 11,
+        timestamp: Date.now(),
+        requestCount: 1,
+        successCount: 1,
+        failureCount: 0,
+        tokenDelta: {
+          promptTokens: 100,
+          completionTokens: 50,
+          totalTokens: 150,
+        },
+        details: [],
+      });
+
+      const state = useUsageStatsStore.getState();
+      expect(state.usage?.total_tokens).toBe(650);
+      expect(state.usage?.prompt_tokens).toBe(400);
+      expect(state.usage?.completion_tokens).toBe(250);
     });
   });
 });

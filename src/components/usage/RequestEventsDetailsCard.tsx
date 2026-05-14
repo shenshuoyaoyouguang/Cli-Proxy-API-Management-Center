@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo, useCallback } from 'react';
+import { List } from 'react-window';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -9,7 +10,12 @@ import type { RequestEventRow } from './hooks/usageAnalyticsSnapshot';
 import styles from '@/pages/UsagePage.module.scss';
 
 const ALL_FILTER = '__all__';
-const REQUEST_EVENTS_PAGE_SIZE = 100;
+const REQUEST_EVENTS_PAGE_SIZE = 50;
+const ROW_HEIGHT = 36;
+const TABLE_HEADER_HEIGHT = 36;
+const TABLE_MAX_HEIGHT = 460;
+const TABLE_GRID_TEMPLATE =
+  'minmax(160px, 1.5fr) minmax(120px, 1fr) minmax(100px, 0.8fr) 80px 70px 80px 80px 90px 80px 90px';
 
 export interface RequestEventsDetailsCardProps {
   rows: RequestEventRow[];
@@ -41,6 +47,70 @@ const appendActiveOption = (
   return [...options, { value, label: value }];
 };
 
+// 单次遍历 500k rows：同时提取三个 filter 选项集合，避免 3x 重复 map
+const extractFilterOptionSets = (rows: readonly RequestEventRow[]) => {
+  const models = new Set<string>();
+  const sources = new Set<string>();
+  const authIndices = new Set<string>();
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    models.add(row.model);
+    sources.add(row.source);
+    authIndices.add(row.authIndex);
+  }
+  return { models, sources, authIndices };
+};
+
+// react-window v2 List children 接收 {index, style}，通过闭包访问 renderedRows
+const VirtualRow = memo(
+  ({
+    index,
+    style,
+    rows,
+  }: {
+    index: number;
+    style: React.CSSProperties;
+    rows: RequestEventRow[];
+  }) => {
+    const row = rows[index];
+    return (
+      <div
+        role="row"
+        className={styles.requestEventsVirtualRow}
+        style={{ ...style, display: 'grid', gridTemplateColumns: TABLE_GRID_TEMPLATE }}
+      >
+        <div title={row.timestamp} className={styles.requestEventsTimestamp}>
+          {row.timestampLabel}
+        </div>
+        <div className={styles.modelCell}>{row.model}</div>
+        <div className={styles.requestEventsSourceCell} title={row.source}>
+          <span>{row.source}</span>
+          {row.sourceType && <span className={styles.credentialType}>{row.sourceType}</span>}
+        </div>
+        <div className={styles.requestEventsAuthIndex} title={row.authIndex}>
+          {row.authIndex}
+        </div>
+        <div>
+          <span
+            className={
+              row.failed ? styles.requestEventsResultFailed : styles.requestEventsResultSuccess
+            }
+          >
+            {row.failed ? '✕' : '✓'}
+          </span>
+        </div>
+        <div>{row.inputTokens.toLocaleString()}</div>
+        <div>{row.outputTokens.toLocaleString()}</div>
+        <div>{row.reasoningTokens.toLocaleString()}</div>
+        <div>{row.cachedTokens.toLocaleString()}</div>
+        <div>{row.totalTokens.toLocaleString()}</div>
+      </div>
+    );
+  },
+  (prev, next) => prev.rows[next.index] === next.rows[next.index]
+);
+VirtualRow.displayName = 'VirtualRow';
+
 export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   rows,
   loading,
@@ -61,26 +131,39 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   const [page, setPage] = useState(1);
   const [newDataPulse, setNewDataPulse] = useState(false);
   const prevRowsLengthRef = useRef(rows.length);
+  const listRef = useRef<List>(null);
 
-  const handleModelFilterChange = (value: string) => {
+  // 页面切换时重置虚拟列表滚动位置
+  useEffect(() => {
+    listRef.current?.scrollTo(0);
+  }, [page]);
+
+  const handleModelFilterChange = useCallback((value: string) => {
     setModelFilter(value);
     setPage(1);
-  };
+  }, []);
 
-  const handleSourceFilterChange = (value: string) => {
+  const handleSourceFilterChange = useCallback((value: string) => {
     setSourceFilter(value);
+    setAuthIndexFilter(ALL_FILTER);
     setPage(1);
-  };
+  }, []);
 
-  const handleResultFilterChange = (value: string) => {
+  const handleResultFilterChange = useCallback((value: string) => {
     setResultFilter(value);
     setPage(1);
-  };
+  }, []);
 
-  const handleAuthIndexFilterChange = (value: string) => {
+  const handleAuthIndexFilterChange = useCallback((value: string) => {
     setAuthIndexFilter(value);
     setPage(1);
-  };
+  }, []);
+
+  // 单次遍历提取选项集合（替代 3 次独立 map + Set）
+  const { modelSet, sourceSet, authIndexSet } = useMemo(() => {
+    const { models, sources, authIndices } = extractFilterOptionSets(rows);
+    return { modelSet: models, sourceSet: sources, authIndexSet: authIndices };
+  }, [rows]);
 
   const activeModelFilter = externalModelFilter ?? modelFilter;
   const activeSourceFilter = externalSourceFilter ?? sourceFilter;
@@ -100,14 +183,11 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
       appendActiveOption(
         [
           { value: ALL_FILTER, label: t('usage_stats.filter_all') },
-          ...Array.from(new Set(rows.map((row) => row.model))).map((model) => ({
-            value: model,
-            label: model,
-          })),
+          ...Array.from(modelSet, (model) => ({ value: model, label: model })),
         ],
         activeModelFilter
       ),
-    [activeModelFilter, rows, t]
+    [activeModelFilter, modelSet, t]
   );
 
   const sourceOptions = useMemo(
@@ -115,14 +195,11 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
       appendActiveOption(
         [
           { value: ALL_FILTER, label: t('usage_stats.filter_all') },
-          ...Array.from(new Set(rows.map((row) => row.source))).map((source) => ({
-            value: source,
-            label: source,
-          })),
+          ...Array.from(sourceSet, (source) => ({ value: source, label: source })),
         ],
         activeSourceFilter
       ),
-    [activeSourceFilter, rows, t]
+    [activeSourceFilter, sourceSet, t]
   );
 
   const authIndexOptions = useMemo(
@@ -130,14 +207,14 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
       appendActiveOption(
         [
           { value: ALL_FILTER, label: t('usage_stats.filter_all') },
-          ...Array.from(new Set(rows.map((row) => row.authIndex))).map((authIndex) => ({
+          ...Array.from(authIndexSet, (authIndex) => ({
             value: authIndex,
             label: authIndex,
           })),
         ],
         activeAuthIndexFilter
       ),
-    [activeAuthIndexFilter, rows, t]
+    [activeAuthIndexFilter, authIndexSet, t]
   );
 
   const modelOptionSet = useMemo(
@@ -246,6 +323,11 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     return filteredRows.slice(start, start + REQUEST_EVENTS_PAGE_SIZE);
   }, [filteredRows, page, totalPages]);
 
+  const virtualListHeight = Math.min(
+    renderedRows.length * ROW_HEIGHT,
+    TABLE_MAX_HEIGHT - TABLE_HEADER_HEIGHT
+  );
+
   const hasActiveFilters =
     effectiveModelFilter !== ALL_FILTER ||
     effectiveSourceFilter !== ALL_FILTER ||
@@ -352,7 +434,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     const fileTime = new Date().toISOString().replace(/[:.]/g, '-');
     downloadBlob({
       filename: `usage-events-${fileTime}.json`,
-      blob: new Blob([content], { type: 'application/json;charset=utf-8' }),
+      blob: new Blob([content], { type: 'application/json' }),
     });
   };
 
@@ -520,57 +602,37 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
           )}
 
           <div className={styles.requestEventsTableWrapper}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>{t('usage_stats.request_events_timestamp')}</th>
-                  <th>{t('usage_stats.model_name')}</th>
-                  <th>{t('usage_stats.request_events_source')}</th>
-                  <th>{t('usage_stats.request_events_auth_index')}</th>
-                  <th>{t('usage_stats.request_events_result')}</th>
-                  <th>{t('usage_stats.input_tokens')}</th>
-                  <th>{t('usage_stats.output_tokens')}</th>
-                  <th>{t('usage_stats.reasoning_tokens')}</th>
-                  <th>{t('usage_stats.cached_tokens')}</th>
-                  <th>{t('usage_stats.total_tokens')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {renderedRows.map((row) => (
-                  <tr key={row.id}>
-                    <td title={row.timestamp} className={styles.requestEventsTimestamp}>
-                      {row.timestampLabel}
-                    </td>
-                    <td className={styles.modelCell}>{row.model}</td>
-                    <td className={styles.requestEventsSourceCell} title={row.source}>
-                      <span>{row.source}</span>
-                      {row.sourceType && (
-                        <span className={styles.credentialType}>{row.sourceType}</span>
-                      )}
-                    </td>
-                    <td className={styles.requestEventsAuthIndex} title={row.authIndex}>
-                      {row.authIndex}
-                    </td>
-                    <td>
-                      <span
-                        className={
-                          row.failed
-                            ? styles.requestEventsResultFailed
-                            : styles.requestEventsResultSuccess
-                        }
-                      >
-                        {row.failed ? t('stats.failure') : t('stats.success')}
-                      </span>
-                    </td>
-                    <td>{row.inputTokens.toLocaleString()}</td>
-                    <td>{row.outputTokens.toLocaleString()}</td>
-                    <td>{row.reasoningTokens.toLocaleString()}</td>
-                    <td>{row.cachedTokens.toLocaleString()}</td>
-                    <td>{row.totalTokens.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div
+              role="table"
+              className={styles.requestEventsTableGrid}
+              style={{ gridTemplateColumns: TABLE_GRID_TEMPLATE }}
+            >
+              <div role="row" className={styles.requestEventsTableHeaderRow}>
+                <div role="columnheader">{t('usage_stats.request_events_timestamp')}</div>
+                <div role="columnheader">{t('usage_stats.model_name')}</div>
+                <div role="columnheader">{t('usage_stats.request_events_source')}</div>
+                <div role="columnheader">{t('usage_stats.request_events_auth_index')}</div>
+                <div role="columnheader">{t('usage_stats.request_events_result')}</div>
+                <div role="columnheader">{t('usage_stats.input_tokens')}</div>
+                <div role="columnheader">{t('usage_stats.output_tokens')}</div>
+                <div role="columnheader">{t('usage_stats.reasoning_tokens')}</div>
+                <div role="columnheader">{t('usage_stats.cached_tokens')}</div>
+                <div role="columnheader">{t('usage_stats.total_tokens')}</div>
+              </div>
+              <div role="rowgroup">
+                <List
+                  ref={listRef}
+                  rowCount={renderedRows.length}
+                  rowHeight={ROW_HEIGHT}
+                  listStyle={{ height: virtualListHeight }}
+                  rowProps={{}}
+                >
+                  {({ index, style }: { index: number; style: React.CSSProperties }) => (
+                    <VirtualRow index={index} style={style} rows={renderedRows} />
+                  )}
+                </List>
+              </div>
+            </div>
           </div>
         </>
       )}

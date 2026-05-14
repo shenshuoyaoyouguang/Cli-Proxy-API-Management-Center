@@ -1000,8 +1000,8 @@
     "total_tokens": "總 Token 數",
     "cached_tokens": "快取 Tokens",
     "reasoning_tokens": "推理 Tokens",
-    "rpm_30m": "RPM",
-    "tpm_30m": "TPM",
+    "rpm_30m": "RPM (30分鐘均值)",
+    "tpm_30m": "TPM (30分鐘均值)",
     "rate_30m": "近 30 分鐘速率",
     "model_name": "模型名稱",
     "model_price_settings": "模型定價設定",
@@ -1097,7 +1097,9 @@
     "sse_realtime": "即時",
     "sse_polling": "輪詢",
     "sse_connecting": "連線中",
-    "sse_disconnected": "未連線"
+    "sse_disconnected": "未連線",
+    "peak": "峰值",
+    "avg": "均值"
   },
   "stats": {
     "success": "成功",

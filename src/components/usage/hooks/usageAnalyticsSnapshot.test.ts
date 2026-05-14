@@ -89,7 +89,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
     expect(rows[1].source).toBe('Auth File 7');
   });
 
-  it('keeps invalid request-event timestamps out of epoch 0 and still resolves cache_tokens aliases', () => {
+  it('keeps invalid request-event timestamps out of epoch 0 and resolves cache_tokens for Anthropic models', () => {
     const rows = createRequestEventRows(
       [
         {
@@ -105,7 +105,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
             cache_tokens: 7,
             total_tokens: 13
           },
-          __modelName: 'model-b',
+          __modelName: 'claude-3-sonnet',
           __timestampMs: Number.NaN
         },
         createDetail({ minutesAgo: 5, __modelName: 'model-a' })
@@ -116,7 +116,7 @@ describe('usageAnalyticsSnapshot helpers', () => {
     );
 
     expect(rows[0].model).toBe('model-a');
-    expect(rows[1].model).toBe('model-b');
+    expect(rows[1].model).toBe('claude-3-sonnet');
     expect(Number.isNaN(rows[1].timestampMs)).toBe(true);
     expect(rows[1].timestampLabel).toBe('not-a-timestamp');
     expect(rows[1].cachedTokens).toBe(7);
@@ -214,8 +214,10 @@ describe('usageAnalyticsSnapshot helpers', () => {
     expect(summary.rateStats.tokenCount).toBe(49);
     expect(summary.rateStats.peakRpm).toBe(2);
     expect(summary.rateStats.peakTpm).toBe(49);
-    expect(summary.rateStats.rpm).toBeCloseTo(2 / 30, 5);
-    expect(summary.rateStats.tpm).toBeCloseTo(49 / 30, 5);
+    expect(summary.rateStats.rpm).toBe(2);
+    expect(summary.rateStats.tpm).toBe(49);
+    expect(summary.rateStats.avgRpm).toBeCloseTo(2 / 30, 5);
+    expect(summary.rateStats.avgTpm).toBeCloseTo(49 / 30, 5);
     expect(summary.totalCost).toBeGreaterThan(0);
   });
 
@@ -261,16 +263,18 @@ describe('usageAnalyticsSnapshot helpers', () => {
         requestCount: 0,
         tokenCount: 0,
         peakRpm: 0,
-        peakTpm: 0
+        peakTpm: 0,
+        avgRpm: 0,
+        avgTpm: 0
       },
       totalCost: 0
     });
   });
 
-  it('falls back to aggregate total tokens when no details are available', () => {
+  it('returns zero total tokens when no details are available (no fallback from usage aggregate)', () => {
     const summary = createUsageSummaryMetrics([], {}, baseNow, 30, 150);
 
-    expect(summary.totalTokens).toBe(150);
+    expect(summary.totalTokens).toBe(0);
     expect(summary.rateStats.tokenCount).toBe(0);
   });
 
@@ -306,6 +310,49 @@ describe('usageAnalyticsSnapshot helpers', () => {
     expect(rows[0].model).toBe('model-a');
     expect(rows[0].costYield).toBeNull();
     expect(rows[1].efficiencyScore).toBeGreaterThan(rows[0].efficiencyScore);
+  });
+
+  it('reports costEnabled=false and gives neutral cost score when modelPrices is empty', () => {
+    const overview = createEfficiencyOverview(
+      [
+        createDetail({ minutesAgo: 5, __modelName: 'model-a', tokens: { input_tokens: 20, output_tokens: 10, cached_tokens: 10, reasoning_tokens: 0, total_tokens: 40 } }),
+      ],
+      {}
+    );
+
+    expect(overview.costEnabled).toBe(false);
+    expect(overview.metrics.costYield).toBeNull();
+    expect(overview.signals).toContain('cost_not_enabled');
+  });
+
+  it('reports costEnabled=true when modelPrices is provided', () => {
+    const overview = createEfficiencyOverview(
+      [
+        createDetail({ minutesAgo: 5, __modelName: 'model-a', tokens: { input_tokens: 20, output_tokens: 10, cached_tokens: 10, reasoning_tokens: 0, total_tokens: 40 } }),
+      ],
+      { 'model-a': { prompt: 1, completion: 2, cache: 0.5 } }
+    );
+
+    expect(overview.costEnabled).toBe(true);
+    expect(overview.metrics.costYield).not.toBeNull();
+  });
+
+  it('keeps efficiency score difference under 15 points with vs without modelPrices on same data', () => {
+    const details = [
+      createDetail({ minutesAgo: 6, __modelName: 'model-a', tokens: { input_tokens: 30, output_tokens: 20, cached_tokens: 10, reasoning_tokens: 5, total_tokens: 65 } }),
+      createDetail({ minutesAgo: 5, __modelName: 'model-a', failed: true, tokens: { input_tokens: 10, output_tokens: 0, cached_tokens: 0, reasoning_tokens: 0, total_tokens: 10 } }),
+      createDetail({ minutesAgo: 4, __modelName: 'model-b', tokens: { input_tokens: 15, output_tokens: 25, cached_tokens: 5, reasoning_tokens: 0, total_tokens: 45 } }),
+    ];
+
+    const overviewWithPrices = createEfficiencyOverview(details, {
+      'model-a': { prompt: 1, completion: 2, cache: 0.5 },
+      'model-b': { prompt: 1.5, completion: 3, cache: 0.5 }
+    });
+    const overviewWithoutPrices = createEfficiencyOverview(details, {});
+
+    expect(overviewWithPrices.costEnabled).toBe(true);
+    expect(overviewWithoutPrices.costEnabled).toBe(false);
+    expect(Math.abs(overviewWithPrices.efficiencyScore - overviewWithoutPrices.efficiencyScore)).toBeLessThan(15);
   });
 
   it('builds credential efficiency rows from resolved source labels and sorts low score first', () => {
@@ -491,5 +538,275 @@ describe('usageAnalyticsSnapshot helpers', () => {
       name: 'model-risky',
       failureCount: 4
     });
+  });
+
+  it('returns insufficient status when request volume is too low for reliable window analysis', () => {
+    const details = Array.from({ length: 5 }, (_, index) =>
+      createDetail({
+        minutesAgo: index * 30,
+        failed: false,
+        __modelName: 'model-low'
+      })
+    );
+
+    const summary = createRuntimeQualitySummary({
+      usage: { total_requests: 5, success_count: 5, failure_count: 0 },
+      details,
+      credentialRows: [],
+      apiStats: [],
+      modelStats: [
+        { model: 'model-low', requests: 5, successCount: 5, failureCount: 0 }
+      ]
+    });
+
+    expect(summary.windowsInsufficient).toBe(true);
+    expect(summary.status).toBe('insufficient');
+    expect(summary.overallSuccessRate).toBe(1);
+  });
+
+  it('falls back to global success rate and reports critical when windows are insufficient but failure rate is high', () => {
+    const details = Array.from({ length: 10 }, (_, index) =>
+      createDetail({
+        minutesAgo: index * 10,
+        failed: index < 6,
+        __modelName: 'model-bad'
+      })
+    );
+
+    const summary = createRuntimeQualitySummary({
+      usage: { total_requests: 10, success_count: 4, failure_count: 6 },
+      details,
+      credentialRows: [],
+      apiStats: [],
+      modelStats: [
+        { model: 'model-bad', requests: 10, successCount: 4, failureCount: 6 }
+      ]
+    });
+
+    expect(summary.windowsInsufficient).toBe(true);
+    expect(summary.status).toBe('critical');
+    expect(summary.overallSuccessRate).toBe(0.4);
+  });
+
+  it('uses adaptive threshold when total requests are moderately low', () => {
+    const details = Array.from({ length: 15 }, (_, index) =>
+      createDetail({
+        minutesAgo: 5,
+        failed: index < 3,
+        __modelName: 'model-adaptive'
+      })
+    );
+
+    const summary = createRuntimeQualitySummary({
+      usage: { total_requests: 15, success_count: 12, failure_count: 3 },
+      details,
+      credentialRows: [],
+      apiStats: [],
+      modelStats: [
+        { model: 'model-adaptive', requests: 15, successCount: 12, failureCount: 3 }
+      ]
+    });
+
+    expect(summary.windowsInsufficient).toBe(false);
+    expect(summary.overallSuccessRate).toBe(0.8);
+    expect(summary.status).toBe('critical');
+  });
+
+  describe('getCachedTokens provider-aware selection', () => {
+    it('prefers cached_tokens for OpenAI models when both fields exist', () => {
+      const rows = createRequestEventRows(
+        [
+          {
+            timestamp: new Date(baseNow - 5 * 60 * 1000).toISOString(),
+            source: 'tenant-a',
+            auth_index: '1',
+            failed: false,
+            tokens: {
+              input_tokens: 10,
+              output_tokens: 5,
+              reasoning_tokens: 0,
+              cached_tokens: 100,
+              cache_tokens: 150,
+              total_tokens: 265
+            },
+            __modelName: 'gpt-4o',
+            __timestampMs: baseNow - 5 * 60 * 1000
+          }
+        ],
+        buildSourceInfoMap({}),
+        new Map(),
+        'en-US'
+      );
+
+      expect(rows[0].cachedTokens).toBe(100);
+    });
+
+    it('prefers cache_tokens for Anthropic models when both fields exist', () => {
+      const rows = createRequestEventRows(
+        [
+          {
+            timestamp: new Date(baseNow - 5 * 60 * 1000).toISOString(),
+            source: 'tenant-a',
+            auth_index: '1',
+            failed: false,
+            tokens: {
+              input_tokens: 10,
+              output_tokens: 5,
+              reasoning_tokens: 0,
+              cached_tokens: 100,
+              cache_tokens: 150,
+              total_tokens: 265
+            },
+            __modelName: 'claude-3-5-sonnet',
+            __timestampMs: baseNow - 5 * 60 * 1000
+          }
+        ],
+        buildSourceInfoMap({}),
+        new Map(),
+        'en-US'
+      );
+
+      expect(rows[0].cachedTokens).toBe(150);
+    });
+
+    it('uses cached_tokens for OpenAI model even when cache_tokens is larger', () => {
+      const rows = createRequestEventRows(
+        [
+          {
+            timestamp: new Date(baseNow - 5 * 60 * 1000).toISOString(),
+            source: 'tenant-a',
+            auth_index: '1',
+            failed: false,
+            tokens: {
+              input_tokens: 10,
+              output_tokens: 5,
+              reasoning_tokens: 0,
+              cached_tokens: 0,
+              cache_tokens: 80,
+              total_tokens: 95
+            },
+            __modelName: 'gpt-4o-mini',
+            __timestampMs: baseNow - 5 * 60 * 1000
+          }
+        ],
+        buildSourceInfoMap({}),
+        new Map(),
+        'en-US'
+      );
+
+      expect(rows[0].cachedTokens).toBe(0);
+    });
+
+    it('uses cached_tokens for default/unknown models (OpenAI-style)', () => {
+      const distribution = createTokenDistribution([
+        {
+          timestamp: new Date(baseNow - 5 * 60 * 1000).toISOString(),
+          source: 'tenant-a',
+          auth_index: '1',
+          failed: false,
+          tokens: {
+            input_tokens: 10,
+            output_tokens: 5,
+            reasoning_tokens: 0,
+            cached_tokens: 30,
+            cache_tokens: 50,
+            total_tokens: 95
+          },
+          __modelName: undefined,
+          __timestampMs: baseNow - 5 * 60 * 1000
+        }
+      ]);
+
+      expect(distribution.cached).toBe(30);
+    });
+
+    it('uses cache_tokens for Anthropic model matching "anthropic" in name', () => {
+      const rows = createRequestEventRows(
+        [
+          {
+            timestamp: new Date(baseNow - 5 * 60 * 1000).toISOString(),
+            source: 'tenant-a',
+            auth_index: '1',
+            failed: false,
+            tokens: {
+              input_tokens: 10,
+              output_tokens: 5,
+              reasoning_tokens: 0,
+              cached_tokens: 20,
+              cache_tokens: 60,
+              total_tokens: 95
+            },
+            __modelName: 'anthropic.claude-v3',
+            __timestampMs: baseNow - 5 * 60 * 1000
+          }
+        ],
+        buildSourceInfoMap({}),
+        new Map(),
+        'en-US'
+      );
+
+      expect(rows[0].cachedTokens).toBe(60);
+    });
+  });
+
+  it('marks data inconsistency when total_requests < failure_count and falls back to derived values', () => {
+    const details = Array.from({ length: 80 }, (_, index) =>
+      createDetail({
+        minutesAgo: 5,
+        failed: index < 20,
+        source: 't:tenant-a',
+        __modelName: 'model-a'
+      })
+    );
+
+    const summary = createRuntimeQualitySummary({
+      usage: { total_requests: 100, failure_count: 120 },
+      details,
+      credentialRows: [],
+      apiStats: [],
+      modelStats: []
+    });
+
+    expect(summary.totalRequests).toBe(80);
+    expect(summary.successCount).toBe(60);
+    expect(summary.failureCount).toBe(20);
+    expect(summary.successCount).not.toBe(0);
+    expect(summary.dataConsistent).toBe(false);
+  });
+
+  it('flags data inconsistency when successCount + failureCount deviates from totalRequests beyond tolerance', () => {
+    const summary = createRuntimeQualitySummary({
+      usage: { total_requests: 100, success_count: 50, failure_count: 45 },
+      details: [],
+      credentialRows: [],
+      apiStats: [],
+      modelStats: []
+    });
+
+    expect(summary.dataConsistent).toBe(false);
+  });
+
+  it('reports data consistent when usage summary aligns with derived values', () => {
+    const details = Array.from({ length: 30 }, (_, index) =>
+      createDetail({
+        minutesAgo: 5,
+        failed: index < 3,
+        source: 't:tenant-a',
+        __modelName: 'model-a'
+      })
+    );
+
+    const summary = createRuntimeQualitySummary({
+      usage: { total_requests: 30, success_count: 27, failure_count: 3 },
+      details,
+      credentialRows: [],
+      apiStats: [],
+      modelStats: []
+    });
+
+    expect(summary.dataConsistent).toBe(true);
+    expect(summary.totalRequests).toBe(30);
+    expect(summary.successCount).toBe(27);
+    expect(summary.failureCount).toBe(3);
   });
 });

@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -46,6 +46,11 @@ export type LoadUsageStatsOptions = {
 
 type UsageStatsSnapshot = Record<string, unknown>;
 
+export type DataQualityWarning = {
+  message: string;
+  zeroedCount: number;
+};
+
 type UsageStatsState = {
   usage: UsageStatsSnapshot | null;
   keyStats: KeyStats;
@@ -55,6 +60,7 @@ type UsageStatsState = {
   lastRefreshedAt: number | null;
   scopeKey: string;
   lastSeq: number | null;
+  dataQualityWarning: DataQualityWarning | null;
   loadUsageStats: (options?: LoadUsageStatsOptions) => Promise<void>;
   clearUsageStats: () => void;
   applyDelta: (delta: UsageDeltaEvent) => void;
@@ -62,6 +68,8 @@ type UsageStatsState = {
 };
 
 const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
+
+const pendingDeltas: UsageDeltaEvent[] = [];
 
 const UNKNOWN_USAGE_MODEL = 'unknown';
 const UNKNOWN_USAGE_ENDPOINT = 'unknown';
@@ -90,19 +98,60 @@ const normalizeStringValue = (value: unknown, fallback = ''): string => {
 const normalizeUsageModelName = (value: unknown): string =>
   normalizeStringValue(value, UNKNOWN_USAGE_MODEL);
 
+let nonFiniteValueCount = 0;
+const NON_FINITE_WARNING_THRESHOLD = 1;
+
+export const getAndResetNonFiniteCount = (): number => {
+  const count = nonFiniteValueCount;
+  nonFiniteValueCount = 0;
+  return count;
+};
+
 const toFiniteNumber = (value: unknown): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
-    if (import.meta.env.DEV) {
-      console.warn('[toFiniteNumber] 非有限数值，已归零:', value);
-    }
+    nonFiniteValueCount += 1;
+    logger.warn('[toFiniteNumber] 非有限数值，已归零', {
+      originalValue: value,
+      totalZeroedCount: nonFiniteValueCount,
+    });
     return 0;
   }
   return parsed;
 };
 
-const addUsageAggregate = (currentValue: unknown, deltaValue: number): number =>
-  toFiniteNumber(currentValue) + deltaValue;
+const checkDataQualityWarning = (): DataQualityWarning | null => {
+  const count = getAndResetNonFiniteCount();
+  if (count >= NON_FINITE_WARNING_THRESHOLD) {
+    return {
+      message: `本次数据加载中，有 ${count} 个非有限数值（NaN/Infinity）被归零处理，统计数据可能不准确。`,
+      zeroedCount: count,
+    };
+  }
+  return null;
+};
+
+const addUsageAggregate = (currentValue: unknown, deltaValue: number): number => {
+  const result = toFiniteNumber(currentValue) + deltaValue;
+  if (result > Number.MAX_SAFE_INTEGER) {
+    logger.warn('[addUsageAggregate] 累加结果超过安全整数上限，已锁定:', {
+      currentValue,
+      deltaValue,
+      result,
+    });
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return result;
+};
+
+const safeAdd = (a: number, b: number): number => {
+  const result = a + b;
+  if (result > Number.MAX_SAFE_INTEGER) {
+    logger.warn('[safeAdd] 累加结果超过安全整数上限，已锁定:', { a, b, result });
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return result;
+};
 
 const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail => {
   const deltaTokens = detail.tokens ?? {};
@@ -139,11 +188,11 @@ const createEmptyModelUsageEntry = (): Record<string, unknown> => ({
   details: [],
 });
 
-const cloneUsageWithApis = (usage: UsageStatsSnapshot): [UsageStatsSnapshot, Record<string, unknown>] => {
+const cloneUsageWithApis = (
+  usage: UsageStatsSnapshot
+): [UsageStatsSnapshot, Record<string, unknown>] => {
   const nextUsage = { ...usage };
-  const sourceApis = isRecord(nextUsage.apis)
-    ? (nextUsage.apis as Record<string, unknown>)
-    : null;
+  const sourceApis = isRecord(nextUsage.apis) ? (nextUsage.apis as Record<string, unknown>) : null;
   const nextApis: Record<string, unknown> = {};
 
   if (sourceApis) {
@@ -198,9 +247,7 @@ const mergeModelBreakdown = (
       nextApis[endpoint] = apiEntry;
     }
 
-    const models = isRecord(apiEntry.models)
-      ? (apiEntry.models as Record<string, unknown>)
-      : {};
+    const models = isRecord(apiEntry.models) ? (apiEntry.models as Record<string, unknown>) : {};
     apiEntry.models = models;
 
     const modelEntry = isRecord(models[model])
@@ -248,9 +295,18 @@ const mergeUsageDelta = (
   merged.failure_count = addUsageAggregate(merged.failure_count, delta.failureCount);
   merged.total_tokens = addUsageAggregate(merged.total_tokens, delta.tokenDelta.totalTokens);
   merged.prompt_tokens = addUsageAggregate(merged.prompt_tokens, delta.tokenDelta.promptTokens);
-  merged.completion_tokens = addUsageAggregate(merged.completion_tokens, delta.tokenDelta.completionTokens);
-  merged.reasoning_tokens = addUsageAggregate(merged.reasoning_tokens, delta.tokenDelta.reasoningTokens ?? 0);
-  merged.cached_tokens = addUsageAggregate(merged.cached_tokens, delta.tokenDelta.cachedTokens ?? 0);
+  merged.completion_tokens = addUsageAggregate(
+    merged.completion_tokens,
+    delta.tokenDelta.completionTokens
+  );
+  merged.reasoning_tokens = addUsageAggregate(
+    merged.reasoning_tokens,
+    delta.tokenDelta.reasoningTokens ?? 0
+  );
+  merged.cached_tokens = addUsageAggregate(
+    merged.cached_tokens,
+    delta.tokenDelta.cachedTokens ?? 0
+  );
 
   return merged;
 };
@@ -342,9 +398,7 @@ const buildUsageSnapshotFromCompatibilityEntries = (
       apis[entry.endpoint] = apiEntry;
     }
 
-    const models = isRecord(apiEntry.models)
-      ? (apiEntry.models as Record<string, unknown>)
-      : {};
+    const models = isRecord(apiEntry.models) ? (apiEntry.models as Record<string, unknown>) : {};
     apiEntry.models = models;
 
     const modelEntry = isRecord(models[entry.modelName])
@@ -370,10 +424,10 @@ const buildUsageSnapshotFromCompatibilityEntries = (
     apiEntry.failure_count = addUsageAggregate(apiEntry.failure_count, failureDelta);
     apiEntry.total_tokens = addUsageAggregate(apiEntry.total_tokens, detailTokens);
 
-    totalRequests += 1;
-    successCount += successDelta;
-    failureCount += failureDelta;
-    totalTokens += detailTokens;
+    totalRequests = safeAdd(totalRequests, 1);
+    successCount = safeAdd(successCount, successDelta);
+    failureCount = safeAdd(failureCount, failureDelta);
+    totalTokens = safeAdd(totalTokens, detailTokens);
   });
 
   return {
@@ -392,14 +446,21 @@ const isCurrentBackendUsageSnapshot = (usage: UsageStatsSnapshot): boolean => {
     return false;
   }
 
-  return (
-    Object.values(apis).some(
-      (apiEntry) => isRecord(apiEntry) && ('request_count' in apiEntry || 'total_tokens' in apiEntry)
-    ) ||
-    Object.values(models).some(
-      (modelEntry) => isRecord(modelEntry) && ('token_delta' in modelEntry || 'endpoint' in modelEntry)
-    )
+  // token_delta 是后端格式的唯一确定性标记，前端格式不存在此字段
+  // 使用它作为主要判据，避免后端新增 total_tokens 等字段时误判
+  const hasBackendModels = Object.values(models).some(
+    (modelEntry) => isRecord(modelEntry) && 'token_delta' in modelEntry
   );
+  if (!hasBackendModels) {
+    return false;
+  }
+
+  const hasBackendApis = Object.values(apis).some(
+    (apiEntry) => isRecord(apiEntry) && ('request_count' in apiEntry || 'total_tokens' in apiEntry)
+  );
+
+  // Both markers must be present to avoid double-normalizing already-converted frontend data
+  return hasBackendApis && hasBackendModels;
 };
 
 const normalizeUsageSnapshotForFrontend = (
@@ -458,15 +519,15 @@ const normalizeUsageSnapshotForFrontend = (
       nextApis[endpoint] = apiEntry;
     }
 
-    const models = isRecord(apiEntry.models)
-      ? (apiEntry.models as Record<string, unknown>)
-      : {};
+    const models = isRecord(apiEntry.models) ? (apiEntry.models as Record<string, unknown>) : {};
     apiEntry.models = models;
     models[modelName] = {
       total_requests: toFiniteNumber(modelEntry.total_requests ?? modelEntry.request_count),
       success_count: toFiniteNumber(modelEntry.success_count),
       failure_count: toFiniteNumber(modelEntry.failure_count),
-      total_tokens: getUsageEventAggregateTokens(modelEntry.token_delta ?? modelEntry.total_tokens ?? modelEntry),
+      total_tokens: getUsageEventAggregateTokens(
+        modelEntry.token_delta ?? modelEntry.total_tokens ?? modelEntry
+      ),
       details: detailBuckets.get(`${endpoint}\u0000${modelName}`) ?? [],
     };
   });
@@ -482,17 +543,21 @@ const normalizeUsageSnapshotForFrontend = (
       nextApis[endpoint] = apiEntry;
     }
 
-    const models = isRecord(apiEntry.models)
-      ? (apiEntry.models as Record<string, unknown>)
-      : {};
+    const models = isRecord(apiEntry.models) ? (apiEntry.models as Record<string, unknown>) : {};
     apiEntry.models = models;
     if (!isRecord(models[modelName])) {
       models[modelName] = {
         total_requests: details.length,
-        success_count: details.filter((detail) => isRecord(detail) && detail.failed !== true).length,
-        failure_count: details.filter((detail) => isRecord(detail) && detail.failed === true).length,
+        success_count: details.filter((detail) => isRecord(detail) && detail.failed !== true)
+          .length,
+        failure_count: details.filter((detail) => isRecord(detail) && detail.failed === true)
+          .length,
         total_tokens: details.reduce(
-          (sum, detail) => sum + getUsageEventAggregateTokens(isRecord(detail) ? detail.tokens ?? detail : detail),
+          (sum, detail) =>
+            safeAdd(
+              sum,
+              getUsageEventAggregateTokens(isRecord(detail) ? (detail.tokens ?? detail) : detail)
+            ),
           0
         ),
         details,
@@ -509,13 +574,16 @@ const normalizeUsageSnapshotForFrontend = (
     successCount: number;
     failureCount: number;
     totalTokens: number;
-  }>((acc, apiEntry) => {
-      acc.totalRequests += toFiniteNumber(apiEntry.total_requests);
-      acc.successCount += toFiniteNumber(apiEntry.success_count);
-      acc.failureCount += toFiniteNumber(apiEntry.failure_count);
-      acc.totalTokens += toFiniteNumber(apiEntry.total_tokens);
+  }>(
+    (acc, apiEntry) => {
+      acc.totalRequests = safeAdd(acc.totalRequests, toFiniteNumber(apiEntry.total_requests));
+      acc.successCount = safeAdd(acc.successCount, toFiniteNumber(apiEntry.success_count));
+      acc.failureCount = safeAdd(acc.failureCount, toFiniteNumber(apiEntry.failure_count));
+      acc.totalTokens = safeAdd(acc.totalTokens, toFiniteNumber(apiEntry.total_tokens));
       return acc;
-    }, { totalRequests: 0, successCount: 0, failureCount: 0, totalTokens: 0 });
+    },
+    { totalRequests: 0, successCount: 0, failureCount: 0, totalTokens: 0 }
+  );
 
   // 排除后端顶层 models 字段，防止缓存读取时触发二次归一化导致计数翻倍
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- models 必须被解构排除
@@ -595,10 +663,9 @@ const readUsageStatsWithCompatibility = async (
       rawUsage && typeof rawUsage === 'object'
         ? normalizeUsageSnapshotForFrontend(rawUsage as UsageStatsSnapshot, eventsResponse)
         : null;
-    const usageDetails =
-      hasEvents
-        ? collectUsageDetailsFromEvents(eventsResponse)
-        : collectUsageDetails(usage);
+    const usageDetails = hasEvents
+      ? collectUsageDetailsFromEvents(eventsResponse)
+      : collectUsageDetails(usage);
 
     return {
       usage,
@@ -614,14 +681,13 @@ const readUsageStatsWithCompatibility = async (
       throw error;
     }
 
-    if (
-      usageSSEService.getConnectionStatus() === 'connected' &&
-      currentUsage
-    ) {
+    if (usageSSEService.getConnectionStatus() === 'connected' && currentUsage) {
       return {
         usage: currentUsage,
         usageDetails:
-          currentUsageDetails.length > 0 ? trimUsageDetails(currentUsageDetails) : collectUsageDetails(currentUsage),
+          currentUsageDetails.length > 0
+            ? trimUsageDetails(currentUsageDetails)
+            : collectUsageDetails(currentUsage),
         lastSeq: currentLastSeq,
       };
     }
@@ -677,6 +743,9 @@ const resolveCachedUsageDetails = (
   usageDetails: UsageDetail[] | undefined
 ): UsageDetail[] => resolveCachedUsageDetailsFromUsage(usage, usageDetails);
 
+const DELTA_RECOVERY_COOLDOWN_MS = 30_000;
+let lastDeltaRecoveryAt = 0;
+
 let usageRequestToken = 0;
 let inFlightUsageRequest: { id: number; scopeKey: string; promise: Promise<void> } | null = null;
 let usageAbortController: AbortController | null = null;
@@ -711,7 +780,11 @@ const toPersistedUsageStatsCache = (
 
   const resolvedUsage =
     snapshot.usage && typeof snapshot.usage === 'object'
-      ? (snapshot.usage as UsageStatsSnapshot)
+      ? (() => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars -- models 必须被解构排除，防止缓存读取时触发二次归一化
+          const { models: _, ...rest } = snapshot.usage as Record<string, unknown>;
+          return rest as UsageStatsSnapshot;
+        })()
       : null;
   const resolvedUsageDetails = resolveCachedUsageDetails(
     resolvedUsage,
@@ -747,11 +820,15 @@ const pickRicherUsageSnapshot = (
   if (!primary) return secondary;
   if (!secondary) return primary;
 
-  if (secondary.detailCount !== primary.detailCount) {
-    return secondary.detailCount > primary.detailCount ? secondary : primary;
+  const primaryTime = primary.lastRefreshedAt ?? 0;
+  const secondaryTime = secondary.lastRefreshedAt ?? 0;
+
+  // 优先选择更新时间更近的缓存，避免旧但 detailCount 更大的缓存导致数据回退
+  if (secondaryTime !== primaryTime) {
+    return secondaryTime > primaryTime ? secondary : primary;
   }
 
-  return (secondary.lastRefreshedAt ?? 0) > (primary.lastRefreshedAt ?? 0) ? secondary : primary;
+  return secondary.detailCount > primary.detailCount ? secondary : primary;
 };
 
 const hasMeaningfulUsageSnapshot = (
@@ -839,28 +916,72 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
     localStorage.setItem(storageKey, serializedCache);
     return;
   } catch {
-    const liteCache: PersistedUsageStatsCache = {
-      ...persistableCache,
-      usage: persistableCache.usage
-        ? createAggregateOnlyUsageSnapshot(persistableCache.usage)
-        : null,
-    };
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(liteCache));
-      return;
-    } catch {
-      const ultraLiteCache: PersistedUsageStatsCache = {
-        ...liteCache,
-        usageDetails: [],
-      };
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(ultraLiteCache));
-      } catch {
-        // Ignore storage write failures after exhausting all persistence fallbacks.
-      }
-    }
+    // 序列化数据仍然太大，直接降级到 lite，跳过对完整缓存的二次序列化
+  }
+
+  const liteCache: PersistedUsageStatsCache = {
+    ...persistableCache,
+    usage: persistableCache.usage ? createAggregateOnlyUsageSnapshot(persistableCache.usage) : null,
+  };
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(liteCache));
+    return;
+  } catch {
+    CacheLayer.prune();
+  }
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(liteCache));
+    return;
+  } catch {
+    // lite 仍失败，继续 ultra-lite 降级
+  }
+
+  const ultraLiteCache: PersistedUsageStatsCache = {
+    ...liteCache,
+    usageDetails: [],
+  };
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(ultraLiteCache));
+  } catch {
+    // 所有降级策略均失败，放弃持久化
   }
 };
+
+// ── Deferred persistence for hot SSE paths ──────────────────────────────────────
+// Batches rapid delta/full-snapshot writes via requestIdleCallback to avoid blocking
+// the event loop. Each scopeKey is deduplicated so only the latest snapshot persists.
+
+const deferredPersistQueue = new Map<string, PersistedUsageStatsCache>();
+let deferredPersistScheduled = false;
+
+export const flushDeferredPersistQueue = () => {
+  deferredPersistScheduled = false;
+  for (const cache of deferredPersistQueue.values()) {
+    writePersistedUsageStats(cache);
+  }
+  deferredPersistQueue.clear();
+};
+
+const scheduleDeferredPersist = () => {
+  if (deferredPersistScheduled) return;
+  deferredPersistScheduled = true;
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(flushDeferredPersistQueue, { timeout: 2000 });
+  } else {
+    setTimeout(flushDeferredPersistQueue, 0);
+  }
+};
+
+const writeDeferredPersistedUsageStats = (cache: PersistedUsageStatsCache) => {
+  if (typeof localStorage === 'undefined' || !cache.scopeKey) return;
+  deferredPersistQueue.set(cache.scopeKey, cache);
+  scheduleDeferredPersist();
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', flushDeferredPersistQueue);
+}
 
 const removePersistedUsageStats = (scopeKey: string) => {
   if (typeof localStorage === 'undefined' || !scopeKey) {
@@ -875,8 +996,10 @@ const removePersistedUsageStats = (scopeKey: string) => {
 };
 
 const cleanBootstrapCache = (cache: PersistedUsageStatsCache): PersistedUsageStatsCache => {
-  const { usage, usageDetails, removedCount, topLevelRemovedCount } =
-    expireUsageFailed(cache.usage, cache.usageDetails);
+  const { usage, usageDetails, removedCount, topLevelRemovedCount } = expireUsageFailed(
+    cache.usage,
+    cache.usageDetails
+  );
   if (removedCount === 0) return cache;
 
   const keyStats = computeKeyStatsFromDetails(usageDetails);
@@ -958,6 +1081,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   lastRefreshedAt: null,
   scopeKey: '',
   lastSeq: null,
+  dataQualityWarning: null,
 
   loadUsageStats: async (options = {}) => {
     const force = options.force === true;
@@ -1003,22 +1127,29 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
     const cachedLastRefreshedAt = scopeChanged
       ? (autoPersistCache?.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null)
-      : (state.lastRefreshedAt ?? autoPersistCache?.lastRefreshedAt ?? persistedCache?.lastRefreshedAt ?? null);
+      : (state.lastRefreshedAt ??
+        autoPersistCache?.lastRefreshedAt ??
+        persistedCache?.lastRefreshedAt ??
+        null);
     const fresh = cachedLastRefreshedAt !== null && now - cachedLastRefreshedAt < staleTimeMs;
 
     // 只有在需要显示历史数据时才选择更丰富的缓存源，避免不必要的状态抖动
-    const rawBootstrapCache = scopeChanged || !fresh
-      ? pickRicherUsageSnapshot(persistedCache, autoPersistCache)
-      : autoPersistCache ?? pickRicherUsageSnapshot(persistedCache, autoPersistCache);
+    const rawBootstrapCache =
+      scopeChanged || !fresh
+        ? pickRicherUsageSnapshot(persistedCache, autoPersistCache)
+        : (autoPersistCache ?? pickRicherUsageSnapshot(persistedCache, autoPersistCache));
 
     // 只在缓存较旧或范围切换时清理过期失败记录，避免频繁加载时反复清除用户数据
-    const shouldCleanBootstrap = scopeChanged
-      || !fresh
-      || (rawBootstrapCache?.lastRefreshedAt !== null
-        && rawBootstrapCache?.lastRefreshedAt !== undefined
-        && now - rawBootstrapCache.lastRefreshedAt > EXPIRE_FAILED_CLEANUP_INTERVAL_MS);
+    const shouldCleanBootstrap =
+      scopeChanged ||
+      !fresh ||
+      (rawBootstrapCache?.lastRefreshedAt !== null &&
+        rawBootstrapCache?.lastRefreshedAt !== undefined &&
+        now - rawBootstrapCache.lastRefreshedAt > EXPIRE_FAILED_CLEANUP_INTERVAL_MS);
     const bootstrapCache = rawBootstrapCache
-      ? (shouldCleanBootstrap ? cleanBootstrapCache(rawBootstrapCache) : rawBootstrapCache)
+      ? shouldCleanBootstrap
+        ? cleanBootstrapCache(rawBootstrapCache)
+        : rawBootstrapCache
       : null;
 
     if (scopeChanged) {
@@ -1062,6 +1193,11 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     }
 
     const requestId = (usageRequestToken += 1);
+
+    // 新增：快照请求前的 lastSeq，用于检测竞态
+    const preRequestLastSeq = get().lastSeq;
+
+    pendingDeltas.splice(0, pendingDeltas.length);
     set({ loading: true, error: null, scopeKey });
 
     const requestPromise = (async () => {
@@ -1071,16 +1207,22 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           apiBase,
           managementKey,
           activeAbortController.signal,
-          baseState.scopeKey === scopeKey ? baseState.usage : bootstrapCache?.usage ?? null,
-          baseState.scopeKey === scopeKey ? baseState.usageDetails : bootstrapCache?.usageDetails ?? [],
+          baseState.scopeKey === scopeKey ? baseState.usage : (bootstrapCache?.usage ?? null),
+          baseState.scopeKey === scopeKey
+            ? baseState.usageDetails
+            : (bootstrapCache?.usageDetails ?? []),
           baseState.scopeKey === scopeKey ? baseState.lastSeq : null
         );
         const usage = bootstrap.usage;
+
+        // Reset counter before normalization so only the fresh batch is counted
+        getAndResetNonFiniteCount();
 
         if (requestId !== usageRequestToken) return;
 
         const usageDetails = trimUsageDetails(bootstrap.usageDetails);
         const keyStats = computeKeyStatsFromDetails(usageDetails);
+        const dataQualityWarning = checkDataQualityWarning();
         const lastRefreshedAt = Date.now();
         const nextSnapshot = {
           usage,
@@ -1101,6 +1243,45 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
         writePersistedUsageStats(nextSnapshot);
 
+        // 新增：检测请求期间是否有 delta 已应用
+        const currentSeqBeforeSet = get().lastSeq;
+        const deltaAppliedDuringRequest =
+          preRequestLastSeq !== null &&
+          currentSeqBeforeSet !== null &&
+          currentSeqBeforeSet > preRequestLastSeq;
+
+        if (deltaAppliedDuringRequest) {
+          // REST 数据可能比已应用的 delta 更旧，只更新非聚合字段
+          logger.info('[loadUsageStats] 检测到请求期间有 delta 已应用，跳过 usage 覆盖:', {
+            preRequestLastSeq,
+            currentSeqBeforeSet,
+            restLastSeq: bootstrap.lastSeq,
+          });
+
+          set({
+            keyStats: nextSnapshot.keyStats,
+            usageDetails: nextSnapshot.usageDetails,
+            loading: false,
+            error: null,
+            lastRefreshedAt: nextSnapshot.lastRefreshedAt,
+            scopeKey,
+            dataQualityWarning,
+            // 不覆盖 usage 和 lastSeq
+          });
+
+          // 如果 REST 数据较旧，触发全量修正以确保最终一致性
+          if (bootstrap.lastSeq !== null && bootstrap.lastSeq < currentSeqBeforeSet) {
+            logger.info('[loadUsageStats] REST 数据较旧，触发全量修正');
+            usageSSEService.requestFullCorrection();
+            void get()
+              .loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS })
+              .catch(() => {});
+          }
+
+          return;
+        }
+
+        // 正常覆盖路径（无竞态）
         set({
           usage: nextSnapshot.usage,
           keyStats: nextSnapshot.keyStats,
@@ -1109,8 +1290,39 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           error: null,
           lastRefreshedAt: nextSnapshot.lastRefreshedAt,
           scopeKey,
+          dataQualityWarning,
           ...(bootstrap.lastSeq !== null ? { lastSeq: bootstrap.lastSeq } : {}),
         });
+
+        // REST 成功后，应用 loading 期间缓存的 SSE delta，防止数据倒退
+        const buffered = pendingDeltas.splice(0, pendingDeltas.length);
+        if (buffered.length > 0) {
+          const currentState = get();
+          const needsFullCorrection =
+            currentState.lastSeq === null ||
+            buffered.some((d) => d.seq > currentState.lastSeq! + 1);
+
+          if (needsFullCorrection) {
+            set({ loading: true, error: null });
+            usageSSEService.requestFullCorrection();
+            void get()
+              .loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS })
+              .catch(() => {});
+          } else {
+            for (const delta of buffered) {
+              if (delta.seq <= get().lastSeq!) continue;
+              if (delta.seq !== get().lastSeq! + 1) {
+                set({ loading: true, error: null });
+                usageSSEService.requestFullCorrection();
+                void get()
+                  .loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS })
+                  .catch(() => {});
+                break;
+              }
+              get().applyDelta(delta);
+            }
+          }
+        }
 
         scheduleExpireFailedCleanup();
       } catch (error: unknown) {
@@ -1148,6 +1360,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   },
 
   clearUsageStats: () => {
+    pendingDeltas.splice(0, pendingDeltas.length);
+    lastDeltaRecoveryAt = 0;
     cancelExpireFailedCleanup();
     const { scopeKey } = get();
     usageRequestToken += 1;
@@ -1174,13 +1388,25 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     const state = get();
 
     if (state.loading) {
+      pendingDeltas.push(delta);
       return;
     }
 
     const requestDeltaRecovery = () => {
+      const now = Date.now();
+      // 30 秒内只允许一次全量修正，避免修正风暴
+      if (now - lastDeltaRecoveryAt < DELTA_RECOVERY_COOLDOWN_MS) {
+        pendingDeltas.push(delta);
+        return;
+      }
+      lastDeltaRecoveryAt = now;
+      // 缓存触发修正的 delta，修正完成后会重放
+      pendingDeltas.push(delta);
       set({ loading: true, error: null });
       usageSSEService.requestFullCorrection();
-      void get().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS }).catch(() => {});
+      void get()
+        .loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS })
+        .catch(() => {});
     };
 
     if (state.usage === null) {
@@ -1203,23 +1429,32 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       delta.modelBreakdown
     );
     const newDetails = delta.details.map(createUsageDetailFromDelta);
-    const usageDetails = [...state.usageDetails, ...newDetails];
-    const needsTrim = usageDetails.length > MAX_USAGE_DETAILS_LENGTH;
-    const trimmedDetails = needsTrim
-      ? usageDetails.slice(usageDetails.length - MAX_USAGE_DETAILS_LENGTH)
-      : usageDetails;
-    let keyStats = mergeKeyStatsIncremental(state.keyStats, newDetails);
+    const existingLen = state.usageDetails.length;
+    const totalLen = existingLen + newDetails.length;
+    const needsTrim = totalLen > MAX_USAGE_DETAILS_LENGTH;
+    let removedDetails: UsageDetail[] | undefined;
+    let trimmedDetails: UsageDetail[];
     if (needsTrim) {
-      const removedDetails = usageDetails.slice(0, usageDetails.length - MAX_USAGE_DETAILS_LENGTH);
+      const keepFromExisting = Math.max(0, MAX_USAGE_DETAILS_LENGTH - newDetails.length);
+      const removeCount = existingLen - keepFromExisting;
+      removedDetails = removeCount > 0 ? state.usageDetails.slice(0, removeCount) : undefined;
+      trimmedDetails = [...state.usageDetails.slice(removeCount), ...newDetails];
+    } else {
+      trimmedDetails = [...state.usageDetails, ...newDetails];
+    }
+    // 先 subtract 再 merge，避免中间状态导致 keyStats 短暂包含已删除 details 的计数
+    let keyStats = state.keyStats;
+    if (removedDetails) {
       keyStats = subtractKeyStatsForDetails(keyStats, removedDetails);
     }
+    keyStats = mergeKeyStatsIncremental(keyStats, newDetails);
     const receivedAt = Date.now();
     const nextSnapshot = {
       usage: mergedUsage,
       keyStats,
       usageDetails: trimmedDetails,
       lastRefreshedAt: receivedAt,
-      detailCount: usageDetails.length,
+      detailCount: totalLen,
       scopeKey: state.scopeKey,
     };
 
@@ -1231,7 +1466,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       lastRefreshedAt: receivedAt,
     });
 
-    writePersistedUsageStats(nextSnapshot);
+    writeDeferredPersistedUsageStats(nextSnapshot);
 
     set({
       usage: mergedUsage,
@@ -1251,7 +1486,9 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       snapshot.usageDetails
     );
     const rawDetails = Array.isArray(snapshot.usageDetails)
-      ? buildCompatibilityUsageDetailEntries(snapshot.usageDetails).map((entry) => entry.usageDetail)
+      ? buildCompatibilityUsageDetailEntries(snapshot.usageDetails).map(
+          (entry) => entry.usageDetail
+        )
       : collectUsageDetails(usage);
     const rawDetailCount = rawDetails.length;
     const usageDetails = trimUsageDetails(rawDetails);
@@ -1274,7 +1511,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       lastRefreshedAt,
     });
 
-    writePersistedUsageStats(nextSnapshot);
+    writeDeferredPersistedUsageStats(nextSnapshot);
 
     set({
       usage,

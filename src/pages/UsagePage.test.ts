@@ -80,6 +80,8 @@ vi.mock('@/stores', () => ({
         openaiCompatibility: [],
       },
     }),
+  useUsageStatsStore: <T,>(selector: (state: { dataQualityWarning: null }) => T) =>
+    selector({ dataQualityWarning: null }),
 }));
 
 vi.mock('@/components/ui/Button', () => ({

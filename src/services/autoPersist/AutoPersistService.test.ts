@@ -103,7 +103,8 @@ describe('AutoPersistService', () => {
 
     expect(usageApi.autoPersistUsage).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(29_999);
+    // 启动延迟现在是 5 秒
+    vi.advanceTimersByTime(4_999);
     await Promise.resolve();
     expect(usageApi.autoPersistUsage).not.toHaveBeenCalled();
 
@@ -112,6 +113,101 @@ describe('AutoPersistService', () => {
     await Promise.resolve();
 
     expect(usageApi.autoPersistUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts auto-persist after 5 seconds instead of 30 seconds', async () => {
+    vi.mocked(usageApi.autoPersistUsage).mockResolvedValue({} as never);
+
+    const service = new AutoPersistService();
+
+    service.onUsageRefreshed({
+      scopeKey: 'fast-startup',
+      usage: { apis: { first: {} } },
+      keyStats: { bySource: {}, byAuthIndex: {} },
+      usageDetails: createUsageDetails(3),
+      lastRefreshedAt: Date.now(),
+    });
+
+    // 不应该在 4 秒内启动
+    vi.advanceTimersByTime(4_999);
+    await Promise.resolve();
+    expect(usageApi.autoPersistUsage).not.toHaveBeenCalled();
+
+    // 应该在 5 秒后启动
+    vi.advanceTimersByTime(1);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(usageApi.autoPersistUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('triggers auto-persist with only 3 usage details instead of 10', async () => {
+    vi.mocked(usageApi.autoPersistUsage).mockResolvedValue({} as never);
+
+    const service = new AutoPersistService();
+
+    // 只提供 3 条数据，应该触发上传
+    service.onUsageRefreshed({
+      scopeKey: 'low-threshold',
+      usage: { apis: { test: {} } },
+      keyStats: { bySource: {}, byAuthIndex: {} },
+      usageDetails: createUsageDetails(3),
+      lastRefreshedAt: Date.now(),
+    });
+
+    // 等待启动延迟
+    vi.advanceTimersByTime(5_000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 应该触发上传（3 >= AUTO_PERSIST_TRIGGER_DELTA）
+    expect(usageApi.autoPersistUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves cache to localStorage on beforeunload event', () => {
+    const service = new AutoPersistService();
+    const scopeKey = 'beforeunload-test';
+
+    // 清除 localStorage 中的缓存
+    localStorage.clear();
+
+    service.onUsageRefreshed({
+      scopeKey,
+      usage: { apis: { test: {} } },
+      keyStats: { bySource: {}, byAuthIndex: {} },
+      usageDetails: createUsageDetails(5),
+      lastRefreshedAt: Date.now(),
+    });
+
+    // 再次清除 localStorage，模拟缓存丢失
+    localStorage.clear();
+
+    // 模拟 beforeunload 事件
+    const event = new Event('beforeunload');
+    window.dispatchEvent(event);
+
+    // 验证 beforeunload 触发了保存
+    const storageKey = `cli-proxy-usage-auto-persist-v1:${encodeURIComponent(scopeKey)}`;
+    const saved = localStorage.getItem(storageKey);
+    expect(saved).not.toBeNull();
+
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      expect(parsed.scopeKey).toBe(scopeKey);
+      expect(parsed.usageDetails).toHaveLength(5);
+    }
+  });
+
+  it('registers a visibilitychange listener that attempts persist when hidden', async () => {
+    vi.mocked(usageApi.autoPersistUsage).mockResolvedValue({} as never);
+
+    const addEventListenerSpy = vi.spyOn(document, 'addEventListener');
+    new AutoPersistService();
+
+    // 验证 visibilitychange 事件监听器被注册
+    expect(addEventListenerSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+
+    addEventListenerSpy.mockRestore();
   });
 
   it('stores lite fallback snapshots without freshness metadata', () => {
@@ -226,6 +322,6 @@ describe('AutoPersistService', () => {
       detailCount: 6_000,
       usageDetails: expect.any(Array),
     });
-    expect(service.readBootstrapSnapshot(scopeKey)?.usageDetails).toHaveLength(5_000);
+    expect(service.readBootstrapSnapshot(scopeKey)?.usageDetails).toHaveLength(6_000);
   });
 });

@@ -32,7 +32,8 @@ function formatTime(timestamp: number): string {
   return `${h}:${m}`;
 }
 
-function formatSuccessRate(rate: number): string {
+function formatSuccessRate(rate: number | null): string {
+  if (rate === null) return '--';
   const rounded = rate.toFixed(1);
   return `${rounded.endsWith('.0') ? rounded.slice(0, -2) : rounded}%`;
 }
@@ -53,9 +54,9 @@ export function ProviderStatusBar({ statusData, styles: stylesProp }: ProviderSt
   const hasData = statusData.totalSuccess + statusData.totalFailure > 0;
   const rateClass = !hasData
     ? ''
-    : statusData.successRate >= 90
+    : statusData.successRate! >= 90
       ? s.statusRateHigh
-      : statusData.successRate >= 50
+      : statusData.successRate! >= 50
         ? s.statusRateMedium
         : s.statusRateLow;
 

@@ -88,7 +88,7 @@ export interface StatusBlockDetail {
 export interface StatusBarData {
   blocks: StatusBlockState[];
   blockDetails: StatusBlockDetail[];
-  successRate: number;
+  successRate: number | null;
   totalSuccess: number;
   totalFailure: number;
 }
@@ -96,7 +96,7 @@ export interface StatusBarData {
 export interface ServiceHealthData {
   blocks: StatusBlockState[];
   blockDetails: StatusBlockDetail[];
-  successRate: number;
+  successRate: number | null;
   totalSuccess: number;
   totalFailure: number;
   rows: number;

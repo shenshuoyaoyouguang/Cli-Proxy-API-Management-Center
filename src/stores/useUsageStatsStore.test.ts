@@ -170,7 +170,7 @@ vi.mock('@/i18n', () => ({
   },
 }));
 
-import { useUsageStatsStore } from './useUsageStatsStore';
+import { useUsageStatsStore, cancelExpireFailedCleanup } from './useUsageStatsStore';
 import { usageApi } from '@/services/api';
 import { autoPersistService } from '@/services/autoPersist';
 import { collectUsageDetails, mergeKeyStatsIncremental } from '@/utils/usage';
@@ -674,7 +674,7 @@ describe('useUsageStatsStore', () => {
 
       expect(persisted).not.toBeNull();
       expect(persisted?.detailCount).toBe(5_500);
-      expect(persisted?.usageDetails.length).toBe(5_000);
+      expect(persisted?.usageDetails.length).toBe(5_500);
     });
   });
 
@@ -1174,6 +1174,52 @@ describe('useUsageStatsStore', () => {
       const state = useUsageStatsStore.getState();
       expect(state.keyStats).toHaveProperty('bySource');
       expect(state.keyStats).toHaveProperty('byAuthIndex');
+    });
+  });
+
+  describe('expire failed cleanup timer', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('starts a cleanup timer after loadUsageStats succeeds', async () => {
+      vi.mocked(usageApi.getUsage).mockResolvedValue(createMockUsageResponse());
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+      await useUsageStatsStore.getState().loadUsageStats();
+
+      const cleanupCalls = setTimeoutSpy.mock.calls.filter(
+        (call) => call[1] === 3 * 60 * 60 * 1000
+      );
+      expect(cleanupCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('does not start cleanup timer when loadUsageStats fails', async () => {
+      vi.mocked(usageApi.getUsage).mockRejectedValue(new Error('Network error'));
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+      await expect(useUsageStatsStore.getState().loadUsageStats()).rejects.toThrow('Network error');
+
+      const cleanupCalls = setTimeoutSpy.mock.calls.filter(
+        (call) => call[1] === 3 * 60 * 60 * 1000
+      );
+      expect(cleanupCalls).toHaveLength(0);
+    });
+
+    it('cancels cleanup timer when clearUsageStats is called after successful load', async () => {
+      vi.mocked(usageApi.getUsage).mockResolvedValue(createMockUsageResponse());
+      await useUsageStatsStore.getState().loadUsageStats();
+
+      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+
+      useUsageStatsStore.getState().clearUsageStats();
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+    });
+
+    it('cancelExpireFailedCleanup is safe to call when no timer is active', () => {
+      expect(() => cancelExpireFailedCleanup()).not.toThrow();
+      expect(() => cancelExpireFailedCleanup()).not.toThrow();
     });
   });
 });

@@ -35,7 +35,7 @@ import type {
 
 export const USAGE_STATS_STALE_TIME_MS = 120_000;
 const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
-const MAX_USAGE_DETAILS_LENGTH = 5000;
+const MAX_USAGE_DETAILS_LENGTH = 500_000;
 const EXPIRE_FAILED_CLEANUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
 const EXPIRE_FAILED_CLEANUP_IDLE_THRESHOLD_MS = 10_000;
 
@@ -92,7 +92,13 @@ const normalizeUsageModelName = (value: unknown): string =>
 
 const toFiniteNumber = (value: unknown): number => {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (!Number.isFinite(parsed)) {
+    if (import.meta.env.DEV) {
+      console.warn('[toFiniteNumber] 非有限数值，已归零:', value);
+    }
+    return 0;
+  }
+  return parsed;
 };
 
 const addUsageAggregate = (currentValue: unknown, deltaValue: number): number =>
@@ -232,6 +238,7 @@ const mergeUsageDelta = (
       completion_tokens: delta.tokenDelta.completionTokens,
       reasoning_tokens: delta.tokenDelta.reasoningTokens ?? 0,
       cached_tokens: delta.tokenDelta.cachedTokens ?? 0,
+      apis: {},
     };
   }
 
@@ -770,7 +777,11 @@ const readPersistedUsageStats = (scopeKey: string): PersistedUsageStatsCache | n
 
     const resolvedUsage =
       parsed.usage && typeof parsed.usage === 'object'
-        ? (parsed.usage as UsageStatsSnapshot)
+        ? (() => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars -- models 必须被解构排除
+            const { models: _, ...rest } = parsed.usage as Record<string, unknown>;
+            return rest as UsageStatsSnapshot;
+          })()
         : null;
     const resolvedUsageDetails = resolveCachedUsageDetails(
       resolvedUsage,
@@ -888,12 +899,18 @@ const scheduleExpireFailedCleanup = () => {
 
   const tryCleanup = () => {
     if (inFlightUsageRequest !== null) {
+      if (expireFailedCleanupTimerId !== null) {
+        clearTimeout(expireFailedCleanupTimerId);
+      }
       expireFailedCleanupTimerId = setTimeout(tryCleanup, EXPIRE_FAILED_CLEANUP_IDLE_THRESHOLD_MS);
       return;
     }
 
     const state = useUsageStatsStore.getState();
     if (!state.scopeKey || state.loading) {
+      if (expireFailedCleanupTimerId !== null) {
+        clearTimeout(expireFailedCleanupTimerId);
+      }
       expireFailedCleanupTimerId = setTimeout(tryCleanup, EXPIRE_FAILED_CLEANUP_IDLE_THRESHOLD_MS);
       return;
     }
@@ -916,7 +933,9 @@ const scheduleExpireFailedCleanup = () => {
       }
     }
 
-    expireFailedCleanupTimerId = null;
+    if (expireFailedCleanupTimerId !== null) {
+      clearTimeout(expireFailedCleanupTimerId);
+    }
     expireFailedCleanupTimerId = setTimeout(tryCleanup, EXPIRE_FAILED_CLEANUP_INTERVAL_MS);
   };
 
@@ -929,8 +948,6 @@ export const cancelExpireFailedCleanup = () => {
     expireFailedCleanupTimerId = null;
   }
 };
-
-scheduleExpireFailedCleanup();
 
 export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   usage: null,
@@ -1094,6 +1111,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           scopeKey,
           ...(bootstrap.lastSeq !== null ? { lastSeq: bootstrap.lastSeq } : {}),
         });
+
+        scheduleExpireFailedCleanup();
       } catch (error: unknown) {
         // Ignore AbortError — it means the request was intentionally cancelled (StrictMode or logout)
         if (error && isCanceledRequestError(error)) {
@@ -1129,6 +1148,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   },
 
   clearUsageStats: () => {
+    cancelExpireFailedCleanup();
     const { scopeKey } = get();
     usageRequestToken += 1;
     inFlightUsageRequest = null;
@@ -1152,6 +1172,11 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
   applyDelta: (delta) => {
     const state = get();
+
+    if (state.loading) {
+      return;
+    }
+
     const requestDeltaRecovery = () => {
       set({ loading: true, error: null });
       usageSSEService.requestFullCorrection();

@@ -21,7 +21,10 @@ export function calculateCost(
   const inputTokens = normalizedTokens.input_tokens;
   const completionTokens = normalizedTokens.output_tokens;
   const cachedTokens = normalizedTokens.cached_tokens;
-  const promptTokens = Math.max(inputTokens - cachedTokens, 0);
+  const inputIncludesCached = normalizedTokens.inputIncludesCached;
+  const promptTokens = inputIncludesCached
+    ? Math.max(inputTokens - cachedTokens, 0)
+    : inputTokens;
 
   const promptCost = (promptTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.prompt) || 0);
   const cachedCost = (cachedTokens / TOKENS_PER_PRICE_UNIT) * (Number(price.cache) || 0);

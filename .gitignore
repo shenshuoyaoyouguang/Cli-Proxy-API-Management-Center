@@ -18,6 +18,7 @@ style.md
 .omx/
 .omc/
 .claude/
+.sisyphus/
 
 node_modules
 dist

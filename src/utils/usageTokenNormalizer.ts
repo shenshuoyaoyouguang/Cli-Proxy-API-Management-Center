@@ -5,6 +5,7 @@ export interface CanonicalUsageTokens {
   cached_tokens: number;
   cache_tokens: number;
   total_tokens: number;
+  inputIncludesCached: boolean;
 }
 
 import { isRecord } from '@/atoms/usage/guards';
@@ -322,6 +323,7 @@ export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
       cached_tokens: 0,
       cache_tokens: 0,
       total_tokens: 0,
+      inputIncludesCached: false,
     };
   }
 
@@ -377,7 +379,21 @@ export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
   const reasoningTokens = Math.max(reasoningAggregate, sumUniqueComponentValues(components.reasoning));
   const cachedTokens = Math.max(cachedAggregate, sumUniqueComponentValues(components.cached));
 
-  const derivedTotal = inputTokens + outputTokens + reasoningTokens + cachedTokens;
+  let inputIncludesCached =
+    cachedAggregate > 0 && (hasPromptTokensAggregate || hasInputTokensAggregate);
+
+  if (inputIncludesCached && totalAggregate > 0 && cachedAggregate > 0) {
+    const sumWithCached =
+      inputAggregate + outputAggregate + reasoningAggregate + cachedAggregate;
+    if (totalAggregate === sumWithCached) {
+      inputIncludesCached = false;
+    }
+  }
+
+  const derivedTotal =
+    inputIncludesCached && inputTokens >= cachedTokens
+      ? inputTokens + outputTokens + reasoningTokens
+      : inputTokens + outputTokens + reasoningTokens + cachedTokens;
   const totalTokens = Math.max(totalAggregate, derivedTotal);
 
   return {
@@ -387,6 +403,7 @@ export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
     cached_tokens: cachedTokens,
     cache_tokens: cachedTokens,
     total_tokens: totalTokens,
+    inputIncludesCached,
   };
 }
 

@@ -18,13 +18,14 @@ export function useCountUp(
   const prevTargetRef = useRef(targetValue);
   const isAnimatingRef = useRef(false);
   const pausedProgressRef = useRef(0);
+  const skipAnimation = !enabled || targetValue > 1e15;
 
   const easeOutCubic = useCallback((t: number): number => {
     return 1 - Math.pow(1 - t, 3);
   }, []);
 
   useEffect(() => {
-    if (!enabled) {
+    if (skipAnimation) {
       isAnimatingRef.current = false;
       prevTargetRef.current = targetValue;
       if (rafRef.current !== null) {
@@ -35,7 +36,7 @@ export function useCountUp(
     }
 
     isAnimatingRef.current = true;
-    const startValue = prevTargetRef.current;
+    const startValue = displayValue;
     const endValue = targetValue;
 
     if (startValue === endValue) return;
@@ -95,9 +96,9 @@ export function useCountUp(
       }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [targetValue, duration, enabled, easeOutCubic]);
+  }, [targetValue, duration, enabled, easeOutCubic]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const effectiveDisplayValue = enabled ? displayValue : targetValue;
+  const effectiveDisplayValue = skipAnimation ? targetValue : displayValue;
 
   const formattedValue = decimals > 0
     ? effectiveDisplayValue.toFixed(decimals)

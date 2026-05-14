@@ -492,27 +492,40 @@ describe('UsageSSEService', () => {
     service.disconnect();
   });
 
-  it('reports parse error on buffer overflow without crashing', async () => {
+  it('recovers gracefully after buffer overflow and continues processing subsequent events', async () => {
     const service = new UsageSSEServiceImpl();
     const handler = createHandler();
+    const controllable = createControllableStreamResponse();
 
-    const overflowChunk = 'x'.repeat(SSE_BUFFER_MAX_SIZE + 1);
-
-    fetchSpy.mockResolvedValue(createMockStreamResponse([overflowChunk]));
+    fetchSpy.mockResolvedValue(controllable.response);
 
     service.connect('http://localhost:3000', 'test-key', handler);
 
     await vi.runOnlyPendingTimersAsync();
     await Promise.resolve();
+
+    const heartbeatData = '{}';
+    controllable.enqueue(`event:usage:heartbeat\ndata:${heartbeatData}\n\n`);
     await Promise.resolve();
 
-    expect(handler.onError).toHaveBeenCalled();
-    const calls = (handler.onError as ReturnType<typeof vi.fn>).mock.calls;
-    const bufferOverflowCall = calls.find(
-      (call) => call[0] instanceof ErrorEvent && (call[0] as ErrorEvent).message.includes('buffer overflow')
-    );
-    expect(bufferOverflowCall).toBeDefined();
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
 
+    const overflowChunk = 'x'.repeat(SSE_BUFFER_MAX_SIZE + 1);
+    controllable.enqueue(overflowChunk);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handler.onError).not.toHaveBeenCalled();
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(1);
+
+    controllable.enqueue(`event:usage:heartbeat\ndata:${heartbeatData}\n\n`);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(handler.onHeartbeat).toHaveBeenCalledTimes(2);
+
+    controllable.close();
     service.disconnect();
   });
 

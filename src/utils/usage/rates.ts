@@ -19,10 +19,10 @@ export function calculateTokenBreakdown(usageData: unknown): TokenBreakdown {
 
   details.forEach((detail) => {
     const tokens = detail.tokens;
-    cachedTokens += Math.max(
-      typeof tokens?.cached_tokens === 'number' ? Math.max(tokens.cached_tokens, 0) : 0,
-      typeof tokens?.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0
-    );
+    const cachedValue = typeof tokens?.cached_tokens === 'number' && tokens.cached_tokens > 0
+      ? tokens.cached_tokens
+      : (typeof tokens?.cache_tokens === 'number' ? Math.max(tokens.cache_tokens, 0) : 0);
+    cachedTokens += cachedValue;
     if (typeof tokens?.reasoning_tokens === 'number') {
       reasoningTokens += tokens.reasoning_tokens;
     }

@@ -12,8 +12,10 @@ const requestIdle = typeof requestIdleCallback !== 'undefined'
 
 const USAGE_ENDPOINT_METHOD_REGEX = /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(\S+)/i;
 
-const usageDetailsCache = new WeakMap<object, UsageDetail[]>();
-const usageDetailsWithEndpointCache = new WeakMap<object, UsageDetailWithEndpoint[]>();
+const MAX_CACHE_ENTRIES = 20;
+
+const usageDetailsCache = new Map<string, UsageDetail[]>();
+const usageDetailsWithEndpointCache = new Map<string, UsageDetailWithEndpoint[]>();
 
 function createNormalizeSource() {
   const sourceCache = new Map<string, string>();
@@ -45,52 +47,37 @@ function getApisWithFallback(usageData: unknown): Record<string, unknown> | null
   return apis;
 }
 
-function readCachedDetails<T>(
-  cache: WeakMap<object, T[]>,
-  usageData: unknown,
-  apis: Record<string, unknown> | null
-): T[] | null {
-  const rootCacheKey = isRecord(usageData) ? (usageData as object) : null;
-  if (rootCacheKey) {
-    const cached = cache.get(rootCacheKey);
-    if (cached) {
-      return cached;
+function serializeCacheKey(apis: Record<string, unknown>): string {
+  return JSON.stringify(apis);
+}
+
+function evictOneEntry<T>(cache: Map<string, T[]>) {
+  if (cache.size >= MAX_CACHE_ENTRIES) {
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) {
+      cache.delete(firstKey);
     }
   }
+}
 
-  const apisCacheKey = apis ? (apis as object) : null;
-  if (!apisCacheKey) {
-    return null;
-  }
-
-  const cached = cache.get(apisCacheKey);
-  if (!cached) {
-    return null;
-  }
-
-  if (rootCacheKey && rootCacheKey !== apisCacheKey) {
-    cache.set(rootCacheKey, cached);
-  }
-
-  return cached;
+function readCachedDetails<T>(
+  cache: Map<string, T[]>,
+  apis: Record<string, unknown> | null
+): T[] | null {
+  if (!apis) return null;
+  const key = serializeCacheKey(apis);
+  return cache.get(key) ?? null;
 }
 
 function writeCachedDetails<T>(
-  cache: WeakMap<object, T[]>,
-  usageData: unknown,
+  cache: Map<string, T[]>,
   apis: Record<string, unknown> | null,
   details: T[]
 ) {
-  const rootCacheKey = isRecord(usageData) ? (usageData as object) : null;
-  const apisCacheKey = apis ? (apis as object) : null;
-
-  if (apisCacheKey) {
-    cache.set(apisCacheKey, details);
-  }
-
-  if (rootCacheKey) {
-    cache.set(rootCacheKey, details);
-  }
+  if (!apis) return;
+  const key = serializeCacheKey(apis);
+  evictOneEntry(cache);
+  cache.set(key, details);
 }
 
 export function collectUsageDetailsAsync(usageData: unknown): Promise<UsageDetail[]> {
@@ -104,7 +91,7 @@ export function collectUsageDetailsAsync(usageData: unknown): Promise<UsageDetai
 
 export function collectUsageDetails(usageData: unknown): UsageDetail[] {
   const apis = getApisWithFallback(usageData);
-  const cached = readCachedDetails(usageDetailsCache, usageData, apis);
+  const cached = readCachedDetails(usageDetailsCache, apis);
   if (cached) {
     return cached;
   }
@@ -175,13 +162,13 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
     details.length = index;
   }
 
-  writeCachedDetails(usageDetailsCache, usageData, apis, details);
+  writeCachedDetails(usageDetailsCache, apis, details);
   return details;
 }
 
 export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetailWithEndpoint[] {
   const apis = getApisWithFallback(usageData);
-  const cached = readCachedDetails(usageDetailsWithEndpointCache, usageData, apis);
+  const cached = readCachedDetails(usageDetailsWithEndpointCache, apis);
   if (cached) {
     return cached;
   }
@@ -234,7 +221,7 @@ export function collectUsageDetailsWithEndpoint(usageData: unknown): UsageDetail
     });
   });
 
-  writeCachedDetails(usageDetailsWithEndpointCache, usageData, apis, details);
+  writeCachedDetails(usageDetailsWithEndpointCache, apis, details);
   return details;
 }
 

@@ -12,6 +12,7 @@ export const SSE_RECONNECT_MAX_ATTEMPTS = 5;
 export const SSE_RECONNECT_BASE_DELAY_MS = 1000;
 export const SSE_RECONNECT_MAX_DELAY_MS = 30000;
 export const SSE_BUFFER_MAX_SIZE = 1_048_576;
+export const SSE_HEARTBEAT_UPGRADE_THRESHOLD = 5;
 
 type UsageSSEConnectOptions = {
   resetRetryState?: boolean;
@@ -39,59 +40,55 @@ type PendingFullSnapshotWaiter = {
 };
 
 function parseSSELines(chunk: string, buffer: { value: string }): ParsedSSEEvent[] {
-  try {
-    buffer.value += chunk;
+  buffer.value += chunk;
 
-    if (buffer.value.length > SSE_BUFFER_MAX_SIZE) {
-      buffer.value = '';
-      throw new Error('SSE buffer overflow: max size exceeded');
-    }
-
-    const events: ParsedSSEEvent[] = [];
-    let eventType = 'message';
-    let id = '';
-    let data = '';
-
-    const lines = buffer.value.split(/\r\n|\n|\r/);
-    const lastLine = lines.pop()!;
-    buffer.value = lastLine;
-
-    for (const line of lines) {
-      if (line === '') {
-        if (data !== '') {
-          events.push({ eventType, id, data });
-          eventType = 'message';
-          id = '';
-          data = '';
-        }
-        continue;
-      }
-      if (line.startsWith(':')) {
-        continue;
-      }
-      const colonIndex = line.indexOf(':');
-      if (colonIndex === -1) {
-        continue;
-      }
-      const field = line.slice(0, colonIndex);
-      const value = line.slice(colonIndex + 1).replace(/^ /, '');
-      if (field === 'event') {
-        eventType = value;
-      } else if (field === 'id') {
-        id = value;
-      } else if (field === 'data') {
-        if (data !== '') {
-          data += '\n';
-        }
-        data += value;
-      }
-    }
-
-    return events;
-  } catch (err) {
+  if (buffer.value.length > SSE_BUFFER_MAX_SIZE) {
+    console.warn(`[UsageSSE] Buffer overflow (${buffer.value.length} bytes), discarding incomplete line and continuing`);
     buffer.value = '';
-    throw err;
+    return [];
   }
+
+  const events: ParsedSSEEvent[] = [];
+  let eventType = 'message';
+  let id = '';
+  let data = '';
+
+  const lines = buffer.value.split(/\r\n|\n|\r/);
+  const lastLine = lines.pop()!;
+  buffer.value = lastLine;
+
+  for (const line of lines) {
+    if (line === '') {
+      if (data !== '') {
+        events.push({ eventType, id, data });
+        eventType = 'message';
+        id = '';
+        data = '';
+      }
+      continue;
+    }
+    if (line.startsWith(':')) {
+      continue;
+    }
+    const colonIndex = line.indexOf(':');
+    if (colonIndex === -1) {
+      continue;
+    }
+    const field = line.slice(0, colonIndex);
+    const value = line.slice(colonIndex + 1).replace(/^ /, '');
+    if (field === 'event') {
+      eventType = value;
+    } else if (field === 'id') {
+      id = value;
+    } else if (field === 'data') {
+      if (data !== '') {
+        data += '\n';
+      }
+      data += value;
+    }
+  }
+
+  return events;
 }
 
 type RawTokenDelta = {
@@ -221,6 +218,7 @@ export class UsageSSEServiceImpl {
   private lastEventId = '';
   private authMode: UsageSSEAuthMode = 'header';
   private hasTriedQueryFallback = false;
+  private heartbeatCount = 0;
   private pendingFullSnapshotWaiters: PendingFullSnapshotWaiter[] = [];
   private savedLastEventId = '';
 
@@ -270,6 +268,7 @@ export class UsageSSEServiceImpl {
       this.resetRetryState();
       this.authMode = 'header';
       this.hasTriedQueryFallback = false;
+      this.heartbeatCount = 0;
     }
 
     this.connectionStatus = 'connecting';
@@ -471,7 +470,7 @@ export class UsageSSEServiceImpl {
       throw new DOMException('The operation was aborted.', 'AbortError');
     }
     if (remainingMs <= 0) {
-      void reader.cancel();
+      reader.cancel().catch(() => {});
       throw new Error('Timed out waiting for usage:full after 0ms');
     }
 
@@ -501,13 +500,13 @@ export class UsageSSEServiceImpl {
       };
 
       timeoutId = setTimeout(() => {
-        void reader.cancel();
+        reader.cancel().catch(() => {});
         finish(() => reject(new Error(`Timed out waiting for usage:full after ${remainingMs}ms`)));
       }, remainingMs);
 
       if (signal) {
         abortListener = () => {
-          void reader.cancel();
+          reader.cancel().catch(() => {});
           finish(() => reject(new DOMException('The operation was aborted.', 'AbortError')));
         };
         signal.addEventListener('abort', abortListener, { once: true });
@@ -702,6 +701,17 @@ export class UsageSSEServiceImpl {
     this.resetRetryState();
     this.connectionStatus = 'connected';
     this.handler?.onHeartbeat();
+
+    if (this.authMode === 'query') {
+      this.heartbeatCount++;
+      if (this.heartbeatCount >= SSE_HEARTBEAT_UPGRADE_THRESHOLD) {
+        this.heartbeatCount = 0;
+        this.hasTriedQueryFallback = false;
+        this.authMode = 'header';
+      }
+    } else {
+      this.heartbeatCount = 0;
+    }
   }
 
   private handleAuthErrorEvent(): void {

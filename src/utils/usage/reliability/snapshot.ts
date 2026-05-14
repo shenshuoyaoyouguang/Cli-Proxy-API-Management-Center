@@ -130,7 +130,7 @@ const buildRollingBlockHealthData = (
   return {
     blocks,
     blockDetails,
-    successRate: totals.total > 0 ? (totals.success / totals.total) * 100 : 100,
+    successRate: totals.total > 0 ? (totals.success / totals.total) * 100 : null,
     totalSuccess: totals.success,
     totalFailure: totals.failure,
     rows,
@@ -287,9 +287,7 @@ export function buildReliabilitySnapshot(
 
   details.forEach((detail) => {
     const existingMinuteBuckets = minuteByModel.get(detail.minuteKey) ?? new Map<string, ReliabilityCounts>();
-    const nextMinuteBuckets = new Map(existingMinuteBuckets);
-    nextMinuteBuckets.set(detail.modelName, appendOutcome(existingMinuteBuckets.get(detail.modelName), detail.failed));
-    minuteByModel.set(detail.minuteKey, nextMinuteBuckets);
+    existingMinuteBuckets.set(detail.modelName, appendOutcome(existingMinuteBuckets.get(detail.modelName), detail.failed));
 
     hourBuckets.set(detail.hourKey, appendOutcome(hourBuckets.get(detail.hourKey), detail.failed));
     dayBuckets.set(detail.dayKey, appendOutcome(dayBuckets.get(detail.dayKey), detail.failed));

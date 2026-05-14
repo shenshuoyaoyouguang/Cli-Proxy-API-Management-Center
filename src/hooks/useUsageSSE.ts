@@ -73,12 +73,35 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
 
     const statusIntervalId = setInterval(syncStatus, 1000);
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        usageSSEService.suspend();
+        connectionStatusRef.current = 'disconnected';
+        setConnectionStatus('disconnected');
+        return;
+      }
+
+      if (handlerRef.current) {
+        fallenBackRef.current = false;
+        usageSSEService.resume(apiBase, managementKey, handlerRef.current);
+        connectionStatusRef.current = 'connecting';
+        setConnectionStatus('connecting');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       clearInterval(statusIntervalId);
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       usageSSEService.disconnect();
       connectionStatusRef.current = 'disconnected';
       setConnectionStatus('disconnected');
@@ -88,37 +111,6 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
   useInterval(() => {
     void useUsageStatsStore.getState().loadUsageStats({ force: true, staleTimeMs: USAGE_STATS_STALE_TIME_MS });
   }, connectionStatus === 'degraded' ? SSE_POLLING_INTERVAL_MS : null);
-
-  useEffect(() => {
-    if (!enabled || !apiBase || !managementKey) return;
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        if (reconnectTimerRef.current) {
-          clearTimeout(reconnectTimerRef.current);
-          reconnectTimerRef.current = null;
-        }
-        // suspend 保留 lastEventId，切回时可断点续传
-        usageSSEService.suspend();
-        connectionStatusRef.current = 'disconnected';
-        setConnectionStatus('disconnected');
-        return;
-      }
-
-      if (handlerRef.current) {
-        fallenBackRef.current = false;
-        // resume 使用保存的 lastEventId 恢复事件流
-        usageSSEService.resume(apiBase, managementKey, handlerRef.current);
-        connectionStatusRef.current = 'connecting';
-        setConnectionStatus('connecting');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [enabled, apiBase, managementKey]);
 
   return {
     connectionStatus,

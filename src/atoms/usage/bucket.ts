@@ -32,7 +32,7 @@ export function bucketDetails<T extends BucketableDetail>(
 ): {
   blocks: StatusBlockState[];
   blockDetails: StatusBlockDetail[];
-  successRate: number;
+  successRate: number | null;
   totalSuccess: number;
   totalFailure: number;
 } {
@@ -93,7 +93,7 @@ export function bucketDetails<T extends BucketableDetail>(
   });
 
   const total = totalSuccess + totalFailure;
-  const successRate = total > 0 ? (totalSuccess / total) * 100 : 100;
+  const successRate = total > 0 ? (totalSuccess / total) * 100 : null;
 
   return {
     blocks,
@@ -125,7 +125,7 @@ export function calculateServiceHealthData(
 ): {
   blocks: StatusBlockState[];
   blockDetails: StatusBlockDetail[];
-  successRate: number;
+  successRate: number | null;
   totalSuccess: number;
   totalFailure: number;
   rows: number;

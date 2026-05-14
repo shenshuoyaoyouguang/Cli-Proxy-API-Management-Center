@@ -51,6 +51,18 @@ export function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
 
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const timeStr = now.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' });
+  const dateStr = now.toLocaleDateString(i18n.language, { weekday: 'short', month: 'short', day: 'numeric' });
+
   useEffect(() => {
     if (connectionStatus === 'connected' && !config) {
       fetchConfig().catch(() => {
@@ -207,10 +219,10 @@ export function DashboardPage() {
         <div className={styles.heroMeta}>
           <div className={styles.dateTimeBlock}>
             <span className={styles.time}>
-              {new Date().toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })}
+              {timeStr}
             </span>
             <span className={styles.date}>
-              {new Date().toLocaleDateString(i18n.language, { weekday: 'short', month: 'short', day: 'numeric' })}
+              {dateStr}
             </span>
           </div>
           <div className={styles.connectionPill}>

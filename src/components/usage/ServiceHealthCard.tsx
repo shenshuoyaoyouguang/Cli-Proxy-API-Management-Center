@@ -221,9 +221,9 @@ export function ServiceHealthCard({ details, loading, healthData: providedHealth
 
   const rateClass = !hasData
     ? ''
-    : healthData.successRate >= 99
+    : healthData.successRate !== null && healthData.successRate >= 99
       ? styles.healthRateHigh
-      : healthData.successRate >= 97
+      : healthData.successRate !== null && healthData.successRate >= 97
         ? styles.healthRateMedium
         : styles.healthRateLow;
 
@@ -239,7 +239,7 @@ export function ServiceHealthCard({ details, loading, healthData: providedHealth
         <div className={styles.cardMeta}>
           <span className={styles.healthWindow}>{t('service_health.window')}</span>
           <span className={`${styles.healthRate} ${rateClass}`}>
-            {loading ? '--' : hasData ? `${healthData.successRate.toFixed(1)}%` : '--'}
+            {loading ? '--' : hasData ? `${healthData.successRate!.toFixed(1)}%` : '--'}
           </span>
         </div>
       </div>

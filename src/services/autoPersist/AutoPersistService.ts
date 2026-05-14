@@ -35,9 +35,9 @@ type AutoPersistCache = AutoPersistBootstrapSnapshot & {
 };
 
 const AUTO_PERSIST_CACHE_PREFIX = 'cli-proxy-usage-auto-persist-v1';
-const AUTO_PERSIST_TRIGGER_DELTA = 10;
-const AUTO_PERSIST_INTERVAL_MS = 60_000;
-const AUTO_PERSIST_START_DELAY_MS = 30_000;
+const AUTO_PERSIST_TRIGGER_DELTA = 3;       // 降低触发阈值：10 → 3
+const AUTO_PERSIST_INTERVAL_MS = 30_000;    // 缩短上传间隔：60s → 30s
+const AUTO_PERSIST_START_DELAY_MS = 5_000;  // 降低启动延迟：30s → 5s
 const AUTO_PERSIST_MAX_DELAY_MS = 5 * 60 * 1000;
 const CLEARED_SCOPE_KEY_TTL_MS = 10 * 60 * 1000; // 10 分钟
 
@@ -199,6 +199,30 @@ export class AutoPersistService {
   private startTimerId: number | null = null;
   private intervalId: number | null = null;
   private persistInFlight: Promise<void> | null = null;
+  private boundHandleBeforeUnload: (() => void) | null = null;
+  private boundHandleVisibilityChange: (() => void) | null = null;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      this.boundHandleBeforeUnload = this.handleBeforeUnload.bind(this);
+      window.addEventListener('beforeunload', this.boundHandleBeforeUnload);
+
+      this.boundHandleVisibilityChange = this.handleVisibilityChange.bind(this);
+      document.addEventListener('visibilitychange', this.boundHandleVisibilityChange);
+    }
+  }
+
+  private handleBeforeUnload() {
+    if (this.currentCache) {
+      writeCache(this.currentCache);
+    }
+  }
+
+  private handleVisibilityChange() {
+    if (document.visibilityState === 'hidden' && this.startDelayCompleted && this.currentCache) {
+      void this.maybePersist();
+    }
+  }
 
   private isScopeCleared(scopeKey: string): boolean {
     if (!this.clearedScopeKeys.has(scopeKey)) {
@@ -344,6 +368,20 @@ export class AutoPersistService {
     }
 
     this.startDelayCompleted = false;
+  }
+
+  destroy() {
+    this.stopTimers();
+
+    if (typeof window !== 'undefined' && this.boundHandleBeforeUnload) {
+      window.removeEventListener('beforeunload', this.boundHandleBeforeUnload);
+      this.boundHandleBeforeUnload = null;
+    }
+
+    if (typeof document !== 'undefined' && this.boundHandleVisibilityChange) {
+      document.removeEventListener('visibilitychange', this.boundHandleVisibilityChange);
+      this.boundHandleVisibilityChange = null;
+    }
   }
 
   private shouldPersist(cache: AutoPersistCache) {

@@ -292,7 +292,7 @@ export function getApiStats(
     Object.entries(modelsData).forEach(([modelName, modelData]) => {
       if (!isRecord(modelData)) return;
       const details = Array.isArray(modelData.details) ? modelData.details : [];
-      const hasExplicitCounts =
+      let hasExplicitCounts =
         typeof modelData.success_count === 'number' || typeof modelData.failure_count === 'number';
 
       let successCount = 0;
@@ -300,6 +300,12 @@ export function getApiStats(
       if (hasExplicitCounts) {
         successCount += Number(modelData.success_count) || 0;
         failureCount += Number(modelData.failure_count) || 0;
+      }
+
+      if (hasExplicitCounts && details.length < successCount + failureCount) {
+        successCount = 0;
+        failureCount = 0;
+        hasExplicitCounts = false;
       }
 
       const price = modelPrices[modelName];
@@ -409,11 +415,17 @@ export function getModelStats(
 
       const price = modelPrices[modelName];
 
-      const hasExplicitCounts =
+      let hasExplicitCounts =
         typeof modelData.success_count === 'number' || typeof modelData.failure_count === 'number';
       if (hasExplicitCounts) {
         existing.successCount += Number(modelData.success_count) || 0;
         existing.failureCount += Number(modelData.failure_count) || 0;
+      }
+
+      if (hasExplicitCounts && details.length < existing.successCount + existing.failureCount) {
+        existing.successCount = 0;
+        existing.failureCount = 0;
+        hasExplicitCounts = false;
       }
 
       if (details.length > 0 && (!hasExplicitCounts || price)) {

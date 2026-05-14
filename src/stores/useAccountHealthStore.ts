@@ -472,9 +472,6 @@ export const useAccountHealthStore = create<AccountHealthStoreState>((set, get) 
     const nextMap: AccountHealthMap = { ...healthMap };
     const failureUpdates: Record<string, AccountHealthState> = {};
     const removalUpdates: Record<string, null> = {};
-    let hasPersistedFailureChanges = false;
-    let hasPersistedRemovalChanges = false;
-    let firstPersistError: unknown = null;
 
     results.forEach((result) => {
       const normalizedName = String(result.name ?? '').trim();
@@ -502,41 +499,15 @@ export const useAccountHealthStore = create<AccountHealthStoreState>((set, get) 
       return;
     }
 
-    if (Object.keys(failureUpdates).length > 0) {
-      try {
-        await persistHealthUpdates(failureUpdates);
-        hasPersistedFailureChanges = true;
-      } catch (error) {
-        firstPersistError = error;
-      }
-    }
+    const allUpdates: Record<string, AccountHealthState | null> = {
+      ...failureUpdates,
+      ...removalUpdates,
+    };
 
-    if (Object.keys(removalUpdates).length > 0) {
-      try {
-        await persistHealthUpdates(removalUpdates);
-        hasPersistedRemovalChanges = true;
-      } catch (error) {
-        firstPersistError ??= error;
-      }
-    }
+    await persistHealthUpdates(allUpdates);
 
-    if (get().scopeKey === scopeKey && (hasPersistedFailureChanges || hasPersistedRemovalChanges)) {
-      const currentMap = { ...get().healthMap };
-      if (hasPersistedRemovalChanges) {
-        Object.keys(removalUpdates).forEach((name) => {
-          delete currentMap[name];
-        });
-      }
-      if (hasPersistedFailureChanges) {
-        Object.entries(failureUpdates).forEach(([name, state]) => {
-          currentMap[name] = state;
-        });
-      }
-      updateState(set, scopeKey, currentMap);
-    }
-
-    if (firstPersistError) {
-      throw firstPersistError;
+    if (get().scopeKey === scopeKey) {
+      updateState(set, scopeKey, nextMap);
     }
   },
 
@@ -555,21 +526,13 @@ export const useAccountHealthStore = create<AccountHealthStoreState>((set, get) 
       return;
     }
 
-    const previousState = healthMap[normalizedName];
-    const nextMap = { ...healthMap };
+    await persistHealthUpdates({ [normalizedName]: null }, normalizedName);
+    if (get().scopeKey !== scopeKey) {
+      return;
+    }
+    const nextMap = { ...get().healthMap };
     delete nextMap[normalizedName];
     updateState(set, scopeKey, nextMap);
-    try {
-      await persistHealthUpdates({ [normalizedName]: null }, normalizedName);
-    } catch (error) {
-      if (get().scopeKey === scopeKey) {
-        updateState(set, scopeKey, {
-          ...get().healthMap,
-          [normalizedName]: previousState,
-        });
-      }
-      throw error;
-    }
   },
 }));
 

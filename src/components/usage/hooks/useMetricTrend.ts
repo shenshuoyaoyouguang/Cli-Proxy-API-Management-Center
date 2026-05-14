@@ -134,9 +134,11 @@ export function useMetricTrend(
         }
       }
 
-      const previous7dAgeMs = nowMs - msPer7d - timestamp;
-      if (previous7dAgeMs >= 0 && previous7dAgeMs < msPer7d) {
-        const bucketIndex = Math.floor(previous7dAgeMs / BUCKET_7D_MS);
+      const previous7dEnd = nowMs - msPer7d;
+      const previous7dStart = nowMs - 2 * msPer7d;
+      if (timestamp >= previous7dStart && timestamp < previous7dEnd) {
+        const offsetFromWindowEnd = previous7dEnd - timestamp;
+        const bucketIndex = Math.floor(offsetFromWindowEnd / BUCKET_7D_MS);
         const bucket = previous7dBuckets[bucketIndex];
         if (bucket) {
           accumulateBucket(bucket, 1, tokenCount, cost);
@@ -152,9 +154,11 @@ export function useMetricTrend(
         }
       }
 
-      const previous30dAgeMs = nowMs - msPer30d - timestamp;
-      if (previous30dAgeMs >= 0 && previous30dAgeMs < msPer30d) {
-        const bucketIndex = Math.floor(previous30dAgeMs / BUCKET_30D_MS);
+      const previous30dEnd = nowMs - msPer30d;
+      const previous30dStart = nowMs - 2 * msPer30d;
+      if (timestamp >= previous30dStart && timestamp < previous30dEnd) {
+        const offsetFromWindowEnd = previous30dEnd - timestamp;
+        const bucketIndex = Math.floor(offsetFromWindowEnd / BUCKET_30D_MS);
         const bucket = previous30dBuckets[bucketIndex];
         if (bucket) {
           accumulateBucket(bucket, 1, tokenCount, cost);

@@ -91,6 +91,7 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
         usageSSEService.resume(apiBase, managementKey, handlerRef.current);
         connectionStatusRef.current = 'connecting';
         setConnectionStatus('connecting');
+        void loadFreshUsageSnapshot().catch(() => {});
 
         if (reconnectTimerRef.current) {
           clearTimeout(reconnectTimerRef.current);
@@ -117,7 +118,7 @@ export function useUsageSSE(options: { enabled?: boolean } = {}) {
       connectionStatusRef.current = 'disconnected';
       setConnectionStatus('disconnected');
     };
-  }, [enabled, apiBase, enterDegradedMode, managementKey, syncStatus]);
+  }, [enabled, apiBase, enterDegradedMode, loadFreshUsageSnapshot, managementKey, syncStatus]);
 
   useInterval(
     () => {

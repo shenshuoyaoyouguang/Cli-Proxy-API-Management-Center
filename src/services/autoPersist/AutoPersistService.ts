@@ -1,5 +1,6 @@
 import { usageApi, type AutoPersistUsagePayload } from '@/services/api/usage';
 import { CacheLayer } from '@/services/cache';
+import { computeApiUrl } from '@/utils/connection';
 import { createAggregateOnlyUsageSnapshot, type KeyStats, type UsageDetail } from '@/utils/usage';
 import {
   DEFAULT_USAGE_CACHE_MAX_DETAILS,
@@ -9,7 +10,12 @@ import {
 
 type UsageStatsSnapshot = Record<string, unknown>;
 
-export type AutoPersistSnapshotInput = {
+type AutoPersistConnection = {
+  apiBase: string;
+  managementKey: string;
+};
+
+type AutoPersistSnapshotCore = {
   scopeKey: string;
   usage: UsageStatsSnapshot | null;
   keyStats: KeyStats;
@@ -17,7 +23,11 @@ export type AutoPersistSnapshotInput = {
   lastRefreshedAt: number | null;
 };
 
-export type AutoPersistBootstrapSnapshot = AutoPersistSnapshotInput & {
+export type AutoPersistSnapshotInput = AutoPersistSnapshotCore & {
+  connection?: AutoPersistConnection | null;
+};
+
+export type AutoPersistBootstrapSnapshot = AutoPersistSnapshotCore & {
   detailCount: number;
 };
 
@@ -41,6 +51,16 @@ const createEmptyKeyStats = (): KeyStats => ({ bySource: {}, byAuthIndex: {} });
 
 const createStorageKey = (scopeKey: string) =>
   `${AUTO_PERSIST_CACHE_PREFIX}:${encodeURIComponent(scopeKey)}`;
+
+const stripTopLevelModels = (usage: UsageStatsSnapshot | null): UsageStatsSnapshot | null => {
+  if (!usage) {
+    return null;
+  }
+
+  const nextUsage = { ...usage };
+  delete nextUsage.models;
+  return nextUsage;
+};
 
 const createSessionId = () => {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
@@ -161,8 +181,8 @@ const writeCache = (cache: AutoPersistCache) => {
       ...cache,
       usage: cache.usage ? createAggregateOnlyUsageSnapshot(cache.usage) : null,
       usageDetails: [],
-      detailCount: cache.detailCount,
-      rawDetailCount: cache.rawDetailCount,
+      detailCount: 0,
+      rawDetailCount: 0,
       payload: null,
     };
 
@@ -190,6 +210,7 @@ export class AutoPersistService {
   private readonly sessionId = createSessionId();
   private activeScopeKey = '';
   private currentCache: AutoPersistCache | null = null;
+  private currentConnection: AutoPersistConnection | null = null;
   private readonly clearedScopeKeys = new Map<string, number>();
   private startDelayCompleted = false;
   private startTimerId: number | null = null;
@@ -211,6 +232,37 @@ export class AutoPersistService {
   private handleBeforeUnload() {
     if (this.currentCache) {
       writeCache(this.currentCache);
+      this.persistWithKeepalive(this.currentCache.payload, this.currentConnection);
+    }
+  }
+
+  private persistWithKeepalive(
+    payload: AutoPersistUsagePayload | null,
+    connection: AutoPersistConnection | null
+  ) {
+    if (!payload || !connection || typeof fetch !== 'function') {
+      return;
+    }
+
+    const managementUrl = computeApiUrl(connection.apiBase);
+    if (!managementUrl || !connection.managementKey) {
+      return;
+    }
+
+    try {
+      void fetch(`${managementUrl}/usage/reports`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${connection.managementKey}`,
+        },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => {
+        // keepalive failures are non-critical
+      });
+    } catch {
+      // keepalive setup failures are non-critical
     }
   }
 
@@ -248,15 +300,9 @@ export class AutoPersistService {
       return null;
     }
 
-    // 排除顶层 models 字段，防止缓存数据触发二次归一化导致计数翻倍
-    const { models: _strippedModels, ...usageWithoutModels } =
-      cache.usage && typeof cache.usage === 'object'
-        ? (cache.usage as Record<string, unknown>)
-        : { models: undefined };
-
     return {
       scopeKey: cache.scopeKey,
-      usage: cache.usage ? (usageWithoutModels as AutoPersistBootstrapSnapshot['usage']) : null,
+      usage: stripTopLevelModels(cache.usage) as AutoPersistBootstrapSnapshot['usage'],
       keyStats: cache.keyStats,
       usageDetails: cache.usageDetails,
       lastRefreshedAt: cache.lastRefreshedAt,
@@ -269,6 +315,7 @@ export class AutoPersistService {
       this.stopTimers();
       this.activeScopeKey = '';
       this.currentCache = null;
+      this.currentConnection = null;
       this.persistInFlight = null;
     }
 
@@ -292,6 +339,7 @@ export class AutoPersistService {
 
     this.activeScopeKey = input.scopeKey;
     this.currentCache = nextCache;
+    this.currentConnection = input.connection ?? null;
     writeCache(nextCache);
     this.ensureTimers();
     if (this.startDelayCompleted) {

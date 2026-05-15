@@ -255,6 +255,15 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const resolveDetailTotalTokens = (detail: UsageDetail): number => {
+  const rawTotal = toNumber(detail.tokens?.total_tokens);
+  const normalizedTotal = extractTotalTokens(detail);
+  if (rawTotal > 0 && rawTotal >= normalizedTotal) {
+    return rawTotal;
+  }
+  return normalizedTotal;
+};
+
 const getDetailTimestampMs = (detail: UsageDetail) => {
   if (typeof detail.__timestampMs === 'number' && Number.isFinite(detail.__timestampMs)) {
     return detail.__timestampMs;
@@ -334,7 +343,7 @@ const accumulateEfficiencyAggregate = (
   const reasoningTokens = Math.max(toNumber(detail.tokens?.reasoning_tokens), 0);
   const modelName = String(detail.__modelName ?? '').trim();
   const cachedTokens = getCachedTokens(detail.tokens, modelName);
-  const totalTokens = Math.max(toNumber(detail.tokens?.total_tokens), extractTotalTokens(detail));
+  const totalTokens = resolveDetailTotalTokens(detail);
   const failed = detail.failed === true;
 
   const cost = calculateCost({ ...detail, __modelName: modelName }, modelPrices);
@@ -757,11 +766,25 @@ export function createTokenDistribution(details: UsageDetail[]): TokenDistributi
   details.forEach((detail) => {
     const tokens = detail.tokens;
     const modelName = String(detail.__modelName ?? '').trim();
-    input += typeof tokens?.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
-    output += typeof tokens?.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
-    cached += getCachedTokens(tokens, modelName);
-    reasoning +=
+    const detailInput =
+      typeof tokens?.input_tokens === 'number' ? Math.max(tokens.input_tokens, 0) : 0;
+    const detailCached = getCachedTokens(tokens, modelName);
+    const detailTotalTokens = resolveDetailTotalTokens(detail);
+    const detailOutput =
+      typeof tokens?.output_tokens === 'number' ? Math.max(tokens.output_tokens, 0) : 0;
+    const detailReasoning =
       typeof tokens?.reasoning_tokens === 'number' ? Math.max(tokens.reasoning_tokens, 0) : 0;
+
+    const componentSum = detailInput + detailOutput + detailReasoning;
+    const countCachedSeparately =
+      detailCached > 0 && (detailTotalTokens === 0 || detailTotalTokens > componentSum);
+
+    input += detailInput;
+    output += detailOutput;
+    reasoning += detailReasoning;
+    if (countCachedSeparately) {
+      cached += detailCached;
+    }
   });
 
   return { input, output, cached, reasoning };
@@ -813,7 +836,7 @@ export function createUsageSummaryMetrics(
   details.forEach((detail) => {
     const tokens = detail.tokens;
     const modelName = String(detail.__modelName ?? '').trim();
-    const totalTokens = extractTotalTokens(detail);
+    const totalTokens = resolveDetailTotalTokens(detail);
     const cached = getCachedTokens(tokens, modelName);
 
     cachedTokens += cached;
@@ -1030,10 +1053,7 @@ export function createRequestEventRows(
       const outputTokens = Math.max(toNumber(detail.tokens?.output_tokens), 0);
       const reasoningTokens = Math.max(toNumber(detail.tokens?.reasoning_tokens), 0);
       const cachedTokens = getCachedTokens(detail.tokens, model);
-      const totalTokens = Math.max(
-        toNumber(detail.tokens?.total_tokens),
-        extractTotalTokens(detail)
-      );
+      const totalTokens = resolveDetailTotalTokens(detail);
 
       return {
         id: `${timestampMs}-${model}-${sourceRaw || sourceInfo.displayName}-${authIndex}-${inputTokens}-${outputTokens}-${totalTokens}-${index}`,

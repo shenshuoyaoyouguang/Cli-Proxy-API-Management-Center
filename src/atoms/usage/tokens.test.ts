@@ -49,4 +49,42 @@ describe('usage token detail normalization', () => {
 
     expect(totalTokens).toBe(50);
   });
+
+  it('keeps inputIncludesCached=true when total_tokens already equals prompt+completion without adding cached twice', () => {
+    const tokens = normalizeUsageDetailTokens({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        cached_tokens: 10,
+        total_tokens: 120,
+      },
+    });
+
+    expect(tokens).toMatchObject({
+      input_tokens: 100,
+      output_tokens: 20,
+      cached_tokens: 10,
+      total_tokens: 120,
+      inputIncludesCached: true,
+    });
+  });
+
+  it('switches inputIncludesCached=false when total_tokens includes cached tokens separately', () => {
+    const tokens = normalizeUsageDetailTokens({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        cached_tokens: 10,
+        total_tokens: 130,
+      },
+    });
+
+    expect(tokens).toMatchObject({
+      input_tokens: 100,
+      output_tokens: 20,
+      cached_tokens: 10,
+      total_tokens: 130,
+      inputIncludesCached: false,
+    });
+  });
 });

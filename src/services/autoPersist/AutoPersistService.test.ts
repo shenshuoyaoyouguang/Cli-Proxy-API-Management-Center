@@ -34,6 +34,7 @@ describe('AutoPersistService', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     localStorage.clear();
   });
 
@@ -198,6 +199,39 @@ describe('AutoPersistService', () => {
     }
   });
 
+  it('uses keepalive fetch against the configured management endpoint on beforeunload', () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const service = new AutoPersistService();
+
+    service.onUsageRefreshed({
+      scopeKey: 'beforeunload-keepalive',
+      usage: { apis: { test: {} } },
+      keyStats: { bySource: {}, byAuthIndex: {} },
+      usageDetails: createUsageDetails(5),
+      lastRefreshedAt: Date.now(),
+      connection: {
+        apiBase: 'http://localhost:3000',
+        managementKey: 'keepalive-key',
+      },
+    });
+
+    window.dispatchEvent(new Event('beforeunload'));
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://localhost:3000/v0/management/usage/reports',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer keepalive-key',
+        }),
+      })
+    );
+  });
+
   it('registers a visibilitychange listener that attempts persist when hidden', async () => {
     vi.mocked(usageApi.autoPersistUsage).mockResolvedValue({} as never);
 
@@ -255,7 +289,7 @@ describe('AutoPersistService', () => {
       usage: { apis: { first: {} } },
       keyStats: { bySource: { first: { success: 10, failure: 0 } }, byAuthIndex: {} },
       usageDetails: [],
-      detailCount: 10,
+      detailCount: 0,
       lastRefreshedAt: expect.any(Number),
     });
 

@@ -163,7 +163,10 @@ describe('useUsageSSE visibility handling', () => {
 
     const resumeSpy = mocks.usageSSEService.resume as ReturnType<typeof vi.fn>;
     expect(resumeSpy).toHaveBeenCalledTimes(1);
-    expect(mocks.loadUsageStatsSpy).not.toHaveBeenCalled();
+    expect(mocks.loadUsageStatsSpy).toHaveBeenCalledWith({
+      force: true,
+      staleTimeMs: 120_000,
+    });
     expect(harness.getResult().connectionStatus).toBe('connecting');
 
     await harness.unmount();

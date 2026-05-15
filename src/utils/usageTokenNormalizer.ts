@@ -383,10 +383,12 @@ export function normalizeUsageTokens(raw: unknown): CanonicalUsageTokens {
     cachedAggregate > 0 && (hasPromptTokensAggregate || hasInputTokensAggregate);
 
   if (inputIncludesCached && totalAggregate > 0 && cachedAggregate > 0) {
-    const sumWithCached =
-      inputAggregate + outputAggregate + reasoningAggregate + cachedAggregate;
+    const sumWithoutCached = inputAggregate + outputAggregate + reasoningAggregate;
+    const sumWithCached = sumWithoutCached + cachedAggregate;
     if (totalAggregate === sumWithCached) {
       inputIncludesCached = false;
+    } else if (totalAggregate === sumWithoutCached) {
+      inputIncludesCached = true;
     }
   }
 

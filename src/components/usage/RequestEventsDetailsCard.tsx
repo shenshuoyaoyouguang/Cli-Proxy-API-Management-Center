@@ -13,11 +13,11 @@ import {
 } from './hooks/useRequestEventsTableState';
 import styles from '@/pages/UsagePage.module.scss';
 
-const ROW_HEIGHT = 36;
-const TABLE_HEADER_HEIGHT = 36;
-const TABLE_MAX_HEIGHT = 460;
+const ROW_HEIGHT = 40;
+const TABLE_HEADER_HEIGHT = 40;
+const TABLE_MAX_HEIGHT = 480;
 const TABLE_GRID_TEMPLATE =
-  'minmax(160px, 1.5fr) minmax(120px, 1fr) minmax(100px, 0.8fr) 80px 70px 80px 80px 90px 80px 90px';
+  'minmax(140px, 1.2fr) minmax(100px, 1fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(50px, 0.5fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr) minmax(70px, 0.7fr) minmax(80px, 0.8fr)';
 
 export interface RequestEventsDetailsCardProps {
   rows: RequestEventRow[];
@@ -333,57 +333,59 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
       )}
 
       <div className={styles.requestEventsToolbar}>
-        <div className={styles.requestEventsFilterItem}>
-          <span className={styles.requestEventsFilterLabel}>
-            {t('usage_stats.request_events_filter_model')}
-          </span>
-          <Select
-            value={effectiveModelFilter}
-            options={modelOptions}
-            onChange={handleModelFilterChange}
-            className={styles.requestEventsSelect}
-            ariaLabel={t('usage_stats.request_events_filter_model')}
-            fullWidth={false}
-          />
-        </div>
-        <div className={styles.requestEventsFilterItem}>
-          <span className={styles.requestEventsFilterLabel}>
-            {t('usage_stats.request_events_filter_source')}
-          </span>
-          <Select
-            value={effectiveSourceFilter}
-            options={sourceOptions}
-            onChange={handleSourceFilterChange}
-            className={styles.requestEventsSelect}
-            ariaLabel={t('usage_stats.request_events_filter_source')}
-            fullWidth={false}
-          />
-        </div>
-        <div className={styles.requestEventsFilterItem}>
-          <span className={styles.requestEventsFilterLabel}>
-            {t('usage_stats.request_events_result')}
-          </span>
-          <Select
-            value={effectiveResultFilter}
-            options={resultOptions}
-            onChange={handleResultFilterChange}
-            className={styles.requestEventsSelect}
-            ariaLabel={t('usage_stats.request_events_result')}
-            fullWidth={false}
-          />
-        </div>
-        <div className={styles.requestEventsFilterItem}>
-          <span className={styles.requestEventsFilterLabel}>
-            {t('usage_stats.request_events_filter_auth_index')}
-          </span>
-          <Select
-            value={effectiveAuthIndexFilter}
-            options={authIndexOptions}
-            onChange={handleAuthIndexFilterChange}
-            className={styles.requestEventsSelect}
-            ariaLabel={t('usage_stats.request_events_filter_auth_index')}
-            fullWidth={false}
-          />
+        <div className={styles.requestEventsFilterGroup}>
+          <div className={styles.requestEventsFilterItem}>
+            <span className={styles.requestEventsFilterLabel}>
+              {t('usage_stats.request_events_filter_model')}
+            </span>
+            <Select
+              value={effectiveModelFilter}
+              options={modelOptions}
+              onChange={handleModelFilterChange}
+              className={styles.requestEventsSelect}
+              ariaLabel={t('usage_stats.request_events_filter_model')}
+              fullWidth
+            />
+          </div>
+          <div className={styles.requestEventsFilterItem}>
+            <span className={styles.requestEventsFilterLabel}>
+              {t('usage_stats.request_events_filter_source')}
+            </span>
+            <Select
+              value={effectiveSourceFilter}
+              options={sourceOptions}
+              onChange={handleSourceFilterChange}
+              className={styles.requestEventsSelect}
+              ariaLabel={t('usage_stats.request_events_filter_source')}
+              fullWidth
+            />
+          </div>
+          <div className={styles.requestEventsFilterItem}>
+            <span className={styles.requestEventsFilterLabel}>
+              {t('usage_stats.request_events_result')}
+            </span>
+            <Select
+              value={effectiveResultFilter}
+              options={resultOptions}
+              onChange={handleResultFilterChange}
+              className={styles.requestEventsSelect}
+              ariaLabel={t('usage_stats.request_events_result')}
+              fullWidth
+            />
+          </div>
+          <div className={styles.requestEventsFilterItem}>
+            <span className={styles.requestEventsFilterLabel}>
+              {t('usage_stats.request_events_filter_auth_index')}
+            </span>
+            <Select
+              value={effectiveAuthIndexFilter}
+              options={authIndexOptions}
+              onChange={handleAuthIndexFilterChange}
+              className={styles.requestEventsSelect}
+              ariaLabel={t('usage_stats.request_events_filter_auth_index')}
+              fullWidth
+            />
+          </div>
         </div>
       </div>
 
@@ -403,43 +405,39 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
         />
       ) : (
         <>
-          <div className={styles.requestEventsMeta}>
-            <span className={newDataPulse ? styles.requestEventsNewDataPulse : ''}>
-              {t('usage_stats.request_events_count', { count: filteredRows.length })}
-              {newDataPulse && (
-                <span className={styles.requestEventsLiveIndicator}> {t('usage_stats.live')}</span>
-              )}
-            </span>
-            {totalPages > 1 && (
-              <span className={styles.requestEventsLimitHint}>
-                {currentPage}/{totalPages}
+          <div className={styles.requestEventsTableHeader}>
+            <div className={styles.requestEventsMeta}>
+              <span className={newDataPulse ? styles.requestEventsNewDataPulse : ''}>
+                {t('usage_stats.request_events_count', { count: filteredRows.length })}
+                {newDataPulse && (
+                  <span className={styles.requestEventsLiveIndicator}> {t('usage_stats.live')}</span>
+                )}
               </span>
+            </div>
+            {totalPages > 1 && (
+              <div className={styles.requestEventsPagination}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handlePreviousPage}
+                  disabled={currentPage <= 1}
+                >
+                  {t('auth_files.pagination_prev')}
+                </Button>
+                <span className={styles.requestEventsPaginationInfo}>
+                  {currentPage}/{totalPages}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleNextPage}
+                  disabled={currentPage >= totalPages}
+                >
+                  {t('auth_files.pagination_next')}
+                </Button>
+              </div>
             )}
           </div>
-
-          {totalPages > 1 && (
-            <div className={styles.requestEventsPagination}>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handlePreviousPage}
-                disabled={currentPage <= 1}
-              >
-                {t('auth_files.pagination_prev')}
-              </Button>
-              <span className={styles.requestEventsPaginationInfo}>
-                {currentPage}/{totalPages}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleNextPage}
-                disabled={currentPage >= totalPages}
-              >
-                {t('auth_files.pagination_next')}
-              </Button>
-            </div>
-          )}
 
           <div className={styles.requestEventsTableWrapper}>
             <div

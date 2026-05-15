@@ -189,6 +189,50 @@ describe('usageAnalyticsSnapshot helpers', () => {
     });
   });
 
+  it('does not double count cached tokens in the distribution when total_tokens already equals input+output+reasoning', () => {
+    const distribution = createTokenDistribution([
+      createDetail({
+        minutesAgo: 5,
+        tokens: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cached_tokens: 10,
+          reasoning_tokens: 0,
+          total_tokens: 120
+        }
+      }),
+    ]);
+
+    expect(distribution).toEqual({
+      input: 100,
+      output: 20,
+      cached: 0,
+      reasoning: 0
+    });
+  });
+
+  it('counts cached tokens separately in the distribution when total_tokens exceeds the non-cached component sum', () => {
+    const distribution = createTokenDistribution([
+      createDetail({
+        minutesAgo: 5,
+        tokens: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cached_tokens: 10,
+          reasoning_tokens: 0,
+          total_tokens: 130
+        }
+      }),
+    ]);
+
+    expect(distribution).toEqual({
+      input: 100,
+      output: 20,
+      cached: 10,
+      reasoning: 0
+    });
+  });
+
   it('aggregates usage summary metrics for stat cards in a single pass', () => {
     const summary = createUsageSummaryMetrics(
       [
@@ -219,6 +263,35 @@ describe('usageAnalyticsSnapshot helpers', () => {
     expect(summary.rateStats.avgRpm).toBeCloseTo(2 / 30, 5);
     expect(summary.rateStats.avgTpm).toBeCloseTo(49 / 30, 5);
     expect(summary.totalCost).toBeGreaterThan(0);
+  });
+
+  it('prefers the larger raw total_tokens when summary totals would otherwise undercount the request', () => {
+    const summary = createUsageSummaryMetrics(
+      [
+        createDetail({
+          minutesAgo: 5,
+          __modelName: 'model-a',
+          tokens: {
+            input_tokens: 100,
+            output_tokens: 20,
+            cached_tokens: 10,
+            reasoning_tokens: 0,
+            total_tokens: 130
+          }
+        }),
+      ],
+      {},
+      baseNow
+    );
+
+    expect(summary.totalTokens).toBe(130);
+    expect(summary.rateStats.tokenCount).toBe(130);
+    expect(summary.tokenBreakdown).toEqual({
+      cachedTokens: 10,
+      reasoningTokens: 0,
+      inputTokens: 100,
+      outputTokens: 20
+    });
   });
 
   it('counts slightly future-dated details inside the recent-rate window', () => {

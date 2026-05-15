@@ -153,6 +153,66 @@ const safeAdd = (a: number, b: number): number => {
   return result;
 };
 
+const subtractUsageDetailsFromAggregate = (
+  usage: UsageStatsSnapshot,
+  removedDetails: UsageDetail[]
+): UsageStatsSnapshot => {
+  if (!removedDetails.length) return usage;
+  const next = { ...usage };
+  let subtractTokens = 0;
+  let subtractPromptTokens = 0;
+  let subtractCompletionTokens = 0;
+  let subtractReasoningTokens = 0;
+  let subtractCachedTokens = 0;
+  let subtractRequests = 0;
+  let subtractSuccess = 0;
+  let subtractFailure = 0;
+
+  removedDetails.forEach((d) => {
+    const normalizedTokens = normalizeUsageDetailTokens(d);
+    subtractTokens += toFiniteNumber(normalizedTokens.total_tokens);
+    subtractPromptTokens += toFiniteNumber(normalizedTokens.input_tokens);
+    subtractCompletionTokens += toFiniteNumber(normalizedTokens.output_tokens);
+    subtractReasoningTokens += toFiniteNumber(normalizedTokens.reasoning_tokens);
+    subtractCachedTokens += toFiniteNumber(normalizedTokens.cached_tokens);
+    subtractRequests += 1;
+    if (d.failed) subtractFailure += 1;
+    else subtractSuccess += 1;
+  });
+
+  next.total_tokens = Math.max(toFiniteNumber(next.total_tokens) - subtractTokens, 0);
+  next.prompt_tokens = Math.max(
+    toFiniteNumber(next.prompt_tokens) - subtractPromptTokens,
+    0
+  );
+  next.completion_tokens = Math.max(
+    toFiniteNumber(next.completion_tokens) - subtractCompletionTokens,
+    0
+  );
+  next.reasoning_tokens = Math.max(
+    toFiniteNumber(next.reasoning_tokens) - subtractReasoningTokens,
+    0
+  );
+  next.cached_tokens = Math.max(
+    toFiniteNumber(next.cached_tokens) - subtractCachedTokens,
+    0
+  );
+  next.total_requests = Math.max(toFiniteNumber(next.total_requests) - subtractRequests, 0);
+  next.success_count = Math.max(toFiniteNumber(next.success_count) - subtractSuccess, 0);
+  next.failure_count = Math.max(toFiniteNumber(next.failure_count) - subtractFailure, 0);
+
+  return next;
+};
+
+const resolveAutoPersistConnection = () => {
+  const { apiBase = '', managementKey = '' } = useAuthStore.getState();
+  if (!apiBase || !managementKey) {
+    return null;
+  }
+
+  return { apiBase, managementKey };
+};
+
 const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail => {
   const deltaTokens = detail.tokens ?? {};
   return {
@@ -823,10 +883,15 @@ const pickRicherUsageSnapshot = (
   const primaryTime = primary.lastRefreshedAt ?? 0;
   const secondaryTime = secondary.lastRefreshedAt ?? 0;
 
-  // 优先选择更新时间更近的缓存，避免旧但 detailCount 更大的缓存导致数据回退
   if (secondaryTime !== primaryTime) {
     return secondaryTime > primaryTime ? secondary : primary;
   }
+
+  const primaryDegraded = primary.detailCount > primary.usageDetails.length * 2 && primary.usageDetails.length === 0;
+  const secondaryDegraded = secondary.detailCount > secondary.usageDetails.length * 2 && secondary.usageDetails.length === 0;
+
+  if (primaryDegraded && !secondaryDegraded) return secondary;
+  if (!primaryDegraded && secondaryDegraded) return primary;
 
   return secondary.detailCount > primary.detailCount ? secondary : primary;
 };
@@ -922,6 +987,7 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
   const liteCache: PersistedUsageStatsCache = {
     ...persistableCache,
     usage: persistableCache.usage ? createAggregateOnlyUsageSnapshot(persistableCache.usage) : null,
+    detailCount: persistableCache.usageDetails.length,
   };
   try {
     localStorage.setItem(storageKey, JSON.stringify(liteCache));
@@ -940,6 +1006,7 @@ const writePersistedUsageStats = (cache: PersistedUsageStatsCache) => {
   const ultraLiteCache: PersistedUsageStatsCache = {
     ...liteCache,
     usageDetails: [],
+    detailCount: 0,
   };
   try {
     localStorage.setItem(storageKey, JSON.stringify(ultraLiteCache));
@@ -957,7 +1024,13 @@ let deferredPersistScheduled = false;
 
 export const flushDeferredPersistQueue = () => {
   deferredPersistScheduled = false;
-  for (const cache of deferredPersistQueue.values()) {
+  for (const [scopeKey, cache] of deferredPersistQueue.entries()) {
+    const existing = readPersistedUsageStats(scopeKey);
+    if (existing && existing.lastRefreshedAt !== null && cache.lastRefreshedAt !== null) {
+      if (existing.lastRefreshedAt > cache.lastRefreshedAt) {
+        continue;
+      }
+    }
     writePersistedUsageStats(cache);
   }
   deferredPersistQueue.clear();
@@ -1087,6 +1160,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     const force = options.force === true;
     const staleTimeMs = options.staleTimeMs ?? USAGE_STATS_STALE_TIME_MS;
     const { apiBase = '', managementKey = '' } = useAuthStore.getState();
+    const autoPersistConnection =
+      apiBase && managementKey ? { apiBase, managementKey } : null;
     const scopeKey = buildScopeKey(apiBase, managementKey);
     const state = get();
     const scopeChanged = state.scopeKey !== scopeKey;
@@ -1194,10 +1269,14 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
     const requestId = (usageRequestToken += 1);
 
-    // 新增：快照请求前的 lastSeq，用于检测竞态
     const preRequestLastSeq = get().lastSeq;
 
-    pendingDeltas.splice(0, pendingDeltas.length);
+    if (!options.force) {
+      pendingDeltas.splice(0, pendingDeltas.length);
+    } else {
+      const buffered = pendingDeltas.splice(0, pendingDeltas.length);
+      pendingDeltas.push(...buffered.filter((d) => d.seq > (preRequestLastSeq ?? -1)));
+    }
     set({ loading: true, error: null, scopeKey });
 
     const requestPromise = (async () => {
@@ -1239,6 +1318,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           keyStats,
           usageDetails,
           lastRefreshedAt,
+          connection: autoPersistConnection,
         });
 
         writePersistedUsageStats(nextSnapshot);
@@ -1424,7 +1504,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       return;
     }
 
-    const mergedUsage = mergeModelBreakdown(
+    const mergedUsageRaw = mergeModelBreakdown(
       mergeUsageDelta(state.usage, delta),
       delta.modelBreakdown
     );
@@ -1442,12 +1522,14 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
     } else {
       trimmedDetails = [...state.usageDetails, ...newDetails];
     }
-    // 先 subtract 再 merge，避免中间状态导致 keyStats 短暂包含已删除 details 的计数
     let keyStats = state.keyStats;
     if (removedDetails) {
       keyStats = subtractKeyStatsForDetails(keyStats, removedDetails);
     }
     keyStats = mergeKeyStatsIncremental(keyStats, newDetails);
+    const mergedUsage = removedDetails
+      ? subtractUsageDetailsFromAggregate(mergedUsageRaw, removedDetails)
+      : mergedUsageRaw;
     const receivedAt = Date.now();
     const nextSnapshot = {
       usage: mergedUsage,
@@ -1464,6 +1546,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       keyStats,
       usageDetails: trimmedDetails,
       lastRefreshedAt: receivedAt,
+      connection: resolveAutoPersistConnection(),
     });
 
     writeDeferredPersistedUsageStats(nextSnapshot);
@@ -1509,6 +1592,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       keyStats,
       usageDetails,
       lastRefreshedAt,
+      connection: resolveAutoPersistConnection(),
     });
 
     writeDeferredPersistedUsageStats(nextSnapshot);

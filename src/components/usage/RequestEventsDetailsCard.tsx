@@ -362,19 +362,6 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
           </div>
           <div className={styles.requestEventsFilterItem}>
             <span className={styles.requestEventsFilterLabel}>
-              {t('usage_stats.request_events_result')}
-            </span>
-            <Select
-              value={effectiveResultFilter}
-              options={resultOptions}
-              onChange={handleResultFilterChange}
-              className={styles.requestEventsSelect}
-              ariaLabel={t('usage_stats.request_events_result')}
-              fullWidth
-            />
-          </div>
-          <div className={styles.requestEventsFilterItem}>
-            <span className={styles.requestEventsFilterLabel}>
               {t('usage_stats.request_events_filter_auth_index')}
             </span>
             <Select
@@ -383,6 +370,19 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
               onChange={handleAuthIndexFilterChange}
               className={styles.requestEventsSelect}
               ariaLabel={t('usage_stats.request_events_filter_auth_index')}
+              fullWidth
+            />
+          </div>
+          <div className={styles.requestEventsFilterItem}>
+            <span className={styles.requestEventsFilterLabel}>
+              {t('usage_stats.request_events_result')}
+            </span>
+            <Select
+              value={effectiveResultFilter}
+              options={resultOptions}
+              onChange={handleResultFilterChange}
+              className={styles.requestEventsSelect}
+              ariaLabel={t('usage_stats.request_events_result')}
               fullWidth
             />
           </div>
@@ -443,7 +443,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
             <div
               role="table"
               className={styles.requestEventsTableGrid}
-              style={{ display: 'grid', gridTemplateColumns: TABLE_GRID_TEMPLATE }}
+              style={{ gridTemplateColumns: TABLE_GRID_TEMPLATE }}
             >
               <div role="row" className={styles.requestEventsTableHeaderRow}>
                 <div role="columnheader">{t('usage_stats.request_events_timestamp')}</div>

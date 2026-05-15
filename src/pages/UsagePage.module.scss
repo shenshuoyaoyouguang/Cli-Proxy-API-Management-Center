@@ -1311,7 +1311,9 @@
 
 .requestEventsFilterGroup {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  // 与表格列对齐：时间(1.2fr) | 模型(1fr) | 来源(0.8fr) | 认证索引(0.6fr) | 结果(0.5fr) | ...
+  // 筛选器对应：模型 | 来源 | 认证索引 | 结果
+  grid-template-columns: minmax(100px, 1fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(50px, 0.5fr);
   gap: $spacing-md;
 
   @include tablet {

@@ -942,7 +942,9 @@
 .modelCell {
   font-weight: 500;
   max-width: 240px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .credentialType {
@@ -1468,8 +1470,11 @@
 .requestEventsTableWrapper {
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: $radius-md;
+  border-radius: $radius-lg;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.06),
+    0 4px 8px rgba(0, 0, 0, 0.04);
+  background: var(--bg-primary);
   -webkit-overflow-scrolling: touch;
 
   &::-webkit-scrollbar {
@@ -1500,25 +1505,38 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background-color: var(--bg-secondary);
+  background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
   border-bottom: 1px solid var(--border-color);
+  border-radius: $radius-lg $radius-lg 0 0;
 
   > div {
-    padding: 10px 12px;
+    padding: 12px 14px;
     text-align: left;
-    font-weight: 600;
-    color: var(--text-tertiary);
+    font-weight: 700;
+    color: var(--text-secondary);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
   }
 }
 
 .requestEventsVirtualRow {
+  margin: 6px 10px;
+  border-radius: $radius-md;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease,
+    border-color 200ms ease,
+    background-color 150ms ease;
+
   > div {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border-color);
+    padding: 12px 14px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1528,7 +1546,16 @@
   }
 
   &:hover {
-    background-color: var(--bg-tertiary);
+    transform: translateY(-2px);
+    box-shadow:
+      0 4px 12px rgba(0, 0, 0, 0.08),
+      0 2px 4px rgba(0, 0, 0, 0.04);
+    border-color: var(--border-hover);
+    background: var(--floating-surface, var(--bg-primary));
+  }
+
+  &:last-child {
+    margin-bottom: 10px;
   }
 }
 
@@ -1544,7 +1571,9 @@
     monospace;
   font-size: 11px;
   max-width: 180px;
-  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .requestEventsResultSuccess {

@@ -8,6 +8,8 @@ A single-file Web UI (React + TypeScript) for operating and troubleshooting the 
 **Example URL**: https://remote.router-for.me/  
 **Minimum Required Version**: ≥ 6.8.0 (recommended ≥ 6.8.15)
 
+**Current Web UI Version**: 1.114.0
+
 Since version 6.0.19, the Web UI ships with the main program; access it via `/management.html` on the API port once the service is running.
 
 ## What this is (and isn’t)

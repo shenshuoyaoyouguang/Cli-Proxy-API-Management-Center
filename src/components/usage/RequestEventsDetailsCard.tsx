@@ -443,7 +443,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
             <div
               role="table"
               className={styles.requestEventsTableGrid}
-              style={{ gridTemplateColumns: TABLE_GRID_TEMPLATE }}
+              style={{ display: 'grid', gridTemplateColumns: TABLE_GRID_TEMPLATE }}
             >
               <div role="row" className={styles.requestEventsTableHeaderRow}>
                 <div role="columnheader">{t('usage_stats.request_events_timestamp')}</div>

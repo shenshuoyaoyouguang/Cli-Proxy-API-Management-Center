@@ -23,7 +23,6 @@ import {
   createEfficiencyOverview,
   createModelEfficiencyRows,
   createRequestEventRows,
-  createRequestEventRowsForRange,
   createRuntimeQualitySummary,
   createTokenDistribution,
   createUsageSummaryMetrics,
@@ -51,7 +50,6 @@ export interface UseUsageAnalyticsSnapshotOptions {
   codexConfigs: ProviderKeyConfig[];
   vertexConfigs: ProviderKeyConfig[];
   openaiProviders: OpenAIProviderConfig[];
-  includeHealthRequestEventRows?: boolean;
   aliasReverseMap?: Map<string, string>;
 }
 
@@ -65,7 +63,6 @@ export interface UseUsageAnalyticsSnapshotReturn {
   tokenDistribution: TokenDistribution;
   usageSummary: UsageSummaryMetrics;
   requestEventRows: RequestEventRow[];
-  healthRequestEventRows: RequestEventRow[];
   credentialRows: CredentialRow[];
   efficiencyOverview: EfficiencyOverview;
   modelEfficiencyRows: ModelEfficiencyRow[];
@@ -87,7 +84,6 @@ export function useUsageAnalyticsSnapshot({
   codexConfigs,
   vertexConfigs,
   openaiProviders,
-  includeHealthRequestEventRows = false,
   aliasReverseMap,
 }: UseUsageAnalyticsSnapshotOptions): UseUsageAnalyticsSnapshotReturn {
   const mergedAliasReverseMap = useMemo(() => {
@@ -174,27 +170,6 @@ export function useUsageAnalyticsSnapshot({
     [authFileMap, resolvedDetails, locale, sourceInfoMap]
   );
 
-  const healthRequestEventRows = useMemo(() => {
-    if (!includeHealthRequestEventRows) {
-      return [];
-    }
-    return createRequestEventRowsForRange(
-      analyticsSourceDetails,
-      '1d',
-      nowMs,
-      sourceInfoMap,
-      authFileMap,
-      locale
-    );
-  }, [
-    analyticsSourceDetails,
-    authFileMap,
-    includeHealthRequestEventRows,
-    locale,
-    nowMs,
-    sourceInfoMap,
-  ]);
-
   const credentialRows = useMemo(
     () =>
       createCredentialRows(
@@ -269,7 +244,6 @@ export function useUsageAnalyticsSnapshot({
     tokenDistribution,
     usageSummary,
     requestEventRows,
-    healthRequestEventRows,
     credentialRows,
     efficiencyOverview,
     modelEfficiencyRows,

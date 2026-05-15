@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, memo, useCallback } from 'react';
-import { List } from 'react-window';
+import { memo, useMemo } from 'react';
+import { List, type RowComponentProps } from 'react-window';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -7,10 +7,12 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Select } from '@/components/ui/Select';
 import { downloadBlob } from '@/utils/download';
 import type { RequestEventRow } from './hooks/usageAnalyticsSnapshot';
+import {
+  ALL_REQUEST_EVENT_FILTER,
+  useRequestEventsTableState,
+} from './hooks/useRequestEventsTableState';
 import styles from '@/pages/UsagePage.module.scss';
 
-const ALL_FILTER = '__all__';
-const REQUEST_EVENTS_PAGE_SIZE = 50;
 const ROW_HEIGHT = 36;
 const TABLE_HEADER_HEIGHT = 36;
 const TABLE_MAX_HEIGHT = 460;
@@ -25,7 +27,6 @@ export interface RequestEventsDetailsCardProps {
   externalSourceFilter?: string | null;
   externalSourceRawFilter?: string | null;
   externalAuthIndexFilter?: string | null;
-  externalResultFilter?: 'success' | 'failure' | null;
   onClearExternalFilters?: () => void;
 }
 
@@ -40,76 +41,60 @@ const appendActiveOption = (
   options: ReadonlyArray<{ value: string; label: string }>,
   value: string | null
 ) => {
-  if (!value || value === ALL_FILTER || options.some((option) => option.value === value)) {
+  if (
+    !value ||
+    value === ALL_REQUEST_EVENT_FILTER ||
+    options.some((option) => option.value === value)
+  ) {
     return options;
   }
 
   return [...options, { value, label: value }];
 };
 
-// 单次遍历 500k rows：同时提取三个 filter 选项集合，避免 3x 重复 map
-const extractFilterOptionSets = (rows: readonly RequestEventRow[]) => {
-  const models = new Set<string>();
-  const sources = new Set<string>();
-  const authIndices = new Set<string>();
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    models.add(row.model);
-    sources.add(row.source);
-    authIndices.add(row.authIndex);
-  }
-  return { models, sources, authIndices };
-};
+function VirtualRow({
+  index,
+  style,
+  rows,
+}: RowComponentProps<{ rows: RequestEventRow[] }>) {
+  const row = rows[index];
 
-// react-window v2 List children 接收 {index, style}，通过闭包访问 renderedRows
-const VirtualRow = memo(
-  ({
-    index,
-    style,
-    rows,
-  }: {
-    index: number;
-    style: React.CSSProperties;
-    rows: RequestEventRow[];
-  }) => {
-    const row = rows[index];
-    return (
-      <div
-        role="row"
-        className={styles.requestEventsVirtualRow}
-        style={{ ...style, display: 'grid', gridTemplateColumns: TABLE_GRID_TEMPLATE }}
-      >
-        <div title={row.timestamp} className={styles.requestEventsTimestamp}>
-          {row.timestampLabel}
-        </div>
-        <div className={styles.modelCell}>{row.model}</div>
-        <div className={styles.requestEventsSourceCell} title={row.source}>
-          <span>{row.source}</span>
-          {row.sourceType && <span className={styles.credentialType}>{row.sourceType}</span>}
-        </div>
-        <div className={styles.requestEventsAuthIndex} title={row.authIndex}>
-          {row.authIndex}
-        </div>
-        <div>
-          <span
-            className={
-              row.failed ? styles.requestEventsResultFailed : styles.requestEventsResultSuccess
-            }
-          >
-            {row.failed ? '✕' : '✓'}
-          </span>
-        </div>
-        <div>{row.inputTokens.toLocaleString()}</div>
-        <div>{row.outputTokens.toLocaleString()}</div>
-        <div>{row.reasoningTokens.toLocaleString()}</div>
-        <div>{row.cachedTokens.toLocaleString()}</div>
-        <div>{row.totalTokens.toLocaleString()}</div>
+  if (!row) {
+    return null;
+  }
+
+  return (
+    <div
+      role="row"
+      className={styles.requestEventsVirtualRow}
+      style={{ ...style, display: 'grid', gridTemplateColumns: TABLE_GRID_TEMPLATE }}
+    >
+      <div title={row.timestamp} className={styles.requestEventsTimestamp}>
+        {row.timestampLabel}
       </div>
-    );
-  },
-  (prev, next) => prev.rows[next.index] === next.rows[next.index]
-);
-VirtualRow.displayName = 'VirtualRow';
+      <div className={styles.modelCell}>{row.model}</div>
+      <div className={styles.requestEventsSourceCell} title={row.source}>
+        <span>{row.source}</span>
+        {row.sourceType && <span className={styles.credentialType}>{row.sourceType}</span>}
+      </div>
+      <div className={styles.requestEventsAuthIndex} title={row.authIndex}>
+        {row.authIndex}
+      </div>
+      <div>
+        <span
+          className={row.failed ? styles.requestEventsResultFailed : styles.requestEventsResultSuccess}
+        >
+          {row.failed ? '✕' : '✓'}
+        </span>
+      </div>
+      <div>{row.inputTokens.toLocaleString()}</div>
+      <div>{row.outputTokens.toLocaleString()}</div>
+      <div>{row.reasoningTokens.toLocaleString()}</div>
+      <div>{row.cachedTokens.toLocaleString()}</div>
+      <div>{row.totalTokens.toLocaleString()}</div>
+    </div>
+  );
+}
 
 export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   rows,
@@ -119,59 +104,43 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
   externalSourceFilter = null,
   externalSourceRawFilter = null,
   externalAuthIndexFilter = null,
-  externalResultFilter = null,
   onClearExternalFilters,
 }: RequestEventsDetailsCardProps) {
   const { t } = useTranslation();
-
-  const [modelFilter, setModelFilter] = useState<string>(ALL_FILTER);
-  const [sourceFilter, setSourceFilter] = useState<string>(ALL_FILTER);
-  const [resultFilter, setResultFilter] = useState<string>(ALL_FILTER);
-  const [authIndexFilter, setAuthIndexFilter] = useState<string>(ALL_FILTER);
-  const [page, setPage] = useState(1);
-  const [newDataPulse, setNewDataPulse] = useState(false);
-  const prevRowsLengthRef = useRef(rows.length);
-  const listRef = useRef<List>(null);
-
-  // 页面切换时重置虚拟列表滚动位置
-  useEffect(() => {
-    listRef.current?.scrollTo(0);
-  }, [page]);
-
-  const handleModelFilterChange = useCallback((value: string) => {
-    setModelFilter(value);
-    setPage(1);
-  }, []);
-
-  const handleSourceFilterChange = useCallback((value: string) => {
-    setSourceFilter(value);
-    setAuthIndexFilter(ALL_FILTER);
-    setPage(1);
-  }, []);
-
-  const handleResultFilterChange = useCallback((value: string) => {
-    setResultFilter(value);
-    setPage(1);
-  }, []);
-
-  const handleAuthIndexFilterChange = useCallback((value: string) => {
-    setAuthIndexFilter(value);
-    setPage(1);
-  }, []);
-
-  // 单次遍历提取选项集合（替代 3 次独立 map + Set）
-  const { modelSet, sourceSet, authIndexSet } = useMemo(() => {
-    const { models, sources, authIndices } = extractFilterOptionSets(rows);
-    return { modelSet: models, sourceSet: sources, authIndexSet: authIndices };
-  }, [rows]);
-
-  const activeModelFilter = externalModelFilter ?? modelFilter;
-  const activeSourceFilter = externalSourceFilter ?? sourceFilter;
-  const activeAuthIndexFilter = externalAuthIndexFilter ?? authIndexFilter;
+  const {
+    listRef,
+    modelSet,
+    sourceSet,
+    authIndexSet,
+    effectiveModelFilter,
+    effectiveSourceFilter,
+    effectiveResultFilter,
+    effectiveAuthIndexFilter,
+    filteredRows,
+    renderedRows,
+    currentPage,
+    totalPages,
+    newDataPulse,
+    hasActiveFilters,
+    hasExternalDrilldown,
+    handleModelFilterChange,
+    handleSourceFilterChange,
+    handleResultFilterChange,
+    handleAuthIndexFilterChange,
+    handlePreviousPage,
+    handleNextPage,
+    resetFilters,
+  } = useRequestEventsTableState({
+    rows,
+    externalModelFilter,
+    externalSourceFilter,
+    externalSourceRawFilter,
+    externalAuthIndexFilter,
+  });
 
   const resultOptions = useMemo(
     () => [
-      { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+      { value: ALL_REQUEST_EVENT_FILTER, label: t('usage_stats.filter_all') },
       { value: 'failure', label: t('stats.failure') },
       { value: 'success', label: t('stats.success') },
     ],
@@ -182,165 +151,45 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     () =>
       appendActiveOption(
         [
-          { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+          { value: ALL_REQUEST_EVENT_FILTER, label: t('usage_stats.filter_all') },
           ...Array.from(modelSet, (model) => ({ value: model, label: model })),
         ],
-        activeModelFilter
+        effectiveModelFilter
       ),
-    [activeModelFilter, modelSet, t]
+    [effectiveModelFilter, modelSet, t]
   );
 
   const sourceOptions = useMemo(
     () =>
       appendActiveOption(
         [
-          { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+          { value: ALL_REQUEST_EVENT_FILTER, label: t('usage_stats.filter_all') },
           ...Array.from(sourceSet, (source) => ({ value: source, label: source })),
         ],
-        activeSourceFilter
+        effectiveSourceFilter
       ),
-    [activeSourceFilter, sourceSet, t]
+    [effectiveSourceFilter, sourceSet, t]
   );
 
   const authIndexOptions = useMemo(
     () =>
       appendActiveOption(
         [
-          { value: ALL_FILTER, label: t('usage_stats.filter_all') },
+          { value: ALL_REQUEST_EVENT_FILTER, label: t('usage_stats.filter_all') },
           ...Array.from(authIndexSet, (authIndex) => ({
             value: authIndex,
             label: authIndex,
           })),
         ],
-        activeAuthIndexFilter
+        effectiveAuthIndexFilter
       ),
-    [activeAuthIndexFilter, authIndexSet, t]
+    [authIndexSet, effectiveAuthIndexFilter, t]
   );
-
-  const modelOptionSet = useMemo(
-    () => new Set(modelOptions.map((option) => option.value)),
-    [modelOptions]
-  );
-  const sourceOptionSet = useMemo(
-    () => new Set(sourceOptions.map((option) => option.value)),
-    [sourceOptions]
-  );
-  const resultOptionSet = useMemo(
-    () => new Set(resultOptions.map((option) => option.value)),
-    [resultOptions]
-  );
-  const authIndexOptionSet = useMemo(
-    () => new Set(authIndexOptions.map((option) => option.value)),
-    [authIndexOptions]
-  );
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
-    setModelFilter(externalModelFilter ?? ALL_FILTER);
-    setPage(1);
-  }, [externalModelFilter]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
-    setSourceFilter(externalSourceFilter ?? ALL_FILTER);
-    if (externalSourceFilter !== null && externalAuthIndexFilter === null) {
-      setAuthIndexFilter(ALL_FILTER);
-    }
-    setPage(1);
-  }, [externalAuthIndexFilter, externalSourceFilter]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
-    setAuthIndexFilter(externalAuthIndexFilter ?? ALL_FILTER);
-    setPage(1);
-  }, [externalAuthIndexFilter]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to local fallback state
-    setResultFilter(externalResultFilter ?? ALL_FILTER);
-    setPage(1);
-  }, [externalResultFilter]);
-
-  const effectiveModelFilter =
-    externalModelFilter ?? (modelOptionSet.has(modelFilter) ? modelFilter : ALL_FILTER);
-  const effectiveSourceFilter =
-    externalSourceFilter ?? (sourceOptionSet.has(sourceFilter) ? sourceFilter : ALL_FILTER);
-  const effectiveResultFilter =
-    externalResultFilter ?? (resultOptionSet.has(resultFilter) ? resultFilter : ALL_FILTER);
-  const effectiveAuthIndexFilter =
-    externalAuthIndexFilter ??
-    (authIndexOptionSet.has(authIndexFilter) ? authIndexFilter : ALL_FILTER);
-
-  const filteredRows = useMemo(
-    () =>
-      rows.filter((row) => {
-        const modelMatched =
-          effectiveModelFilter === ALL_FILTER || row.model === effectiveModelFilter;
-        const sourceMatched =
-          effectiveSourceFilter === ALL_FILTER || row.source === effectiveSourceFilter;
-        const sourceRawMatched =
-          externalSourceRawFilter === null || row.sourceRaw === externalSourceRawFilter;
-        const resultMatched =
-          effectiveResultFilter === ALL_FILTER ||
-          (effectiveResultFilter === 'failure' ? row.failed : !row.failed);
-        const authIndexMatched =
-          effectiveAuthIndexFilter === ALL_FILTER || row.authIndex === effectiveAuthIndexFilter;
-        return (
-          modelMatched && sourceMatched && sourceRawMatched && resultMatched && authIndexMatched
-        );
-      }),
-    [
-      effectiveAuthIndexFilter,
-      effectiveModelFilter,
-      effectiveResultFilter,
-      effectiveSourceFilter,
-      externalSourceRawFilter,
-      rows,
-    ]
-  );
-
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / REQUEST_EVENTS_PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync external prop to internal state
-    setPage((prev) => Math.min(prev, totalPages));
-  }, [totalPages]);
-
-  useEffect(() => {
-    if (rows.length > prevRowsLengthRef.current && prevRowsLengthRef.current > 0) {
-      const timer = setTimeout(() => setNewDataPulse(false), 1200);
-      queueMicrotask(() => setNewDataPulse(true));
-      prevRowsLengthRef.current = rows.length;
-      return () => clearTimeout(timer);
-    }
-    prevRowsLengthRef.current = rows.length;
-  }, [rows.length]);
-
-  const renderedRows = useMemo(() => {
-    const safePage = Math.min(page, totalPages);
-    const start = (safePage - 1) * REQUEST_EVENTS_PAGE_SIZE;
-    return filteredRows.slice(start, start + REQUEST_EVENTS_PAGE_SIZE);
-  }, [filteredRows, page, totalPages]);
 
   const virtualListHeight = Math.min(
     renderedRows.length * ROW_HEIGHT,
     TABLE_MAX_HEIGHT - TABLE_HEADER_HEIGHT
   );
-
-  const hasActiveFilters =
-    effectiveModelFilter !== ALL_FILTER ||
-    effectiveSourceFilter !== ALL_FILTER ||
-    effectiveResultFilter !== ALL_FILTER ||
-    effectiveAuthIndexFilter !== ALL_FILTER ||
-    externalSourceRawFilter !== null;
-
-  const hasExternalDrilldown =
-    externalModelFilter !== null ||
-    externalSourceFilter !== null ||
-    externalAuthIndexFilter !== null ||
-    externalResultFilter !== null ||
-    externalSourceRawFilter !== null;
 
   const drilldownLabels = [
     externalModelFilter
@@ -352,19 +201,10 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
     externalAuthIndexFilter
       ? `${t('usage_stats.request_events_filter_auth_index')}: ${externalAuthIndexFilter}`
       : null,
-    externalResultFilter
-      ? `${t('usage_stats.request_events_result')}: ${
-          externalResultFilter === 'failure' ? t('stats.failure') : t('stats.success')
-        }`
-      : null,
   ].filter((value): value is string => Boolean(value));
 
   const handleClearFilters = () => {
-    setModelFilter(ALL_FILTER);
-    setSourceFilter(ALL_FILTER);
-    setResultFilter(ALL_FILTER);
-    setAuthIndexFilter(ALL_FILTER);
-    setPage(1);
+    resetFilters();
     onClearExternalFilters?.();
   };
 
@@ -570,19 +410,19 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
                 <span className={styles.requestEventsLiveIndicator}> {t('usage_stats.live')}</span>
               )}
             </span>
-            {filteredRows.length > REQUEST_EVENTS_PAGE_SIZE && (
+            {totalPages > 1 && (
               <span className={styles.requestEventsLimitHint}>
                 {currentPage}/{totalPages}
               </span>
             )}
           </div>
 
-          {filteredRows.length > REQUEST_EVENTS_PAGE_SIZE && (
+          {totalPages > 1 && (
             <div className={styles.requestEventsPagination}>
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                onClick={handlePreviousPage}
                 disabled={currentPage <= 1}
               >
                 {t('auth_files.pagination_prev')}
@@ -593,7 +433,7 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                onClick={handleNextPage}
                 disabled={currentPage >= totalPages}
               >
                 {t('auth_files.pagination_next')}
@@ -621,16 +461,13 @@ export const RequestEventsDetailsCard = memo(function RequestEventsDetailsCard({
               </div>
               <div role="rowgroup">
                 <List
-                  ref={listRef}
+                  listRef={listRef}
                   rowCount={renderedRows.length}
                   rowHeight={ROW_HEIGHT}
-                  listStyle={{ height: virtualListHeight }}
-                  rowProps={{}}
-                >
-                  {({ index, style }: { index: number; style: React.CSSProperties }) => (
-                    <VirtualRow index={index} style={style} rows={renderedRows} />
-                  )}
-                </List>
+                  rowComponent={VirtualRow}
+                  rowProps={{ rows: renderedRows }}
+                  style={{ height: virtualListHeight }}
+                />
               </div>
             </div>
           </div>

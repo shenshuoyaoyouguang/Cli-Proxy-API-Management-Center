@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
   const handleImportChange = vi.fn();
   const setModelPrices = vi.fn();
   const callOrder: string[] = [];
+  const scrollIntoView = vi.fn();
 
   return {
     loadUsage,
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => {
     setModelPrices,
     useHeaderRefresh: vi.fn(),
     callOrder,
+    scrollIntoView,
     useUsageSSE: vi.fn(() => {
       callOrder.push('useUsageSSE');
       return { connectionStatus: 'connected' };
@@ -57,6 +59,10 @@ vi.mock('@/hooks/useHeaderRefresh', () => ({
 
 vi.mock('@/hooks/useUsageSSE', () => ({
   useUsageSSE: mocks.useUsageSSE,
+}));
+
+vi.mock('@/hooks/useIntersectionObserver', () => ({
+  useIntersectionObserver: () => [vi.fn(), true],
 }));
 
 vi.mock('@/stores', () => ({
@@ -127,15 +133,100 @@ vi.mock('@/components/usage', () => {
   const Stub = ({ children }: React.PropsWithChildren = {}) =>
     createElement('div', null, children ?? 'stub');
 
+  const TokenEfficiencyCenter = ({
+    onDrilldownChange,
+  }: {
+    onDrilldownChange?: (drilldown: { type: 'model' | 'credential' | 'none'; value?: string }) => void;
+  }) =>
+    createElement(
+      'div',
+      null,
+      createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => onDrilldownChange?.({ type: 'model', value: 'model-b' }),
+        },
+        'trigger-model-drilldown'
+      ),
+      createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () =>
+            onDrilldownChange?.({
+              type: 'credential',
+              value: JSON.stringify({
+                source: 'tenant-auth-raw',
+                authIndex: '7',
+                fallbackSource: 'Tenant Auth',
+              }),
+            }),
+        },
+        'trigger-credential-auth-drilldown'
+      ),
+      createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () =>
+            onDrilldownChange?.({
+              type: 'credential',
+              value: JSON.stringify({
+                source: 'tenant-source-raw',
+                fallbackSource: 'Tenant Source',
+              }),
+            }),
+        },
+        'trigger-credential-source-drilldown'
+      )
+    );
+
+  const RequestEventsDetailsCard = ({
+    externalModelFilter = null,
+    externalSourceFilter = null,
+    externalSourceRawFilter = null,
+    externalAuthIndexFilter = null,
+    onClearExternalFilters,
+  }: {
+    externalModelFilter?: string | null;
+    externalSourceFilter?: string | null;
+    externalSourceRawFilter?: string | null;
+    externalAuthIndexFilter?: string | null;
+    onClearExternalFilters?: () => void;
+  }) =>
+    createElement(
+      'div',
+      null,
+      createElement(
+        'pre',
+        { 'data-testid': 'request-events-props' },
+        JSON.stringify({
+          externalModelFilter,
+          externalSourceFilter,
+          externalSourceRawFilter,
+          externalAuthIndexFilter,
+        })
+      ),
+      createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => onClearExternalFilters?.(),
+        },
+        'clear-request-events-drilldown'
+      )
+    );
+
   return {
     StatCards: Stub,
     RuntimeQualityCard: Stub,
-    TokenEfficiencyCenter: Stub,
+    TokenEfficiencyCenter,
     ApiDetailsCard: Stub,
     ModelStatsCard: Stub,
     PriceSettingsCard: Stub,
     CredentialStatsCard: Stub,
-    RequestEventsDetailsCard: Stub,
+    RequestEventsDetailsCard,
     ServiceHealthCard: Stub,
     useUsageData: mocks.useUsageData,
     useAuthFilesMap: () => ({
@@ -159,7 +250,6 @@ vi.mock('@/components/usage', () => {
       modelStats: [],
       usageSummary: {},
       requestEventRows: [],
-      healthRequestEventRows: [],
       credentialRows: [],
       efficiencyOverview: {},
       modelEfficiencyRows: [],
@@ -181,12 +271,24 @@ vi.mock('@/components/usage', () => {
 import { UsagePage } from './UsagePage';
 
 const TIME_RANGE_STORAGE_KEY = 'cli-proxy-usage-time-range-v1';
+const readRequestEventsProps = () =>
+  JSON.parse(screen.getByTestId('request-events-props').textContent ?? '{}') as {
+    externalModelFilter: string | null;
+    externalSourceFilter: string | null;
+    externalSourceRawFilter: string | null;
+    externalAuthIndexFilter: string | null;
+  };
 
 describe('UsagePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     mocks.callOrder.length = 0;
+    mocks.scrollIntoView.mockReset();
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: mocks.scrollIntoView,
+    });
   });
 
   afterEach(() => {
@@ -226,5 +328,52 @@ describe('UsagePage', () => {
     expect(mocks.callOrder.indexOf('useUsageSSE')).toBeLessThan(
       mocks.callOrder.indexOf('useUsageData')
     );
+  });
+
+  it('passes model drilldown into the request events card and clears it on reset', async () => {
+    render(createElement(UsagePage));
+
+    fireEvent.click(screen.getByText('trigger-model-drilldown'));
+
+    await waitFor(() => {
+      expect(readRequestEventsProps().externalModelFilter).toBe('model-b');
+    });
+    expect(mocks.scrollIntoView).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('clear-request-events-drilldown'));
+
+    await waitFor(() => {
+      expect(readRequestEventsProps().externalModelFilter).toBeNull();
+    });
+  });
+
+  it('maps credential drilldown with auth index into the auth-index filter only', async () => {
+    render(createElement(UsagePage));
+
+    fireEvent.click(screen.getByText('trigger-credential-auth-drilldown'));
+
+    await waitFor(() => {
+      expect(readRequestEventsProps()).toEqual({
+        externalModelFilter: null,
+        externalSourceFilter: null,
+        externalSourceRawFilter: null,
+        externalAuthIndexFilter: '7',
+      });
+    });
+  });
+
+  it('maps credential drilldown without auth index into source filters', async () => {
+    render(createElement(UsagePage));
+
+    fireEvent.click(screen.getByText('trigger-credential-source-drilldown'));
+
+    await waitFor(() => {
+      expect(readRequestEventsProps()).toEqual({
+        externalModelFilter: null,
+        externalSourceFilter: 'Tenant Source',
+        externalSourceRawFilter: 'tenant-source-raw',
+        externalAuthIndexFilter: null,
+      });
+    });
   });
 });

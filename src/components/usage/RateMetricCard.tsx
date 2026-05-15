@@ -26,7 +26,6 @@ interface RateMetricCardProps {
   sparklineData: SparklineBundle | null;
   daySparklineData?: PeriodSparklineBundle | null;
   quotaStatus?: QuotaStatusItem | null;
-  onDrilldown?: (metricType: string) => void;
   loading?: boolean;
 }
 
@@ -50,7 +49,6 @@ export const RateMetricCard = memo(function RateMetricCard({
   sparklineData,
   daySparklineData,
   quotaStatus,
-  onDrilldown,
   loading = false,
 }: RateMetricCardProps) {
   const { t } = useTranslation();
@@ -136,16 +134,6 @@ export const RateMetricCard = memo(function RateMetricCard({
             <span className={styles.peakLabel}>{t('usage_stats.peak')}:</span>
             <RateNumber value={peakValue} />
           </div>
-          {onDrilldown && (
-            <button
-              className={styles.drilldownBtn}
-              onClick={() => onDrilldown(metricType)}
-              type="button"
-            >
-              <span>{t('common.details')}</span>
-              <span aria-hidden="true">→</span>
-            </button>
-          )}
         </div>
       </div>
 

@@ -42,7 +42,6 @@ export interface StatCardsProps {
   usageDetails: UsageDetail[];
   modelPrices: Record<string, ModelPrice>;
   nowMs: number;
-  onMetricDrillDown?: (metricType: string) => void;
   sparklines: {
     requests: SparklineBundle | null;
     tokens: SparklineBundle | null;
@@ -63,7 +62,6 @@ export const StatCards = memo(function StatCards({
   usageDetails,
   modelPrices,
   nowMs,
-  onMetricDrillDown,
   sparklines,
 }: StatCardsProps) {
   const { t } = useTranslation();
@@ -228,7 +226,6 @@ export const StatCards = memo(function StatCards({
           sparklineData={sparklines.rpm}
           daySparklineData={sparklines.dayRpm}
           quotaStatus={quotaStatus.rpmItem}
-          onDrilldown={onMetricDrillDown}
           loading={loading}
         />
         <RateMetricCard
@@ -239,7 +236,6 @@ export const StatCards = memo(function StatCards({
           sparklineData={sparklines.tpm}
           daySparklineData={sparklines.dayTpm}
           quotaStatus={quotaStatus.tpmItem}
-          onDrilldown={onMetricDrillDown}
           loading={loading}
         />
       </div>
@@ -254,7 +250,6 @@ export const StatCards = memo(function StatCards({
           quotaStatus={quotaStatus.monthlyItem}
           tpmCorrelation={tpmCorrelation}
           dailyAvgCost={dailyAvgCost}
-          onDrilldown={onMetricDrillDown ? () => onMetricDrillDown('cost') : undefined}
           loading={loading}
         />
       </div>

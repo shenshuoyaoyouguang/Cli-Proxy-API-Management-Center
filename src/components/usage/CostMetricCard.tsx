@@ -28,7 +28,6 @@ interface CostMetricCardProps {
   quotaStatus?: QuotaStatusItem | null;
   tpmCorrelation?: MetricCorrelation | null;
   dailyAvgCost?: number;
-  onDrilldown?: () => void;
   loading?: boolean;
 }
 
@@ -43,7 +42,6 @@ export const CostMetricCard = memo(function CostMetricCard({
   quotaStatus,
   tpmCorrelation,
   dailyAvgCost,
-  onDrilldown,
   loading = false,
 }: CostMetricCardProps) {
   const { t } = useTranslation();
@@ -151,12 +149,6 @@ export const CostMetricCard = memo(function CostMetricCard({
                 {tpmCorrelation.correlation.toFixed(2)}
               </span>
             </div>
-          )}
-          {onDrilldown && (
-            <button className={styles.drilldownBtn} onClick={onDrilldown} type="button">
-              <span>{t('common.details')}</span>
-              <span aria-hidden="true">→</span>
-            </button>
           )}
         </div>
       </div>

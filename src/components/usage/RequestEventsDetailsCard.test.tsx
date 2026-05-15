@@ -51,4 +51,42 @@ describe('RequestEventsDetailsCard', () => {
     expect(markup).toContain('usage_stats.request_events_no_result_title');
     expect(markup).not.toContain('model-a');
   });
+
+  it('renders the current page rows without crashing when request events are present', () => {
+    const markup = renderToStaticMarkup(
+      <RequestEventsDetailsCard
+        rows={[createRow(), createRow({ id: 'row-2', model: 'model-b' })]}
+        loading={false}
+      />
+    );
+
+    expect(markup).toContain('usage_stats.request_events_count');
+    expect(markup).toContain('model-a');
+    expect(markup).toContain('model-b');
+  });
+
+  it('uses externalSourceRawFilter to narrow rows that share the same display source', () => {
+    const markup = renderToStaticMarkup(
+      <RequestEventsDetailsCard
+        rows={[
+          createRow({
+            source: 'shared-source',
+            sourceRaw: 'tenant-a',
+          }),
+          createRow({
+            id: 'row-2',
+            model: 'model-b',
+            source: 'shared-source',
+            sourceRaw: 'tenant-b',
+          }),
+        ]}
+        loading={false}
+        externalSourceFilter="shared-source"
+        externalSourceRawFilter="tenant-b"
+      />
+    );
+
+    expect(markup).toContain('model-b');
+    expect(markup).not.toContain('model-a');
+  });
 });

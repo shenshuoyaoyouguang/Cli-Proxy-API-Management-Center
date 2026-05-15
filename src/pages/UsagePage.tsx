@@ -92,9 +92,6 @@ export function UsagePage() {
   const [efficiencyDrilldown, setEfficiencyDrilldown] = useState<EfficiencyDrilldown>({
     type: 'none',
   });
-  const [requestEventsResultFilter, setRequestEventsResultFilter] = useState<
-    'success' | 'failure' | null
-  >(null);
 
   const timeRangeOptions = useMemo(
     () =>
@@ -124,8 +121,6 @@ export function UsagePage() {
     return () => clearInterval(id);
   }, []);
 
-  const includeHealthRequestEventRows = requestEventsResultFilter !== null;
-
   const {
     filteredUsage,
     modelNames,
@@ -133,7 +128,6 @@ export function UsagePage() {
     modelStats,
     usageSummary,
     requestEventRows,
-    healthRequestEventRows,
     credentialRows,
     efficiencyOverview,
     modelEfficiencyRows,
@@ -152,7 +146,6 @@ export function UsagePage() {
     codexConfigs: config?.codexApiKeys || [],
     vertexConfigs: config?.vertexApiKeys || [],
     openaiProviders: config?.openaiCompatibility || [],
-    includeHealthRequestEventRows,
     aliasReverseMap,
   });
 
@@ -237,7 +230,6 @@ export function UsagePage() {
 
   const handleEfficiencyDrilldown = useCallback(
     (drilldown: EfficiencyDrilldown) => {
-      setRequestEventsResultFilter(null);
       setEfficiencyDrilldown(drilldown);
       scrollToSection(REQUEST_EVENTS_SECTION_ID);
     },
@@ -246,12 +238,7 @@ export function UsagePage() {
 
   const handleClearRequestEventDrillDown = useCallback(() => {
     setEfficiencyDrilldown({ type: 'none' });
-    setRequestEventsResultFilter(null);
   }, []);
-
-  const requestEventsRowsForDisplay = requestEventsResultFilter
-    ? healthRequestEventRows
-    : requestEventRows;
 
   const getConnectionStatusText = () => {
     switch (connectionStatus) {
@@ -398,14 +385,13 @@ export function UsagePage() {
               }
             >
               <RequestEventsDetailsCard
-                rows={requestEventsRowsForDisplay}
+                rows={requestEventRows}
                 loading={loading}
                 error={error}
                 externalModelFilter={externalModelFilter}
                 externalSourceFilter={credentialDrilldown.source}
                 externalSourceRawFilter={credentialDrilldown.sourceRaw}
                 externalAuthIndexFilter={credentialDrilldown.authIndex}
-                externalResultFilter={requestEventsResultFilter}
                 onClearExternalFilters={handleClearRequestEventDrillDown}
               />
             </div>

@@ -5,6 +5,7 @@
 import type { AxiosRequestConfig } from 'axios';
 import { apiClient } from './client';
 import { computeKeyStats, KeyStats } from '@/utils/usage';
+import type { UsageDataWindowStatus } from '@/types/sse';
 
 const USAGE_TIMEOUT_MS = 60 * 1000;
 
@@ -64,9 +65,23 @@ export interface UsageEvent {
   [key: string]: unknown;
 }
 
-const normalizeUsageEventsResponse = (response: unknown): UsageEvent[] => {
+export interface UsageEventsEnvelope {
+  events: UsageEvent[];
+  coverageStart?: string | null;
+  coverageEnd?: string | null;
+  returnedCount?: number;
+  truncated?: boolean;
+  recoveredFromLegacySnapshot?: boolean;
+  dataWindowStatus?: UsageDataWindowStatus;
+  nextCursor?: string | null;
+}
+
+export const normalizeUsageEventsResponse = (response: unknown): UsageEventsEnvelope => {
   if (Array.isArray(response)) {
-    return response as UsageEvent[];
+    return {
+      events: response as UsageEvent[],
+      returnedCount: response.length,
+    };
   }
 
   if (
@@ -75,10 +90,16 @@ const normalizeUsageEventsResponse = (response: unknown): UsageEvent[] => {
     'events' in response &&
     Array.isArray((response as { events?: unknown }).events)
   ) {
-    return (response as { events: UsageEvent[] }).events;
+    const envelope = response as UsageEventsEnvelope;
+    return {
+      ...envelope,
+      events: envelope.events,
+      returnedCount:
+        typeof envelope.returnedCount === 'number' ? envelope.returnedCount : envelope.events.length,
+    };
   }
 
-  return [];
+  return { events: [], returnedCount: 0 };
 };
 
 export const usageApi = {
@@ -125,7 +146,7 @@ export const usageApi = {
         timeout: USAGE_TIMEOUT_MS,
         ...config,
       })
-      .then(normalizeUsageEventsResponse),
+      .then((response) => normalizeUsageEventsResponse(response).events),
 
   /**
    * 导出使用统计快照

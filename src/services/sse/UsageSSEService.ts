@@ -121,7 +121,7 @@ type RawDeltaDetail = {
 
 type RawDeltaPayload = {
   seq?: number;
-  timestamp?: number;
+  timestamp?: string | number;
   requestCount?: number;
   successCount?: number;
   failureCount?: number;
@@ -186,8 +186,9 @@ function mapDeltaEvent(raw: RawDeltaPayload): UsageDeltaEvent {
       return {
         model: normalizeStringValue(d.model, 'unknown'),
         source: d.source ?? '',
-        timestamp: typeof d.timestamp === 'number' ? d.timestamp : new Date(d.timestamp ?? 0).getTime(),
+        timestamp: typeof d.timestamp === 'string' || typeof d.timestamp === 'number' ? d.timestamp : 0,
         success: !d.failed,
+        endpoint: normalizeStringValue(d.endpoint),
         tokens: {
           prompt: tk.input_tokens ?? 0,
           completion: tk.output_tokens ?? 0,

@@ -127,13 +127,17 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
     details = new Array(estimatedSize);
     let index = 0;
 
-    for (const apiEntry of Object.values(apis)) {
+    for (const [endpoint, apiEntry] of Object.entries(apis)) {
       if (!isRecord(apiEntry)) continue;
       const modelsRaw = apiEntry.models;
       const models = isRecord(modelsRaw) ? modelsRaw : null;
       if (!models) continue;
 
-    for (const [modelName, modelEntry] of Object.entries(models)) {
+      const endpointMatch = endpoint.match(USAGE_ENDPOINT_METHOD_REGEX);
+      const endpointMethod = endpointMatch?.[1]?.toUpperCase();
+      const endpointPath = endpointMatch?.[2];
+
+      for (const [modelName, modelEntry] of Object.entries(models)) {
         if (!isRecord(modelEntry)) continue;
         const modelDetailsRaw = modelEntry.details;
         const modelDetails = Array.isArray(modelDetailsRaw) ? modelDetailsRaw : [];
@@ -153,6 +157,9 @@ export function collectUsageDetails(usageData: unknown): UsageDetail[] {
             failed: detailRaw.failed === true,
             __modelName: modelName,
             __timestampMs: timestampMs,
+            __endpoint: endpoint,
+            __endpointMethod: endpointMethod,
+            __endpointPath: endpointPath,
           };
         }
       }
@@ -267,6 +274,10 @@ export function collectUsageDetailsFromEvents(events: UsageEvent[]): UsageDetail
       failed: event.failed === true,
       __modelName: modelName,
       __timestampMs: Number.isFinite(timestampMs) ? timestampMs : undefined,
+      __endpoint:
+        typeof event.endpoint === 'string' && event.endpoint.trim()
+          ? event.endpoint.trim()
+          : undefined,
     });
   });
 

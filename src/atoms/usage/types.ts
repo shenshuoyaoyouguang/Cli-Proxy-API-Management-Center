@@ -44,6 +44,9 @@ export interface UsageDetail {
   failed: boolean;
   __modelName?: string;
   __timestampMs?: number;
+  __endpoint?: string;
+  __endpointMethod?: string;
+  __endpointPath?: string;
 }
 
 export interface UsageDetailWithEndpoint extends UsageDetail {

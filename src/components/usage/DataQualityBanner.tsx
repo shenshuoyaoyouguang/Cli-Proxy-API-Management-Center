@@ -2,6 +2,7 @@ import { memo, useCallback, useState } from 'react';
 import styles from './DataQualityBanner.module.scss';
 
 interface DataQualityBannerProps {
+  title?: string;
   message: string;
 }
 
@@ -34,6 +35,7 @@ function CloseIcon() {
 }
 
 export const DataQualityBanner = memo(function DataQualityBanner({
+  title = '数据质量警告',
   message,
 }: DataQualityBannerProps) {
   const [dismissed, setDismissed] = useState(false);
@@ -55,7 +57,7 @@ export const DataQualityBanner = memo(function DataQualityBanner({
       </span>
       <div className={styles.content}>
         <span className={styles.title}>
-          数据质量警告
+          {title}
         </span>
         <span className={styles.message}>
           {message}

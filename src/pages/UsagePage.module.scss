@@ -1305,23 +1305,47 @@
   flex-wrap: wrap;
 }
 
+// Toolbar - optimized
 .requestEventsToolbar {
-  margin-bottom: $spacing-md;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-md;
+  margin-bottom: $spacing-lg;
+  flex-wrap: wrap;
+  padding: $spacing-md 0;
+  border-bottom: 1px solid var(--border-color);
+
+  @include tablet {
+    gap: $spacing-sm;
+    margin-bottom: $spacing-md;
+  }
+
+  @include mobile {
+    flex-direction: column;
+    align-items: stretch;
+    gap: $spacing-sm;
+    margin-bottom: $spacing-md;
+    padding: $spacing-sm 0;
+  }
 }
 
+// Filter group - optimized
 .requestEventsFilterGroup {
   display: grid;
-  // 与表格列对齐：时间(1.2fr) | 模型(1fr) | 来源(0.8fr) | 认证索引(0.6fr) | 结果(0.5fr) | ...
-  // 筛选器对应：模型 | 来源 | 认证索引 | 结果
-  grid-template-columns: minmax(100px, 1fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(50px, 0.5fr);
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
   gap: $spacing-md;
+  width: 100%;
+  max-width: 900px;
 
   @include tablet {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: $spacing-sm;
   }
 
   @include mobile {
     grid-template-columns: 1fr;
+    gap: $spacing-sm;
   }
 }
 
@@ -1365,47 +1389,75 @@
   border: 1px solid var(--border-color);
   font-size: 11px;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 
+// Filter item - optimized
 .requestEventsFilterItem {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: $spacing-xs;
   min-width: 0;
+
+  @include mobile {
+    gap: 4px;
+  }
 }
 
+// Filter label - optimized
 .requestEventsFilterLabel {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
   font-weight: 600;
+  margin-bottom: 2px;
+
+  @include mobile {
+    font-size: 12px;
+  }
 }
 
 .requestEventsSelect {
   width: 100%;
 }
 
+// Table header section - optimized
 .requestEventsTableHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: $spacing-md;
-  margin-bottom: $spacing-sm;
+  margin-bottom: $spacing-md;
   flex-wrap: wrap;
+  padding: $spacing-sm 0;
+
+  @include tablet {
+    gap: $spacing-sm;
+  }
 
   @include mobile {
     flex-direction: column;
     align-items: flex-start;
     gap: $spacing-sm;
+    margin-bottom: $spacing-sm;
   }
 }
 
+// Meta information - optimized
 .requestEventsMeta {
   display: flex;
   align-items: center;
   gap: $spacing-sm;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
   flex-shrink: 0;
+  font-weight: 500;
+
+  @include mobile {
+    font-size: 13px;
+  }
 }
 
 .requestEventsLimitHint {
@@ -1454,117 +1506,180 @@
   }
 }
 
+// Pagination - optimized
 .requestEventsPagination {
   display: flex;
   align-items: center;
-  gap: $spacing-xs;
+  gap: $spacing-sm;
   flex-shrink: 0;
+
+  @include mobile {
+    gap: $spacing-xs;
+  }
 }
 
 .requestEventsPaginationInfo {
-  min-width: 48px;
+  min-width: 56px;
   text-align: center;
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: $radius-sm;
+  border: 1px solid var(--border-color);
+
+  @include mobile {
+    font-size: 12px;
+    min-width: 48px;
+  }
 }
 
+// Table wrapper - optimized
 .requestEventsTableWrapper {
   overflow-x: auto;
   overflow-y: hidden;
   border-radius: $radius-lg;
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.06),
-    0 4px 8px rgba(0, 0, 0, 0.04);
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 4px 16px rgba(0, 0, 0, 0.04);
   background: var(--bg-primary);
   -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border-color);
 
   &::-webkit-scrollbar {
-    height: 8px;
+    height: 10px;
   }
 
   &::-webkit-scrollbar-track {
     background: var(--bg-secondary);
+    border-radius: 5px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 4px;
+    background: var(--border-hover);
+    border-radius: 5px;
+    border: 2px solid var(--bg-secondary);
 
     &:hover {
-      background: var(--border-hover);
+      background: var(--text-tertiary);
     }
+  }
+
+  // Responsive adjustments
+  @include tablet {
+    border-radius: $radius-md;
+    box-shadow:
+      0 1px 4px rgba(0, 0, 0, 0.06),
+      0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  @include mobile {
+    border-radius: $radius-sm;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   }
 }
 
+// ============================================
+// Request Events Table - Optimized Styles
+// ============================================
 .requestEventsTableGrid {
   display: grid;
-  min-width: 900px;
-  font-size: 12px;
+  min-width: 1000px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .requestEventsTableHeaderRow {
   display: grid;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 10;
   background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 2px solid var(--border-color);
   border-radius: $radius-lg $radius-lg 0 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
 
   > div {
-    padding: 12px 14px;
+    padding: 14px 16px;
     text-align: left;
-    font-weight: 700;
+    font-weight: 600;
     color: var(--text-secondary);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    border-right: 1px solid var(--border-color);
+
+    &:last-child {
+      border-right: none;
+    }
+
+    // Highlight important columns
+    &:nth-child(1) { // Timestamp
+      color: var(--text-primary);
+    }
+
+    &:nth-child(2) { // Model
+      color: var(--primary-color);
+    }
   }
 }
 
 .requestEventsVirtualRow {
-  margin: 6px 10px;
+  margin: 8px 12px;
   border-radius: $radius-md;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition:
-    transform 200ms ease,
-    box-shadow 200ms ease,
-    border-color 200ms ease,
-    background-color 150ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 200ms ease;
 
   > div {
-    padding: 12px 14px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    padding: 14px 16px;
     display: flex;
     align-items: center;
     color: var(--text-primary);
+    word-break: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.5;
+    min-height: 48px;
+    border-right: 1px solid var(--border-color);
+
+    &:last-child {
+      border-right: none;
+    }
   }
 
   &:hover {
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     box-shadow:
-      0 4px 12px rgba(0, 0, 0, 0.08),
-      0 2px 4px rgba(0, 0, 0, 0.04);
-    border-color: var(--border-hover);
-    background: var(--floating-surface, var(--bg-primary));
+      0 6px 16px rgba(0, 0, 0, 0.1),
+      0 2px 6px rgba(0, 0, 0, 0.06);
+    border-color: var(--primary-color);
+    background: var(--bg-secondary);
   }
 
   &:last-child {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+  }
+
+  // Alternate row colors for better readability
+  &:nth-child(even) {
+    background: var(--bg-secondary);
   }
 }
 
 .requestEventsTimestamp {
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  font-size: 12px;
   white-space: nowrap;
-  min-width: 160px;
 }
 
 .requestEventsSourceCell,
@@ -1572,13 +1687,43 @@
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
     monospace;
-  font-size: 11px;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-all;
+  line-height: 1.4;
 }
 
+// Model cell styling
+.modelCell {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+// Token columns styling
+.requestEventsVirtualRow {
+  > div:nth-child(6), // Input tokens
+  > div:nth-child(7), // Output tokens
+  > div:nth-child(8), // Reasoning tokens
+  > div:nth-child(9), // Cached tokens
+  > div:nth-child(10) { // Total tokens
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+      monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    justify-content: flex-end;
+    text-align: right;
+  }
+
+  > div:nth-child(10) { // Total tokens - highlight
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+}
+
+// Result status badges - optimized
 .requestEventsResultSuccess {
   color: var(--success-badge-text, #065f46);
   background: var(--success-badge-bg, #d1fae5);
@@ -1595,11 +1740,14 @@
 .requestEventsResultFailed {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  justify-content: center;
+  padding: 4px 10px;
   border-radius: $radius-full;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+  min-width: 32px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 // ============================================

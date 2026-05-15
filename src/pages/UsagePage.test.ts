@@ -86,8 +86,10 @@ vi.mock('@/stores', () => ({
         openaiCompatibility: [],
       },
     }),
-  useUsageStatsStore: <T,>(selector: (state: { dataQualityWarning: null }) => T) =>
-    selector({ dataQualityWarning: null }),
+  useUsageStatsStore: <T,>(
+    selector: (state: { dataQualityWarning: null; dataWindowMessage: null }) => T
+  ) =>
+    selector({ dataQualityWarning: null, dataWindowMessage: null }),
 }));
 
 vi.mock('@/components/ui/Button', () => ({
@@ -132,6 +134,19 @@ vi.mock('@/components/ui/Select', () => ({
 vi.mock('@/components/usage', () => {
   const Stub = ({ children }: React.PropsWithChildren = {}) =>
     createElement('div', null, children ?? 'stub');
+
+  const PropEcho = ({
+    usageDetails,
+    details,
+  }: {
+    usageDetails?: unknown;
+    details?: unknown;
+  }) =>
+    createElement(
+      'pre',
+      { 'data-testid': details ? 'service-health-props' : 'stat-cards-props' },
+      JSON.stringify({ usageDetails, details })
+    );
 
   const TokenEfficiencyCenter = ({
     onDrilldownChange,
@@ -219,7 +234,7 @@ vi.mock('@/components/usage', () => {
     );
 
   return {
-    StatCards: Stub,
+    StatCards: PropEcho,
     RuntimeQualityCard: Stub,
     TokenEfficiencyCenter,
     ApiDetailsCard: Stub,
@@ -227,7 +242,7 @@ vi.mock('@/components/usage', () => {
     PriceSettingsCard: Stub,
     CredentialStatsCard: Stub,
     RequestEventsDetailsCard,
-    ServiceHealthCard: Stub,
+    ServiceHealthCard: PropEcho,
     useUsageData: mocks.useUsageData,
     useAuthFilesMap: () => ({
       authFileMap: {},
@@ -245,6 +260,7 @@ vi.mock('@/components/usage', () => {
     }),
     useUsageAnalyticsSnapshot: () => ({
       filteredUsage: { totalRequests: 1 },
+      filteredDetails: [{ id: 'filtered-detail' }],
       modelNames: [],
       apiStats: [],
       modelStats: [],
@@ -375,5 +391,12 @@ describe('UsagePage', () => {
         externalAuthIndexFilter: null,
       });
     });
+  });
+
+  it('passes filteredDetails into downstream analytics consumers', () => {
+    render(createElement(UsagePage));
+
+    expect(screen.getByTestId('stat-cards-props').textContent).toContain('filtered-detail');
+    expect(screen.getByTestId('service-health-props').textContent).toContain('filtered-detail');
   });
 });

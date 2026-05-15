@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import {
   calculateCost,
-  collectUsageDetails,
   extractTotalTokens,
   getDetailTimestampMs,
   type ModelPrice,
@@ -111,16 +110,13 @@ function buildDaySparkline(
 }
 
 export function useSparklines({
-  usage,
+  usage: _usage,
   usageDetails = [],
   loading,
   modelPrices,
   nowMs,
 }: UseSparklinesOptions): UseSparklinesReturn {
-  const sparklineDetails = useMemo(
-    () => (usageDetails.length > 0 ? usageDetails : usage ? collectUsageDetails(usage) : []),
-    [usage, usageDetails]
-  );
+  const sparklineDetails = useMemo(() => usageDetails, [usageDetails]);
 
   const lastHourSeries = useMemo(() => {
     if (!Number.isFinite(nowMs) || nowMs <= 0) {

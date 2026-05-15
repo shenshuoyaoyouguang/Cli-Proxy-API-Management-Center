@@ -85,6 +85,7 @@ export function UsagePage() {
   const { aliasReverseMap } = useModelAliasReverseMap();
 
   const dataQualityWarning = useUsageStatsStore((state) => state.dataQualityWarning);
+  const dataWindowMessage = useUsageStatsStore((state) => state.dataWindowMessage);
 
   useHeaderRefresh(loadUsage);
 
@@ -123,6 +124,7 @@ export function UsagePage() {
 
   const {
     filteredUsage,
+    filteredDetails,
     modelNames,
     apiStats,
     modelStats,
@@ -158,12 +160,18 @@ export function UsagePage() {
     dayRpmSparkline,
     dayTpmSparkline,
     dayCostSparkline,
-  } = useSparklines({ usage: filteredUsage, usageDetails, loading, modelPrices, nowMs });
+  } = useSparklines({
+    usage: filteredUsage,
+    usageDetails: filteredDetails,
+    loading,
+    modelPrices,
+    nowMs,
+  });
 
   const { loading: subscriptionTierLoading } = useUsageSubscriptionTier(authFiles);
 
   const { serviceHealth } = useUsageReliabilitySnapshot({
-    usageDetails,
+    usageDetails: filteredDetails,
     nowMs,
   });
 
@@ -306,10 +314,12 @@ export function UsagePage() {
 
       {error && <div className={styles.errorBox}>{error}</div>}
 
+      {dataWindowMessage && (
+        <DataQualityBanner title="数据窗口提示" message={dataWindowMessage} />
+      )}
+
       {dataQualityWarning && (
-        <DataQualityBanner
-          message={dataQualityWarning.message}
-        />
+        <DataQualityBanner message={dataQualityWarning.message} />
       )}
 
       {/* Overview Section */}
@@ -319,7 +329,7 @@ export function UsagePage() {
           loading={loading || subscriptionTierLoading}
           hasPrices={hasPrices}
           usageSummary={usageSummary}
-          usageDetails={usageDetails}
+          usageDetails={filteredDetails}
           modelPrices={modelPrices}
           nowMs={nowMs}
           sparklines={{
@@ -348,7 +358,7 @@ export function UsagePage() {
         >
           {healthSectionVisible && (
             <ServiceHealthCard
-              details={usageDetails}
+              details={filteredDetails}
               loading={loading}
               healthData={serviceHealth}
             />

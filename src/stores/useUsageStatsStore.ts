@@ -6,7 +6,6 @@ import { CacheLayer } from '@/services/cache';
 import { usageSSEService } from '@/services/sse';
 import {
   createAggregateOnlyUsageSnapshot,
-  collectUsageDetails,
   collectUsageDetailsFromEvents,
   computeKeyStatsFromDetails,
   mergeKeyStatsIncremental,
@@ -25,7 +24,9 @@ import { getApiErrorStatus, getErrorMessage, isCanceledRequestError } from '@/ut
 import { parseTimestampMs } from '@/utils/timestamp';
 import { logger } from '@/utils/logger';
 import type { UsageEvent } from '@/services/api/usage';
+import { normalizeUsageEventsResponse } from '@/services/api/usage';
 import type {
+  UsageDataWindowStatus,
   UsageDeltaDetailItem,
   UsageDeltaEvent,
   UsageFullEvent,
@@ -38,6 +39,7 @@ const USAGE_STATS_CACHE_PREFIX = 'cli-proxy-usage-stats-cache-v1';
 const MAX_USAGE_DETAILS_LENGTH = 500_000;
 const EXPIRE_FAILED_CLEANUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
 const EXPIRE_FAILED_CLEANUP_IDLE_THRESHOLD_MS = 10_000;
+const USAGE_EVENTS_BOOTSTRAP_LIMIT = 1000;
 
 export type LoadUsageStatsOptions = {
   force?: boolean;
@@ -55,6 +57,8 @@ type UsageStatsState = {
   usage: UsageStatsSnapshot | null;
   keyStats: KeyStats;
   usageDetails: UsageDetail[];
+  dataWindowStatus: UsageDataWindowStatus;
+  dataWindowMessage: string | null;
   loading: boolean;
   error: string | null;
   lastRefreshedAt: number | null;
@@ -78,6 +82,10 @@ type UsageBootstrapResult = {
   usage: UsageStatsSnapshot | null;
   usageDetails: UsageDetail[];
   lastSeq: number | null;
+  detailCount: number;
+  dataWindowStatus?: UsageDataWindowStatus;
+  truncated?: boolean;
+  recoveredFromLegacySnapshot?: boolean;
 };
 
 type CompatibilityUsageDetailEntry = {
@@ -228,7 +236,96 @@ const createUsageDetailFromDelta = (detail: UsageDeltaDetailItem): UsageDetail =
     },
     failed: !detail.success,
     __modelName: normalizeUsageModelName(detail.model),
-    __timestampMs: detail.timestamp,
+    __timestampMs: parseTimestampMs(detail.timestamp),
+    __endpoint:
+      typeof detail.endpoint === 'string' && detail.endpoint.trim() ? detail.endpoint.trim() : undefined,
+  };
+};
+
+const getUsageTotalRequests = (usage: UsageStatsSnapshot | null): number => {
+  if (!usage) {
+    return 0;
+  }
+  return toFiniteNumber(usage.total_requests);
+};
+
+const resolveDataWindowStatus = ({
+  usage,
+  detailCount,
+  explicitStatus,
+  truncated,
+  recoveredFromLegacySnapshot,
+}: {
+  usage: UsageStatsSnapshot | null;
+  detailCount: number;
+  explicitStatus?: UsageDataWindowStatus;
+  truncated?: boolean;
+  recoveredFromLegacySnapshot?: boolean;
+}): UsageDataWindowStatus => {
+  if (explicitStatus) {
+    return explicitStatus;
+  }
+
+  const totalRequests = getUsageTotalRequests(usage);
+  if (recoveredFromLegacySnapshot && detailCount === 0) {
+    return 'degraded_legacy_snapshot';
+  }
+  if (totalRequests <= 0 && detailCount <= 0) {
+    return 'empty';
+  }
+  if (truncated || detailCount === 0 || totalRequests !== detailCount) {
+    return 'partial_window';
+  }
+  return 'complete';
+};
+
+const buildDataWindowMessage = (
+  status: UsageDataWindowStatus,
+  usage: UsageStatsSnapshot | null,
+  detailCount: number
+): string | null => {
+  const totalRequests = getUsageTotalRequests(usage);
+
+  switch (status) {
+    case 'partial_window':
+      if (detailCount === 0 && totalRequests > 0) {
+        return '当前只有聚合快照，没有可用于时间范围分析的事件明细；页面统计可能为空或不完整。';
+      }
+      if (totalRequests > detailCount && detailCount > 0) {
+        return `当前分析仅基于最近 ${detailCount.toLocaleString()} 条事件，完整请求数为 ${totalRequests.toLocaleString()}；时间范围统计可能不完整，仍不能视为完整修复。`;
+      }
+      return `当前分析仅基于最近 ${detailCount.toLocaleString()} 条事件；时间范围统计可能不完整，仍不能视为完整修复。`;
+    case 'degraded_legacy_snapshot':
+      return '当前从 legacy 聚合快照恢复，缺少可回放的事件明细；时间范围统计可能为空或不完整。';
+    default:
+      return null;
+  }
+};
+
+const resolveDataWindowInfo = ({
+  usage,
+  detailCount,
+  explicitStatus,
+  truncated,
+  recoveredFromLegacySnapshot,
+}: {
+  usage: UsageStatsSnapshot | null;
+  detailCount: number;
+  explicitStatus?: UsageDataWindowStatus;
+  truncated?: boolean;
+  recoveredFromLegacySnapshot?: boolean;
+}) => {
+  const status = resolveDataWindowStatus({
+    usage,
+    detailCount,
+    explicitStatus,
+    truncated,
+    recoveredFromLegacySnapshot,
+  });
+
+  return {
+    status,
+    message: buildDataWindowMessage(status, usage, detailCount),
   };
 };
 
@@ -418,6 +515,7 @@ const buildCompatibilityUsageDetailEntries = (
       failed: detail.failed === true,
       __modelName: modelName,
       __timestampMs: Number.isFinite(timestampMs) ? timestampMs : undefined,
+      __endpoint: endpoint,
     };
 
     entries.push({
@@ -682,7 +780,12 @@ const readUsageStatsWithCompatibility = async (
   try {
     const [usageResult, eventsResult] = await Promise.allSettled([
       usageApi.getUsage({ signal }),
-      usageApi.getUsageEvents({ signal }),
+      usageApi.getUsageEvents({
+        signal,
+        params: {
+          limit: USAGE_EVENTS_BOOTSTRAP_LIMIT,
+        },
+      }),
     ]);
 
     if (signal.aborted) {
@@ -691,7 +794,10 @@ const readUsageStatsWithCompatibility = async (
 
     const usageResponse = usageResult.status === 'fulfilled' ? usageResult.value : null;
     const usageError = usageResult.status === 'rejected' ? usageResult.reason : null;
-    const eventsResponse = eventsResult.status === 'fulfilled' ? eventsResult.value : undefined;
+    const eventsEnvelope =
+      eventsResult.status === 'fulfilled'
+        ? normalizeUsageEventsResponse(eventsResult.value)
+        : undefined;
     const eventsError = eventsResult.status === 'rejected' ? eventsResult.reason : null;
 
     if (usageError && isCanceledRequestError(usageError)) {
@@ -706,12 +812,21 @@ const readUsageStatsWithCompatibility = async (
     }
 
     const usageStatus = usageError ? getApiErrorStatus(usageError) : null;
-    const hasEvents = eventsResponse && eventsResponse.length > 0;
+    const eventsResponse = eventsEnvelope?.events ?? [];
+    const hasEvents = eventsResponse.length > 0;
 
     if (usageStatus === 404 && hasEvents) {
       const usageDetails = collectUsageDetailsFromEvents(eventsResponse);
       const usage = buildUsageSnapshotFromEvents(eventsResponse!);
-      return { usage, usageDetails, lastSeq: null };
+      return {
+        usage,
+        usageDetails,
+        lastSeq: null,
+        detailCount: eventsEnvelope?.returnedCount ?? usageDetails.length,
+        dataWindowStatus: eventsEnvelope?.dataWindowStatus,
+        truncated: eventsEnvelope?.truncated === true,
+        recoveredFromLegacySnapshot: eventsEnvelope?.recoveredFromLegacySnapshot === true,
+      };
     }
 
     if (usageError) {
@@ -723,14 +838,16 @@ const readUsageStatsWithCompatibility = async (
       rawUsage && typeof rawUsage === 'object'
         ? normalizeUsageSnapshotForFrontend(rawUsage as UsageStatsSnapshot, eventsResponse)
         : null;
-    const usageDetails = hasEvents
-      ? collectUsageDetailsFromEvents(eventsResponse)
-      : collectUsageDetails(usage);
+    const usageDetails = hasEvents ? collectUsageDetailsFromEvents(eventsResponse) : [];
 
     return {
       usage,
       usageDetails,
       lastSeq: null,
+      detailCount: hasEvents ? (eventsEnvelope?.returnedCount ?? usageDetails.length) : usageDetails.length,
+      dataWindowStatus: eventsEnvelope?.dataWindowStatus,
+      truncated: eventsEnvelope?.truncated === true,
+      recoveredFromLegacySnapshot: eventsEnvelope?.recoveredFromLegacySnapshot === true,
     };
   } catch (error) {
     if (error && isCanceledRequestError(error)) {
@@ -744,11 +861,9 @@ const readUsageStatsWithCompatibility = async (
     if (usageSSEService.getConnectionStatus() === 'connected' && currentUsage) {
       return {
         usage: currentUsage,
-        usageDetails:
-          currentUsageDetails.length > 0
-            ? trimUsageDetails(currentUsageDetails)
-            : collectUsageDetails(currentUsage),
+        usageDetails: currentUsageDetails.length > 0 ? trimUsageDetails(currentUsageDetails) : [],
         lastSeq: currentLastSeq,
+        detailCount: currentUsageDetails.length,
       };
     }
 
@@ -769,8 +884,15 @@ const readUsageStatsWithCompatibility = async (
 
       return {
         usage,
-        usageDetails: usageDetails.length > 0 ? usageDetails : collectUsageDetails(usage),
+        usageDetails,
         lastSeq: typeof fullSnapshot.seq === 'number' ? fullSnapshot.seq : null,
+        detailCount:
+          typeof fullSnapshot.returnedCount === 'number'
+            ? fullSnapshot.returnedCount
+            : usageDetails.length,
+        dataWindowStatus: fullSnapshot.dataWindowStatus,
+        truncated: fullSnapshot.truncated === true,
+        recoveredFromLegacySnapshot: fullSnapshot.recoveredFromLegacySnapshot === true,
       };
     } catch (snapshotError) {
       if (snapshotError && isCanceledRequestError(snapshotError)) {
@@ -785,11 +907,9 @@ const readUsageStatsWithCompatibility = async (
         });
         return {
           usage: currentUsage,
-          usageDetails:
-            currentUsageDetails.length > 0
-              ? trimUsageDetails(currentUsageDetails)
-              : collectUsageDetails(currentUsage),
+          usageDetails: currentUsageDetails.length > 0 ? trimUsageDetails(currentUsageDetails) : [],
           lastSeq: currentLastSeq,
+          detailCount: currentUsageDetails.length,
         };
       }
 
@@ -820,6 +940,7 @@ type PersistedUsageStatsCache = {
   lastRefreshedAt: number | null;
   detailCount: number;
   scopeKey: string;
+  dataWindowStatus?: UsageDataWindowStatus;
 };
 
 const createPersistableUsageStatsCache = (
@@ -1149,6 +1270,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
   usage: null,
   keyStats: createEmptyKeyStats(),
   usageDetails: [],
+  dataWindowStatus: 'empty',
+  dataWindowMessage: null,
   loading: false,
   error: null,
   lastRefreshedAt: null,
@@ -1229,10 +1352,17 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
 
     if (scopeChanged) {
       if (bootstrapCache) {
+        const dataWindowInfo = resolveDataWindowInfo({
+          usage: bootstrapCache.usage,
+          detailCount: bootstrapCache.detailCount,
+          explicitStatus: bootstrapCache.dataWindowStatus,
+        });
         set({
           usage: bootstrapCache.usage,
           keyStats: bootstrapCache.keyStats,
           usageDetails: bootstrapCache.usageDetails,
+          dataWindowStatus: dataWindowInfo.status,
+          dataWindowMessage: dataWindowInfo.message,
           error: null,
           lastRefreshedAt: bootstrapCache.lastRefreshedAt,
           scopeKey,
@@ -1244,6 +1374,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           usage: null,
           keyStats: createEmptyKeyStats(),
           usageDetails: [],
+          dataWindowStatus: 'empty',
+          dataWindowMessage: null,
           error: null,
           lastRefreshedAt: null,
           scopeKey,
@@ -1252,10 +1384,17 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         });
       }
     } else if (!state.usage && bootstrapCache) {
+      const dataWindowInfo = resolveDataWindowInfo({
+        usage: bootstrapCache.usage,
+        detailCount: bootstrapCache.detailCount,
+        explicitStatus: bootstrapCache.dataWindowStatus,
+      });
       set({
         usage: bootstrapCache.usage,
         keyStats: bootstrapCache.keyStats,
         usageDetails: bootstrapCache.usageDetails,
+        dataWindowStatus: dataWindowInfo.status,
+        dataWindowMessage: dataWindowInfo.message,
         error: null,
         lastRefreshedAt: bootstrapCache.lastRefreshedAt,
         scopeKey,
@@ -1303,13 +1442,21 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
         const keyStats = computeKeyStatsFromDetails(usageDetails);
         const dataQualityWarning = checkDataQualityWarning();
         const lastRefreshedAt = Date.now();
+        const dataWindowInfo = resolveDataWindowInfo({
+          usage,
+          detailCount: bootstrap.detailCount,
+          explicitStatus: bootstrap.dataWindowStatus,
+          truncated: bootstrap.truncated,
+          recoveredFromLegacySnapshot: bootstrap.recoveredFromLegacySnapshot,
+        });
         const nextSnapshot = {
           usage,
           keyStats,
           usageDetails,
           lastRefreshedAt,
-          detailCount: bootstrap.usageDetails.length,
+          detailCount: bootstrap.detailCount,
           scopeKey,
+          dataWindowStatus: dataWindowInfo.status,
         };
 
         autoPersistService.onUsageRefreshed({
@@ -1341,6 +1488,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           set({
             keyStats: nextSnapshot.keyStats,
             usageDetails: nextSnapshot.usageDetails,
+            dataWindowStatus: dataWindowInfo.status,
+            dataWindowMessage: dataWindowInfo.message,
             loading: false,
             error: null,
             lastRefreshedAt: nextSnapshot.lastRefreshedAt,
@@ -1366,6 +1515,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
           usage: nextSnapshot.usage,
           keyStats: nextSnapshot.keyStats,
           usageDetails: nextSnapshot.usageDetails,
+          dataWindowStatus: dataWindowInfo.status,
+          dataWindowMessage: dataWindowInfo.message,
           loading: false,
           error: null,
           lastRefreshedAt: nextSnapshot.lastRefreshedAt,
@@ -1456,11 +1607,14 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       usage: null,
       keyStats: createEmptyKeyStats(),
       usageDetails: [],
+      dataWindowStatus: 'empty',
+      dataWindowMessage: null,
       loading: false,
       error: null,
       lastRefreshedAt: null,
       scopeKey: '',
       lastSeq: null,
+      dataQualityWarning: null,
     });
   },
 
@@ -1531,6 +1685,10 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       ? subtractUsageDetailsFromAggregate(mergedUsageRaw, removedDetails)
       : mergedUsageRaw;
     const receivedAt = Date.now();
+    const dataWindowInfo = resolveDataWindowInfo({
+      usage: mergedUsage,
+      detailCount: totalLen,
+    });
     const nextSnapshot = {
       usage: mergedUsage,
       keyStats,
@@ -1538,6 +1696,7 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       lastRefreshedAt: receivedAt,
       detailCount: totalLen,
       scopeKey: state.scopeKey,
+      dataWindowStatus: dataWindowInfo.status,
     };
 
     autoPersistService.onUsageRefreshed({
@@ -1555,6 +1714,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       usage: mergedUsage,
       usageDetails: trimmedDetails,
       keyStats,
+      dataWindowStatus: dataWindowInfo.status,
+      dataWindowMessage: dataWindowInfo.message,
       lastRefreshedAt: receivedAt,
       lastSeq: delta.seq,
       loading: false,
@@ -1572,18 +1733,28 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       ? buildCompatibilityUsageDetailEntries(snapshot.usageDetails).map(
           (entry) => entry.usageDetail
         )
-      : collectUsageDetails(usage);
+      : [];
     const rawDetailCount = rawDetails.length;
     const usageDetails = trimUsageDetails(rawDetails);
     const keyStats = computeKeyStatsFromDetails(usageDetails);
     const lastRefreshedAt = Date.now();
+    const detailCount =
+      typeof snapshot.returnedCount === 'number' ? snapshot.returnedCount : rawDetailCount;
+    const dataWindowInfo = resolveDataWindowInfo({
+      usage,
+      detailCount,
+      explicitStatus: snapshot.dataWindowStatus,
+      truncated: snapshot.truncated === true,
+      recoveredFromLegacySnapshot: snapshot.recoveredFromLegacySnapshot === true,
+    });
     const nextSnapshot = {
       usage,
       keyStats,
       usageDetails,
       lastRefreshedAt,
-      detailCount: rawDetailCount,
+      detailCount,
       scopeKey: state.scopeKey,
+      dataWindowStatus: dataWindowInfo.status,
     };
 
     autoPersistService.onUsageRefreshed({
@@ -1601,6 +1772,8 @@ export const useUsageStatsStore = create<UsageStatsState>((set, get) => ({
       usage,
       usageDetails,
       keyStats,
+      dataWindowStatus: dataWindowInfo.status,
+      dataWindowMessage: dataWindowInfo.message,
       lastRefreshedAt,
       lastSeq: snapshot.seq,
       loading: false,

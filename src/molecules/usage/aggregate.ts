@@ -99,6 +99,134 @@ export function createAggregateOnlyUsageSnapshot<T>(usageData: T): T {
   } as T;
 }
 
+const createEmptyApiUsageEntry = () => ({
+  total_requests: 0,
+  success_count: 0,
+  failure_count: 0,
+  total_tokens: 0,
+  models: {} as Record<string, unknown>,
+});
+
+const createEmptyModelUsageEntry = () => ({
+  total_requests: 0,
+  success_count: 0,
+  failure_count: 0,
+  total_tokens: 0,
+  details: [] as Array<Record<string, unknown>>,
+});
+
+export function createAggregateUsageSnapshotFromDetails(
+  details: UsageDetail[]
+): Record<string, unknown> | null {
+  if (!Array.isArray(details) || details.length === 0) {
+    return null;
+  }
+
+  const apis: Record<string, Record<string, unknown>> = {};
+  let totalRequests = 0;
+  let successCount = 0;
+  let failureCount = 0;
+  let totalTokens = 0;
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let reasoningTokens = 0;
+  let cachedTokens = 0;
+
+  details.forEach((detail) => {
+    const endpoint =
+      typeof detail.__endpoint === 'string' && detail.__endpoint.trim()
+        ? detail.__endpoint.trim()
+        : 'unknown';
+    const modelName =
+      typeof detail.__modelName === 'string' && detail.__modelName.trim()
+        ? detail.__modelName.trim()
+        : 'unknown';
+    const apiEntry = isRecord(apis[endpoint])
+      ? (apis[endpoint] as Record<string, unknown>)
+      : createEmptyApiUsageEntry();
+    if (!isRecord(apis[endpoint])) {
+      apis[endpoint] = apiEntry;
+    }
+
+    const models = isRecord(apiEntry.models) ? (apiEntry.models as Record<string, unknown>) : {};
+    apiEntry.models = models;
+    const modelEntry = isRecord(models[modelName])
+      ? (models[modelName] as Record<string, unknown>)
+      : createEmptyModelUsageEntry();
+    if (!isRecord(models[modelName])) {
+      models[modelName] = modelEntry;
+    }
+
+    const tokens = normalizeUsageDetailTokens(detail);
+    const detailTokens = getUsageDetailTotalTokenCount(detail);
+    const isFailed = detail.failed === true;
+    const nestedDetail: Record<string, unknown> = {
+      timestamp: detail.timestamp,
+      source: detail.source,
+      auth_index: detail.auth_index,
+      tokens,
+      failed: isFailed,
+    };
+
+    const modelDetails = Array.isArray(modelEntry.details) ? [...modelEntry.details] : [];
+    modelDetails.push(nestedDetail);
+    modelEntry.details = modelDetails;
+    modelEntry.total_requests = safeAdd(toFiniteNonNegativeNumber(modelEntry.total_requests), 1);
+    modelEntry.success_count = safeAdd(
+      toFiniteNonNegativeNumber(modelEntry.success_count),
+      isFailed ? 0 : 1
+    );
+    modelEntry.failure_count = safeAdd(
+      toFiniteNonNegativeNumber(modelEntry.failure_count),
+      isFailed ? 1 : 0
+    );
+    modelEntry.total_tokens = safeAdd(
+      toFiniteNonNegativeNumber(modelEntry.total_tokens),
+      detailTokens
+    );
+
+    apiEntry.total_requests = safeAdd(toFiniteNonNegativeNumber(apiEntry.total_requests), 1);
+    apiEntry.success_count = safeAdd(
+      toFiniteNonNegativeNumber(apiEntry.success_count),
+      isFailed ? 0 : 1
+    );
+    apiEntry.failure_count = safeAdd(
+      toFiniteNonNegativeNumber(apiEntry.failure_count),
+      isFailed ? 1 : 0
+    );
+    apiEntry.total_tokens = safeAdd(toFiniteNonNegativeNumber(apiEntry.total_tokens), detailTokens);
+
+    totalRequests = safeAdd(totalRequests, 1);
+    successCount = safeAdd(successCount, isFailed ? 0 : 1);
+    failureCount = safeAdd(failureCount, isFailed ? 1 : 0);
+    totalTokens = safeAdd(totalTokens, detailTokens);
+    promptTokens = safeAdd(promptTokens, toFiniteNonNegativeNumber(tokens.input_tokens));
+    completionTokens = safeAdd(
+      completionTokens,
+      toFiniteNonNegativeNumber(tokens.output_tokens)
+    );
+    reasoningTokens = safeAdd(
+      reasoningTokens,
+      toFiniteNonNegativeNumber(tokens.reasoning_tokens)
+    );
+    cachedTokens = safeAdd(cachedTokens, toFiniteNonNegativeNumber(tokens.cached_tokens));
+  });
+
+  const snapshot: Record<string, unknown> = {
+    total_requests: totalRequests,
+    success_count: successCount,
+    failure_count: failureCount,
+    total_tokens: totalTokens,
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    reasoning_tokens: reasoningTokens,
+    cached_tokens: cachedTokens,
+    apis,
+  };
+
+  return rehydrateUsageAggregatesFromDetails(snapshot) as Record<string, unknown>;
+}
+
 export function computeKeyStats(
   usageData: unknown,
   masker: (val: string) => string = (val) => val

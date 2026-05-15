@@ -86,6 +86,7 @@ export {
 
 export {
   createAggregateOnlyUsageSnapshot,
+  createAggregateUsageSnapshotFromDetails,
   computeKeyStats,
   computeKeyStatsFromDetails,
   mergeKeyStatsIncremental,

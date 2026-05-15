@@ -2,14 +2,12 @@ import { useMemo } from 'react';
 import type { CredentialInfo } from '@/types/sourceInfo';
 import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
 import {
-  collectUsageDetails,
-  filterUsageByTimeRange,
   getApiStats,
   getModelNamesFromUsage,
   getModelStats,
-  rehydrateUsageAggregatesFromDetails,
   resolveModelNameInDetails,
   normalizeUsageModelNames,
+  createAggregateUsageSnapshotFromDetails,
   type ModelPrice,
   type UsageDetail,
   type UsageTimeRange,
@@ -72,7 +70,7 @@ export interface UseUsageAnalyticsSnapshotReturn {
 }
 
 export function useUsageAnalyticsSnapshot({
-  usage,
+  usage: _usage,
   usageDetails,
   timeRange,
   modelPrices,
@@ -100,25 +98,7 @@ export function useUsageAnalyticsSnapshot({
     return mergeAliasReverseMaps(providerMap, aliasReverseMap ?? new Map());
   }, [geminiKeys, claudeConfigs, codexConfigs, vertexConfigs, openaiProviders, aliasReverseMap]);
 
-  const usageDerivedDetails = useMemo(() => (usage ? collectUsageDetails(usage) : []), [usage]);
-
-  const analyticsSourceDetails = useMemo(
-    () => (usageDetails.length > 0 ? usageDetails : usageDerivedDetails),
-    [usageDerivedDetails, usageDetails]
-  );
-
-  const filteredUsage = useMemo(
-    () =>
-      usage
-        ? rehydrateUsageAggregatesFromDetails(filterUsageByTimeRange(usage, timeRange, nowMs))
-        : null,
-    [usage, timeRange, nowMs]
-  );
-
-  const canonicalUsage = useMemo(
-    () => (filteredUsage ? normalizeUsageModelNames(filteredUsage, mergedAliasReverseMap) : null),
-    [filteredUsage, mergedAliasReverseMap]
-  );
+  const analyticsSourceDetails = useMemo(() => usageDetails, [usageDetails]);
 
   const filteredDetails = useMemo(
     () => filterUsageDetailsByTimeRange(analyticsSourceDetails, timeRange, nowMs),
@@ -128,6 +108,16 @@ export function useUsageAnalyticsSnapshot({
   const resolvedDetails = useMemo(
     () => resolveModelNameInDetails(filteredDetails, mergedAliasReverseMap),
     [filteredDetails, mergedAliasReverseMap]
+  );
+
+  const filteredUsage = useMemo(
+    () => createAggregateUsageSnapshotFromDetails(resolvedDetails),
+    [resolvedDetails]
+  );
+
+  const canonicalUsage = useMemo(
+    () => (filteredUsage ? normalizeUsageModelNames(filteredUsage, mergedAliasReverseMap) : null),
+    [filteredUsage, mergedAliasReverseMap]
   );
 
   const modelNames = useMemo(() => getModelNamesFromUsage(canonicalUsage), [canonicalUsage]);

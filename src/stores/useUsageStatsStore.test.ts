@@ -75,7 +75,7 @@ const createMockBootstrapSnapshot = (
 vi.mock('@/services/api', () => ({
   usageApi: {
     getUsage: vi.fn(),
-    getUsageEvents: vi.fn(),
+    getUsageEvents: vi.fn<(...args: unknown[]) => Promise<import('@/services/api/usage').UsageEventsEnvelope>>(),
     getUsageQueue: vi.fn(),
   },
 }));
@@ -202,7 +202,7 @@ describe('useUsageStatsStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(autoPersistService.readBootstrapSnapshot).mockReturnValue(null);
-    vi.mocked(usageApi.getUsageEvents).mockResolvedValue([]);
+    vi.mocked(usageApi.getUsageEvents).mockResolvedValue({ events: [] });
     localStorage.clear();
     sessionStorage.clear();
     useUsageStatsStore.getState().clearUsageStats();
@@ -211,6 +211,8 @@ describe('useUsageStatsStore', () => {
       usage: null,
       keyStats: { bySource: {}, byAuthIndex: {} },
       usageDetails: [],
+      dataWindowStatus: 'empty',
+      dataWindowMessage: null,
       loading: false,
       error: null,
       lastRefreshedAt: null,
@@ -268,6 +270,11 @@ describe('useUsageStatsStore', () => {
       expect(useUsageStatsStore.getState().usage).toEqual(mockUsage);
       expect(useUsageStatsStore.getState().loading).toBe(false);
       expect(useUsageStatsStore.getState().error).toBeNull();
+      expect(usageApi.getUsageEvents).toHaveBeenCalledWith(
+        expect.objectContaining({
+          params: { limit: 1000 },
+        })
+      );
     });
 
     it('falls back to usage stream when /usage returns 404 and normalizes the current backend snapshot', async () => {
@@ -688,7 +695,7 @@ describe('useUsageStatsStore', () => {
       expect(useUsageStatsStore.getState().usage).toEqual({ apis: { live: {} } });
     });
 
-    it('caps persisted usageDetails while preserving the full detailCount for bootstrap decisions', async () => {
+    it('does not synthesize usageDetails from the usage tree when bootstrap lacks events', async () => {
       const largeUsageDetails: UsageDetail[] = Array.from({ length: 5_500 }, (_, index) => ({
         timestamp: new Date(Date.UTC(2026, 0, 1, 0, index % 60, 0)).toISOString(),
         source: `source-${index}`,
@@ -704,7 +711,6 @@ describe('useUsageStatsStore', () => {
         __timestampMs: Date.UTC(2026, 0, 1, 0, index % 60, 0) + index,
       }));
 
-      vi.mocked(collectUsageDetails).mockReturnValueOnce(largeUsageDetails);
       vi.mocked(usageApi.getUsage).mockResolvedValue(
         createMockUsageResponse({ apis: { live: {} } })
       );
@@ -718,8 +724,81 @@ describe('useUsageStatsStore', () => {
       const persisted = raw ? (JSON.parse(raw) as BootstrapSnapshot) : null;
 
       expect(persisted).not.toBeNull();
-      expect(persisted?.detailCount).toBe(5_500);
-      expect(persisted?.usageDetails.length).toBe(5_500);
+      expect(largeUsageDetails).toHaveLength(5_500);
+      expect(persisted?.detailCount).toBe(0);
+      expect(persisted?.usageDetails.length).toBe(0);
+      expect(useUsageStatsStore.getState().dataWindowStatus).toBe('empty');
+    });
+
+    it('marks the analytics window as partial when aggregate requests exceed fetched event details', async () => {
+      vi.mocked(usageApi.getUsage).mockResolvedValue(
+        createMockUsageResponse({
+          total_requests: 5,
+          success_count: 4,
+          failure_count: 1,
+          total_tokens: 750,
+          apis: {},
+        })
+      );
+      vi.mocked(usageApi.getUsageEvents).mockResolvedValue({
+        events: [
+          createMockUsageDetail({
+            timestamp: '2026-01-01T00:00:00.000Z',
+            source: 'detail-a',
+          }) as unknown as UsageDetail,
+          createMockUsageDetail({
+            timestamp: '2026-01-01T00:01:00.000Z',
+            source: 'detail-b',
+          }) as unknown as UsageDetail,
+        ],
+        returnedCount: 2,
+      } as never);
+
+      await useUsageStatsStore.getState().loadUsageStats({ force: true });
+
+      expect(useUsageStatsStore.getState().dataWindowStatus).toBe('partial_window');
+      expect(useUsageStatsStore.getState().dataWindowMessage).toContain('仅基于最近 2 条事件');
+    });
+
+    it('keeps the analytics window partial when returnedCount exceeds the in-memory aggregate window', () => {
+      const scopeKey = createScopeKey('http://localhost:3000', 'test-key');
+
+      useUsageStatsStore.setState({
+        scopeKey,
+        lastSeq: 20,
+      });
+
+      useUsageStatsStore.getState().applyFullSnapshot({
+        seq: 21,
+        timestamp: '2026-01-01T00:05:00.000Z',
+        usage: {
+          total_requests: 1,
+          success_count: 1,
+          failure_count: 0,
+          total_tokens: 150,
+          apis: { live: {} },
+        },
+        usageDetails: [
+          {
+            timestamp: '2026-01-01T00:05:00.000Z',
+            source: 'snapshot-source',
+            auth_index: '5',
+            endpoint: 'POST /v1/chat/completions',
+            model: 'gpt-4.1',
+            tokens: {
+              input_tokens: 100,
+              output_tokens: 50,
+              reasoning_tokens: 0,
+              cached_tokens: 0,
+              total_tokens: 150,
+            },
+            failed: false,
+          } as UsageDetail & { endpoint: string; model: string },
+        ],
+        returnedCount: 2,
+      });
+
+      expect(useUsageStatsStore.getState().dataWindowStatus).toBe('partial_window');
     });
   });
 

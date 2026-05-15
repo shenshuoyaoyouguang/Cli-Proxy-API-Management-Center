@@ -3,6 +3,11 @@ import type { UsageDetail } from '@/utils/usage';
 export type UsageSSEEventType = 'usage:delta' | 'usage:full' | 'usage:heartbeat';
 
 export type UsageSSEConnectionStatus = 'connecting' | 'connected' | 'degraded' | 'disconnected';
+export type UsageDataWindowStatus =
+  | 'complete'
+  | 'partial_window'
+  | 'degraded_legacy_snapshot'
+  | 'empty';
 
 export interface UsageTokenDelta {
   promptTokens: number;
@@ -15,8 +20,9 @@ export interface UsageTokenDelta {
 export interface UsageDeltaDetailItem {
   model: string;
   source: string;
-  timestamp: number;
+  timestamp: string | number;
   success: boolean;
+  endpoint?: string;
   tokens: { prompt: number; completion: number; total: number; reasoning?: number; cached?: number };
 }
 
@@ -31,7 +37,7 @@ export interface UsageModelBreakdownItem {
 
 export interface UsageDeltaEvent {
   seq: number;
-  timestamp: number;
+  timestamp: string | number;
   requestCount: number;
   successCount: number;
   failureCount: number;
@@ -51,9 +57,16 @@ export interface UsageSnapshotDetailItem extends UsageDetail {
 
 export interface UsageFullEvent {
   seq: number;
-  timestamp: number;
+  timestamp: string | number;
   usage: Record<string, unknown>;
   usageDetails?: UsageSnapshotDetailItem[];
+  coverageStart?: string | null;
+  coverageEnd?: string | null;
+  returnedCount?: number;
+  truncated?: boolean;
+  recoveredFromLegacySnapshot?: boolean;
+  dataWindowStatus?: UsageDataWindowStatus;
+  nextCursor?: string | null;
 }
 
 export interface UsageSSEHandler {
